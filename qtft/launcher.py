@@ -8,6 +8,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from .ensemble import update_index
 from .run import POLL_SECONDS, _command, _record, _replicas, _set_status, _status
 
 
@@ -42,6 +43,7 @@ def _launcher(run_dir: Path) -> None:
             _set_status(rep, "done" if ok else "failed")
             print(f"{time.strftime('%H:%M:%S')} {rep.name} {'done' if ok else f'FAILED (exit code {rc})'}",
                   flush=True)
+            update_index(params["data_dir"])
 
 
 if __name__ == "__main__":
