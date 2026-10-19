@@ -73,7 +73,7 @@ class Params:
     data_dir: str = "~/qtft-data"
     run_name: str | None = None      # None -> generated from the parameters
     lmp_command: str = "lmp"
-    mpirun_command: str = "mpirun"
+    mpirun_command: str = "mpirun --bind-to none"   # no core pinning: replicas run side by side
 
     # ---------------------------------------------------------------- derived
     @property
