@@ -1,0 +1,26 @@
+name: lammps
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  # build toolchain (CMake >= 3.27 required by LAMMPS)
+  - cmake>=3.27
+  - make
+  - compilers
+  # MPI + FFT (use ONLY this MPI, never mix with apt's libopenmpi)
+  - openmpi
+  - openmpi-mpicc
+  - openmpi-mpicxx
+  - fftw
+  # Python side
+  - pip
+  - mpi4py
+  - numpy
+  - scipy
+  - pandas
+  - pyyaml
+  - matplotlib
+  - ipykernel
+  # development
+  - pytest
+  - nbstripout

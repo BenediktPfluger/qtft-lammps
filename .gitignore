@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# LAMMPS output (simulation data lives in ~/qtft-data, never in git)
+log.lammps
+log.cite
+*.dump
+*.dump.gz
+*.data
+*.restart
+screen.txt
+
+# local run folders, if created inside the repo by mistake
+runs/
+qtft-data/
+
+# editors / OS
+.vscode/
+.DS_Store
