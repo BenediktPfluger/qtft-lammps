@@ -1,0 +1,149 @@
+# Qt-Ft agglomeration: overdamped Brownian dynamics with stochastic Qt-Ft bonding
+# Generated from template.lmp by qtft/build.py. Units: nm, ns, zJ, pN, ag.
+# Atom types: 1 = Qt (encapsulin), 2 = Ft (ferritin). Bond type 1 = Qt-Ft.
+# Run: {{run_name}} / replica {{replica}}
+
+# ---------------------------------------------------------------- 1. initialisation
+units           nano
+atom_style      bond
+boundary        p p p
+
+# ---------------------------------------------------------------- 2. box
+# room for bonds and topological neighbours created later by fix bond/create
+region          box block 0 {{box_length}} 0 {{box_length}} 0 {{box_length}}
+create_box      2 box bond/types 1 extra/bond/per/atom {{extra_bond}} extra/special/per/atom {{extra_special}}
+mass            1 1.0     # masses have no effect in Brownian dynamics
+mass            2 1.0
+
+# ---------------------------------------------------------------- 3. force field
+# soft repulsion E = k (r_c - r)^2 for r < r_c = r_i + r_j; all pairs explicit (no mixing)
+pair_style      harmonic/cut
+pair_coeff      1 1 {{k_qq}} {{cut_qq}}
+pair_coeff      2 2 {{k_ff}} {{cut_ff}}
+pair_coeff      1 2 {{k_qf}} {{cut_qf}}
+
+# harmonic bond E = K (r - r0)^2
+bond_style      harmonic
+bond_coeff      1 {{bond_k}} {{bond_r0}}
+
+# directly bonded pairs: repulsion off (weight tiny but non-zero, so the pair stays in the
+# neighbor list for compute rdf); pairs 2 or 3 bonds apart keep their full repulsion
+special_bonds   lj 1.0e-50 1.0 1.0
+
+# ---------------------------------------------------------------- 4. neighbours / communication
+neighbor        {{neighbor_skin}} bin
+neigh_modify    every 1 delay 0 check yes
+comm_modify     cutoff {{comm_cutoff}}
+
+# ---------------------------------------------------------------- 5. atoms
+# overlap-free random insertion: Qt first, then Ft (the overlap distance applies to all existing atoms)
+create_atoms    1 random {{n_qt}} {{seed_place_qt}} NULL overlap {{cut_qq}} maxtry {{insert_maxtry}} units box
+create_atoms    2 random {{n_ft}} {{seed_place_ft}} NULL overlap {{cut_qf}} maxtry {{insert_maxtry}} units box
+
+variable        n_expected equal {{n_qt}}+{{n_ft}}
+variable        n_created equal count(all)
+if "${n_created} != ${n_expected}" then &
+  "print 'ERROR: only ${n_created} of ${n_expected} particles could be inserted without overlap'" &
+  "quit 1"
+
+group           Qt type 1
+group           Ft type 2
+
+# ---------------------------------------------------------------- 6. dynamics
+# overdamped Langevin (Euler-Maruyama): dr = F/gamma dt + sqrt(2 kT dt/gamma) xi, gamma = kT/D
+# fix brownian is the only integrator and acts as the thermostat; no fix nve/langevin/nvt
+timestep        {{timestep}}
+fix             bd_qt Qt brownian {{temperature}} {{seed_bd_qt}} rng gaussian gamma_t {{gamma_qt}}
+fix             bd_ft Ft brownian {{temperature}} {{seed_bd_ft}} rng gaussian gamma_t {{gamma_ft}}
+
+# ---------------------------------------------------------------- 7. in-run analysis
+# bonds per atom and cluster (= bond-connected fragment, free particles are 1-particle clusters)
+compute         nb all nbond/atom
+compute         frag all fragment/atom single yes
+compute         cl all chunk/atom c_frag nchunk every ids every compress yes
+compute         csize all property/chunk cl count
+compute         size all chunk/spread/atom cl c_csize
+
+variable        rad atom (type==1)*{{radius_qt}}+(type==2)*{{radius_ft}}
+variable        qt_bound atom (type==1)*(c_nb>0)
+variable        ft_bound atom (type==2)*(c_nb>0)
+variable        qt_deg atom (type==1)*c_nb
+variable        ft_deg atom (type==2)*c_nb
+variable        large atom (c_size>={{large_cluster_min}})/c_size
+variable        cat_mono atom (c_size==1)
+variable        cat_small atom (c_size>=2)*(c_size<={{size_small}})
+variable        cat_medium atom (c_size>{{size_small}})*(c_size<={{size_medium}})
+variable        cat_large atom (c_size>{{size_medium}})*(c_size<={{size_large}})
+variable        cat_vlarge atom (c_size>{{size_large}})
+
+compute         sums all reduce sum v_qt_bound v_ft_bound v_qt_deg v_ft_deg v_large &
+                v_cat_mono v_cat_small v_cat_medium v_cat_large v_cat_vlarge
+compute         maxdeg all reduce max v_qt_deg v_ft_deg
+
+variable        n_qt_bound equal c_sums[1]
+variable        n_ft_bound equal c_sums[2]
+variable        frac_bound equal (c_sums[1]+c_sums[2])/count(all)
+variable        deg_qt_mean equal c_sums[3]/(c_sums[1]+(c_sums[1]==0))
+variable        deg_ft_mean equal c_sums[4]/(c_sums[2]+(c_sums[2]==0))
+variable        deg_qt_max equal c_maxdeg[1]
+variable        deg_ft_max equal c_maxdeg[2]
+variable        n_clusters equal c_cl
+variable        mean_size equal count(all)/c_cl
+variable        largest equal max(c_csize)
+variable        n_large equal round(c_sums[5])
+variable        f_mono equal c_sums[6]/count(all)
+variable        f_small equal c_sums[7]/count(all)
+variable        f_medium equal c_sums[8]/count(all)
+variable        f_large equal c_sums[9]/count(all)
+variable        f_vlarge equal c_sums[10]/count(all)
+
+# bond lengths (stability check)
+compute         blen all bond/local dist
+compute         bstat all reduce max c_blen inputs local
+compute         bave all reduce ave c_blen inputs local
+variable        bond_max equal (bonds>0)*c_bstat      # 0 while there are no bonds
+variable        bond_mean equal (bonds>0)*c_bave
+
+# pressure from forces only (kinetic part is meaningless in overdamped dynamics)
+compute         pvir all pressure NULL virial
+
+# ---------------------------------------------------------------- 8. thermo output (log.lammps, YAML)
+# ke, temp and etotal are omitted on purpose: velocities are not physical in fix brownian
+thermo_style    custom step pe evdwl ebond c_pvir bonds &
+                v_n_qt_bound v_n_ft_bound v_frac_bound v_n_clusters v_mean_size v_largest v_n_large &
+                v_f_mono v_f_small v_f_medium v_f_large v_f_vlarge &
+                v_deg_qt_mean v_deg_ft_mean v_deg_qt_max v_deg_ft_max v_bond_mean v_bond_max &
+                spcpu cpuremain
+thermo_modify   line yaml norm no flush yes
+thermo          {{output_every}}
+
+# ---------------------------------------------------------------- 9. equilibration (binding off)
+run             {{equil_steps}}
+reset_timestep  0
+
+# ---------------------------------------------------------------- 10. production output
+dump            traj all custom {{traj_every}} traj.dump id type x y z ix iy iz v_rad c_frag c_nb
+dump_modify     traj sort id colname v_rad radius colname c_frag cluster colname c_nb nbonds
+
+compute         bpairs all property/local batom1 batom2
+dump            bonds all local {{output_every}} bonds.dump index c_bpairs[1] c_bpairs[2]
+dump_modify     bonds colname c_bpairs[1] atom1 colname c_bpairs[2] atom2
+
+compute         rdf all rdf {{rdf_bins}} 1 2 cutoff {{rdf_cutoff}}
+fix             rdf_out all ave/time {{output_every}} 1 {{output_every}} c_rdf[*] file rdf.dat mode vector
+fix             hist_qt Qt ave/histo {{output_every}} 1 {{output_every}} -0.5 {{hist_qt_max}} {{hist_qt_bins}} c_nb &
+                file coord_qt.hist mode vector
+fix             hist_ft Ft ave/histo {{output_every}} 1 {{output_every}} -0.5 {{hist_ft_max}} {{hist_ft_bins}} c_nb &
+                file coord_ft.hist mode vector
+
+# ---------------------------------------------------------------- 11. production (binding on)
+# a Qt-Ft pair closer than R_bind bonds with probability p = 1 - exp(-k_on dt) per attempt;
+# each atom bonds at most once per attempt (with its closest eligible partner)
+fix             bind all bond/create {{bind_every}} 1 2 {{r_bind}} 1 &
+                iparam {{maxbond_qt}} 1 jparam {{maxbond_ft}} 2 prob {{p_bind}} {{seed_bind}}
+
+run             {{prod_steps}}
+
+# ---------------------------------------------------------------- 12. final state
+write_data      final.data pair ij
+print           "QTFT_DONE"

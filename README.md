@@ -30,6 +30,26 @@ Simulation output is written to `~/qtft-data/` (outside the repository).
 | Path | Purpose |
 |---|---|
 | `control.ipynb` | set all parameters, build the LAMMPS input, run, monitor |
-| `template.lmp` | the LAMMPS input template (model structure, no numbers) |
-| `qtft/` | Python helpers: parameters, input builder, runner, readers |
-| `tests/` | quick checks (`pytest`) |
+| `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
+| `qtft/params.py` | all parameters with defaults, derived values (γ = k_BT/D, α, p, …) and checks |
+| `qtft/build.py` | fills the template → `rep_XX/in.lammps`, writes `params.json`, derives seeds |
+| `qtft/run.py`, `qtft/launcher.py` | start runs in the background, progress, stop |
+| `qtft/read.py` | readers for `log.lammps` (YAML thermo), dumps, `rdf.dat`, histograms |
+| `qtft/quicklook.py` | quick overview plot of a run |
+| `tests/` | quick checks (`pytest`); includes a short end-to-end LAMMPS run |
+
+## Output of one replica (`~/qtft-data/<run name>/rep_XX/`)
+
+| File | Content |
+|---|---|
+| `in.lammps` | generated LAMMPS input, all numbers filled in |
+| `log.lammps` | LAMMPS log; thermo every `output_every` steps in YAML: energies, bonds, free/bound counts, cluster statistics, coordination, bond lengths, speed |
+| `traj.dump` | trajectory for OVITO: `id type x y z ix iy iz radius cluster nbonds` |
+| `bonds.dump` | bond list (`atom1 atom2`) per frame |
+| `rdf.dat` | Qt–Ft radial distribution function per frame |
+| `coord_qt.hist`, `coord_ft.hist` | distribution of bonds per Qt / per Ft per frame |
+| `final.data` | final state incl. all bonds (opens directly in OVITO, can restart a run) |
+| `status`, `lammps.out` | run status and MPI/launcher messages |
+
+In OVITO, `radius`, `cluster` and `nbonds` are read as particle properties; colour by
+`cluster` with the *Color coding* modifier.

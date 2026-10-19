@@ -1,0 +1,122 @@
+"""Readers for the LAMMPS output files of one replica folder."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import yaml
+
+PHASES = ("equilibration", "production")
+
+
+def read_thermo(log_path: str | Path) -> list[pd.DataFrame]:
+    """All YAML thermo blocks of a log.lammps, one DataFrame per `run` command."""
+    blocks, current = [], None
+    for line in Path(log_path).read_text().splitlines():
+        if line == "---":
+            current = []
+        elif line == "..." and current is not None:
+            doc = yaml.safe_load("\n".join(current))
+            blocks.append(pd.DataFrame(doc["data"], columns=doc["keywords"]))
+            current = None
+        elif current is not None:
+            current.append(line)
+    return blocks
+
+
+def last_thermo(log_path: str | Path) -> tuple[str, dict] | None:
+    """(phase, values) of the most recent thermo line, also while a run is in progress."""
+    log_path = Path(log_path)
+    if not log_path.exists():
+        return None
+    keywords, last, n_blocks = None, None, 0
+    for line in log_path.read_text().splitlines():
+        if line.startswith("keywords:"):
+            keywords = yaml.safe_load(line)["keywords"]
+            n_blocks += 1
+        elif line.startswith("  - [") and keywords:
+            last = yaml.safe_load(line.strip())[0]
+    if last is None:
+        return None
+    phase = PHASES[min(n_blocks, 2) - 1]
+    return phase, dict(zip(keywords, last))
+
+
+def load_thermo(rep_dir: str | Path) -> pd.DataFrame:
+    """Production thermo data of a replica with a time column in ms and short column names."""
+    rep_dir = Path(rep_dir)
+    params = json.loads((rep_dir.parent / "params.json").read_text())["params"]
+    blocks = read_thermo(rep_dir / "log.lammps")
+    if len(blocks) < 2:
+        raise ValueError(f"no production data in {rep_dir / 'log.lammps'}")
+    df = blocks[1].rename(columns=lambda c: c.removeprefix("v_").removeprefix("c_"))
+    df.insert(1, "time_ms", df["Step"] * params["timestep"] * 1e-6)
+    return df
+
+
+def read_rdf(path: str | Path) -> dict[int, pd.DataFrame]:
+    """rdf.dat (fix ave/time, mode vector): {step: DataFrame(r, g, coord)}."""
+    frames, lines = {}, Path(path).read_text().splitlines()
+    i = 0
+    while i < len(lines):
+        if lines[i].startswith("#") or not lines[i].strip():
+            i += 1
+            continue
+        step, nrows = map(int, lines[i].split()[:2])
+        rows = np.loadtxt(lines[i + 1:i + 1 + nrows], ndmin=2)
+        frames[step] = pd.DataFrame(rows[:, 1:4], columns=["r", "g", "coord"])
+        i += 1 + nrows
+    return frames
+
+
+def read_histo(path: str | Path) -> pd.DataFrame:
+    """Histogram file of fix ave/histo: rows = steps, columns = bin centres, values = counts."""
+    data, lines = {}, Path(path).read_text().splitlines()
+    i = 0
+    while i < len(lines):
+        if lines[i].startswith("#") or not lines[i].strip():
+            i += 1
+            continue
+        step, nbins = map(int, lines[i].split()[:2])
+        rows = np.loadtxt(lines[i + 1:i + 1 + nbins], ndmin=2)
+        data[step] = pd.Series(rows[:, 2], index=rows[:, 1])
+        i += 1 + nbins
+    return pd.DataFrame(data).T.rename_axis("Step")
+
+
+def read_dump(path: str | Path):
+    """Iterate over frames of traj.dump: yields (step, DataFrame with the dumped columns)."""
+    with open(path) as f:
+        while True:
+            line = f.readline()
+            if not line:
+                return
+            if line.startswith("ITEM: TIMESTEP"):
+                step = int(f.readline())
+                f.readline()
+                n = int(f.readline())
+                for _ in range(4):
+                    f.readline()
+                columns = f.readline().split()[2:]
+                rows = [f.readline().split() for _ in range(n)]
+                yield step, pd.DataFrame(rows, columns=columns).apply(pd.to_numeric)
+
+
+def read_bonds(path: str | Path):
+    """Iterate over frames of bonds.dump: yields (step, int array of shape (n_bonds, 2))."""
+    with open(path) as f:
+        while True:
+            line = f.readline()
+            if not line:
+                return
+            if line.startswith("ITEM: TIMESTEP"):
+                step = int(f.readline())
+                f.readline()
+                n = int(f.readline())
+                for _ in range(5):
+                    f.readline()
+                rows = [f.readline().split()[1:3] for _ in range(n)]
+                yield step, np.array(rows, dtype=int).reshape(n, 2)
