@@ -144,6 +144,9 @@ def load_stats(run_dir: str | Path) -> dict:
 
 
 # ------------------------------------------------------------------ index of all runs
+# settings that do not change the physics; ignored when listing or labelling parameter differences
+TECHNICAL = {"data_dir", "run_name", "n_replicas", "mpi_procs", "max_parallel",
+             "lmp_command", "mpirun_command", "master_seed"}
 INDEX_PARAMS = ("n_qt", "n_ft", "box_length", "k_qq", "k_ff", "k_qf", "bond_k", "k_on",
                 "timestep", "prod_steps", "n_replicas")
 
@@ -152,8 +155,6 @@ def update_index(data_dir: str | Path = "~/qtft-data") -> pd.DataFrame:
     """Rebuild <data_dir>/index.csv: one line per run folder with status and changed parameters."""
     data_dir = Path(os.path.expanduser(data_dir))
     defaults = Params().to_dict()
-    ignore = {"data_dir", "run_name", "n_replicas", "mpi_procs", "max_parallel",
-              "lmp_command", "mpirun_command", "master_seed"}
     rows = []
     for record_file in sorted(data_dir.glob("*/params.json")):
         record = json.loads(record_file.read_text())
@@ -161,7 +162,7 @@ def update_index(data_dir: str | Path = "~/qtft-data") -> pd.DataFrame:
         statuses = [(rep / "status").read_text().strip() if (rep / "status").exists() else "?"
                     for rep in sorted(record_file.parent.glob("rep_*"))]
         changed = [f"{k}={v}" for k, v in params.items()
-                   if k not in ignore and v != defaults.get(k)]
+                   if k not in TECHNICAL and v != defaults.get(k)]
         rows.append({
             "run": record_file.parent.name,
             "created": record.get("created"),
@@ -176,18 +177,26 @@ def update_index(data_dir: str | Path = "~/qtft-data") -> pd.DataFrame:
     return df
 
 
-def compare(run_dirs: list[str | Path]) -> pd.DataFrame:
-    """Side-by-side final-state table (mean +- SD) of several runs, with the parameters that differ."""
+def differing_labels(run_dirs) -> tuple[list[str], list[str]]:
+    """Labels of runs built from the physical parameters that differ between them."""
     run_dirs = [Path(r).expanduser() for r in run_dirs]
     params = [Params.load(r / "params.json") for r in run_dirs]
     differing = [f.name for f in dataclasses.fields(Params)
-                 if f.name not in ("run_name", "data_dir")
+                 if f.name not in TECHNICAL
                  and len({json.dumps(getattr(q, f.name)) for q in params}) > 1]
+    labels = [", ".join(f"{k}={getattr(q, k)}" for k in differing) or r.name
+              for r, q in zip(run_dirs, params)]
+    return labels, differing
+
+
+def compare(run_dirs: list[str | Path]) -> pd.DataFrame:
+    """Side-by-side final-state table (mean +- SD) of several runs, with the parameters that differ."""
+    run_dirs = [Path(r).expanduser() for r in run_dirs]
+    labels, differing = differing_labels(run_dirs)
     cols = {}
-    for r, q in zip(run_dirs, params):
+    for r, label in zip(run_dirs, labels):
         stats_file = r / "analysis" / "ensemble_stats.json"
         final = load_stats(r)["final"] if stats_file.exists() else ensemble_stats(r)["final"]
-        label = ", ".join(f"{k}={getattr(q, k)}" for k in differing) or r.name
         cols[label] = final.apply(lambda row: f"{row['mean']:.4g} ± {row['sd']:.2g}", axis=1)
     table = pd.DataFrame(cols)
     table.attrs["differing parameters"] = differing

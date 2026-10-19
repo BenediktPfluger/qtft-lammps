@@ -24,3 +24,5 @@ dependencies:
   # development
   - pytest
   - nbstripout
+  - pip:
+      - ovito          # OVITO Python module (cluster geometry, unwrapping across periodic boundaries)
