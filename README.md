@@ -30,7 +30,8 @@ Simulation output is written to `~/qtft-data/` (outside the repository).
 | Path | Purpose |
 |---|---|
 | `control.ipynb` | set all parameters, build the LAMMPS input, run, monitor |
-| `analysis.ipynb` | ensemble statistics, structure and overlap analysis, figures and tables, comparison of runs |
+| `analysis.ipynb` | ensemble statistics, structure and overlap analysis, figures and tables, comparison of runs, FIB-SEM export |
+| `docs/decisions.md` | model and project decisions with reasons, status of the implementation |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
 | `qtft/params.py` | all parameters with defaults, derived values (γ = k_BT/D, α, p, …) and checks |
 | `qtft/build.py` | fills the template → `rep_XX/in.lammps`, writes `params.json`, derives seeds |
@@ -41,6 +42,7 @@ Simulation output is written to `~/qtft-data/` (outside the repository).
 | `qtft/structure.py` | cluster geometry with OVITO (clusters from bonds, unwrapped across the periodic box): Rg, compactness, centres, nearest-neighbour distances, composition |
 | `qtft/overlap.py` | interpenetration diagnostics per pair family |
 | `qtft/figures.py` | Nature-style figures (overview, kinetics, large agglomerates, overlap, journal panels g–j, comparison), final-state table (CSV + LaTeX), `make_report` |
+| `qtft/fibsem.py` | export of the final frame in the FIB-SEM segmentation schema (encapsulins, clusters from bonds, unwrapped) |
 | `qtft/benchmark.py` | performance measurement (MPI processes per replica, replicas in parallel) and sizing of `extra_special` |
 | `tests/` | quick checks (`pytest`); includes a short end-to-end LAMMPS run |
 

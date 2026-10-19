@@ -110,3 +110,32 @@ def test_report_and_comparison(runs, tmp_path):
 
     cmp_dir = compare_report(runs, tmp_path / "cmp")
     assert (cmp_dir / "comparison.pdf").exists() and (cmp_dir / "comparison_table.tex").exists()
+
+
+def test_fibsem_export(runs):
+    import json
+
+    from qtft.fibsem import fibsem_export
+
+    rep = runs[0] / "rep_01"
+    p = Params.load(runs[0] / "params.json")
+    out = fibsem_export(rep, voxel_nm=4.0)
+    table = pd.read_csv(out / "sim_encapsulin_centroids_clustered.csv")
+    meta = json.loads((out / "sim_metadata.json").read_text())
+    assert (out / "check_xy.png").exists()
+
+    assert list(table.columns) == ["label", "z_nm", "y_nm", "x_nm", "z_vox", "y_vox", "x_vox",
+                                   "radius_nm", "volume_nm3", "cluster", "is_clustered"]
+    assert len(table) == p.n_qt and list(table["label"]) == list(range(1, p.n_qt + 1))
+    assert (table[["x_nm", "y_nm", "z_nm"]] >= p.radius_qt - 1e-9).all().all()   # spheres start at 0
+    assert np.allclose(table["x_vox"] * 4.0, table["x_nm"])
+    assert meta["bond_check"]["failed"] == 0 and meta["n_encapsulins"] == p.n_qt
+
+    # same grouping of encapsulins as the LAMMPS clusters of the final frame; a Qt is clustered
+    # exactly when it has at least one bond
+    _, atoms = list(read_dump(rep / "traj.dump"))[-1]
+    qt = atoms[atoms["type"] == 1].sort_values("id").reset_index(drop=True)
+    pairs = pd.DataFrame({"ours": table["cluster"], "lammps": qt["cluster"]})
+    assert pairs.groupby("ours")["lammps"].nunique().max() == 1
+    assert pairs.groupby("lammps")["ours"].nunique().max() == 1
+    assert (table["is_clustered"].to_numpy() == (qt["nbonds"] > 0).to_numpy()).all()

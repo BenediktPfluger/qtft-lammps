@@ -20,9 +20,10 @@ from .read import read_bonds
 PACKING = 0.64          # random close packing, for the ideal compact sphere
 
 
-def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True):
+def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True, last_only: bool = False):
     """Yield (step, OVITO DataCollection) for every `every`-th frame of traj.dump (always including
-    the last one if `last`), with bonds from bonds.dump and bond-based cluster analysis applied.
+    the last one if `last`; only the last one if `last_only`), with bonds from bonds.dump and
+    bond-based cluster analysis applied.
 
     Afterwards `data.particles.positions` are unwrapped per cluster, `data.particles['Cluster']`
     is the cluster index (largest first) and `data.tables['clusters']` holds size, centre of mass
@@ -34,7 +35,7 @@ def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True):
     rep_dir = Path(rep_dir)
     pipeline = import_file(str(rep_dir / "traj.dump"))
     n = pipeline.source.num_frames
-    frames = list(range(0, n, every))
+    frames = [n - 1] if last_only else list(range(0, n, every))
     if last and frames[-1] != n - 1:
         frames.append(n - 1)
     steps = {pipeline.source.compute(f).attributes["Timestep"]: f for f in frames}
