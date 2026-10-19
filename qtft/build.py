@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .ensemble import update_index
 from .params import Params
 
 REPO_DIR = Path(__file__).resolve().parent.parent
@@ -115,6 +116,7 @@ def build_run(p: Params, overwrite: bool = False) -> Path:
         "created": datetime.datetime.now().isoformat(timespec="seconds"),
     }
     (run_dir / "params.json").write_text(json.dumps(record, indent=2, default=str))
+    update_index(p.data_dir)
     return run_dir
 
 

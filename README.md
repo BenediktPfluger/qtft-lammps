@@ -30,12 +30,14 @@ Simulation output is written to `~/qtft-data/` (outside the repository).
 | Path | Purpose |
 |---|---|
 | `control.ipynb` | set all parameters, build the LAMMPS input, run, monitor |
+| `analysis.ipynb` | ensemble statistics, comparison of runs |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
 | `qtft/params.py` | all parameters with defaults, derived values (γ = k_BT/D, α, p, …) and checks |
 | `qtft/build.py` | fills the template → `rep_XX/in.lammps`, writes `params.json`, derives seeds |
 | `qtft/run.py`, `qtft/launcher.py` | start runs in the background, progress, stop |
 | `qtft/read.py` | readers for `log.lammps` (YAML thermo), dumps, `rdf.dat`, histograms |
 | `qtft/quicklook.py` | quick overview plot of a run |
+| `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, `index.csv` of all runs, comparison of runs |
 | `qtft/benchmark.py` | performance measurement (MPI processes per replica, replicas in parallel) and sizing of `extra_special` |
 | `tests/` | quick checks (`pytest`); includes a short end-to-end LAMMPS run |
 
