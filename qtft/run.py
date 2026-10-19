@@ -62,10 +62,10 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
     cmd = [sys.executable, "-m", "qtft.launcher", str(run_dir)]
     pkg_root = str(Path(__file__).resolve().parent.parent)
     env = {**os.environ, "PYTHONPATH": pkg_root + os.pathsep + os.environ.get("PYTHONPATH", "")}
-    if wait:
-        subprocess.run(cmd, env=env, check=True)
-        return
     with open(run_dir / "launcher.log", "a") as log:
+        if wait:
+            subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+            return
         proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL, start_new_session=True)
     (run_dir / "launcher.pid").write_text(str(proc.pid))

@@ -36,6 +36,7 @@ Simulation output is written to `~/qtft-data/` (outside the repository).
 | `qtft/run.py`, `qtft/launcher.py` | start runs in the background, progress, stop |
 | `qtft/read.py` | readers for `log.lammps` (YAML thermo), dumps, `rdf.dat`, histograms |
 | `qtft/quicklook.py` | quick overview plot of a run |
+| `qtft/benchmark.py` | performance measurement (MPI processes per replica, replicas in parallel) and sizing of `extra_special` |
 | `tests/` | quick checks (`pytest`); includes a short end-to-end LAMMPS run |
 
 ## Output of one replica (`~/qtft-data/<run name>/rep_XX/`)
