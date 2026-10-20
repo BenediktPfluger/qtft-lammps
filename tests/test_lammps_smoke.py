@@ -55,3 +55,16 @@ def test_tiny_system(tmp_path):
     # bond counts per atom match
     counts = np.bincount(bonds.ravel(), minlength=atoms["id"].max() + 1)
     assert np.array_equal(counts[atoms["id"]], atoms["nbonds"].to_numpy())
+
+    # type labels: names in the files, numeric types 1 = Qt, 2 = Ft after reading
+    assert "ITEM: ATOMS id type" in (rep / "traj.dump").read_text()
+    assert " Qt " in (rep / "traj.dump").read_text() and " Ft " in (rep / "traj.dump").read_text()
+    assert "Atom Type Labels" in (rep / "final.data").read_text()
+    assert set(atoms.loc[atoms["id"] <= p.n_qt, "type"]) == {1}      # Qt are created first
+    assert set(atoms.loc[atoms["id"] > p.n_qt, "type"]) == {2}
+
+    from qtft.structure import load_frames, particle_types
+    _, data = next(load_frames(rep, last_only=True))
+    ovito_types = dict(zip(np.asarray(data.particles["Particle Identifier"]), particle_types(data)))
+    assert all(ovito_types[i] == t for i, t in zip(atoms["id"], atoms["type"]))
+    assert {t.name for t in data.particles.particle_types.types} == {"Qt", "Ft"}

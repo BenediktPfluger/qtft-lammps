@@ -10,6 +10,7 @@ import pandas as pd
 import yaml
 
 PHASES = ("equilibration", "production")
+TYPE_IDS = {"Qt": 1, "Ft": 2}   # type labels in traj.dump -> numeric atom types
 
 
 def read_thermo(log_path: str | Path) -> list[pd.DataFrame]:
@@ -88,7 +89,10 @@ def read_histo(path: str | Path) -> pd.DataFrame:
 
 
 def read_dump(path: str | Path):
-    """Iterate over frames of traj.dump: yields (step, DataFrame with the dumped columns)."""
+    """Iterate over frames of traj.dump: yields (step, DataFrame with the dumped columns).
+
+    Type labels (Qt, Ft) are converted to the numeric types 1, 2; older numeric dumps read the same.
+    """
     with open(path) as f:
         while True:
             line = f.readline()
@@ -102,7 +106,10 @@ def read_dump(path: str | Path):
                     f.readline()
                 columns = f.readline().split()[2:]
                 rows = [f.readline().split() for _ in range(n)]
-                yield step, pd.DataFrame(rows, columns=columns).apply(pd.to_numeric)
+                df = pd.DataFrame(rows, columns=columns)
+                if "type" in df:
+                    df["type"] = df["type"].replace(TYPE_IDS)
+                yield step, df.apply(pd.to_numeric)
 
 
 def read_bonds(path: str | Path):

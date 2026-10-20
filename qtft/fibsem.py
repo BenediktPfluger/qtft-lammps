@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 
 from .params import Params
-from .structure import load_frames
+from .structure import load_frames, particle_types
 
 BOND_TOLERANCE = 1.5          # a bond may be at most 1.5 x contact distance long
 MAX_FAILED_FRACTION = 0.05    # abort the export if more bonds fail
@@ -36,7 +36,7 @@ def fibsem_export(rep_dir: str | Path, voxel_nm: float = 4.0, plot: bool = True)
     step, data = next(load_frames(rep_dir, last_only=True))
 
     ids = np.asarray(data.particles["Particle Identifier"])
-    types = np.asarray(data.particles["Particle Type"])
+    types = particle_types(data)
     pos = np.asarray(data.particles.positions, dtype=float)               # unwrapped per cluster
     cluster = np.asarray(data.particles["Cluster"])
     sizes = np.asarray(data.tables["clusters"]["Cluster Size"])

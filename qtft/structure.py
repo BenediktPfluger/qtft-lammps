@@ -15,7 +15,7 @@ import pandas as pd
 from scipy.spatial import cKDTree
 
 from .params import Params
-from .read import read_bonds
+from .read import TYPE_IDS, read_bonds
 
 PACKING = 0.64          # random close packing, for the ideal compact sphere
 
@@ -57,8 +57,21 @@ def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True, last_onl
         # minimum-image shift of every bond (bond vector = x_b - x_a + box * shift)
         new.create_property("Periodic Image",
                             data=-np.round((pos[pairs[:, 1]] - pos[pairs[:, 0]]) / box).astype(np.int32))
+        # equal weights for centre of mass and Rg; OVITO would otherwise take per-type masses from
+        # the type names (it reads "Ft" as fluorine)
+        data.particles_.create_property("Mass", data=np.ones(len(ids)))
         data.apply(modifier)
         yield step, data
+
+
+def particle_types(data) -> np.ndarray:
+    """Numeric type of every particle (1 = Qt, 2 = Ft), for named (Qt, Ft) and numeric dumps alike."""
+    ptypes = data.particles.particle_types
+    raw = np.asarray(ptypes)
+    lut = np.arange(max([t.id for t in ptypes.types] + [int(raw.max()) if len(raw) else 0]) + 1)
+    for t in ptypes.types:
+        lut[t.id] = TYPE_IDS.get(t.name, t.id)
+    return lut[raw]
 
 
 def cluster_table(data, p: Params) -> pd.DataFrame:
@@ -66,7 +79,7 @@ def cluster_table(data, p: Params) -> pd.DataFrame:
     t = data.tables["clusters"]
     size = np.asarray(t["Cluster Size"])
     cl = np.asarray(data.particles["Cluster"]) - 1                  # 0-based cluster index
-    is_qt = np.asarray(data.particles["Particle Type"]) == 1
+    is_qt = particle_types(data) == 1
     n_qt = np.bincount(cl, weights=is_qt, minlength=len(size)).astype(int)
     topo = np.asarray(data.particles.bonds.topology) if data.particles.bonds is not None else np.empty((0, 2), int)
     n_bonds = np.bincount(cl[topo[:, 0]], minlength=len(size)) if len(topo) else np.zeros(len(size), int)
