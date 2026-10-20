@@ -411,6 +411,42 @@ def fig_overlap(run: RunData, out_dir: Path | None = None):
     return fig
 
 
+SWEEP_LABELS = {
+    "final_frac_bound": "fraction bound (final)", "final_Bonds": "bonds (final)",
+    "final_largest_frac": "largest cluster (fraction of particles, final)",
+    "final_mean_size": "mean cluster size (final)", "t_half_bonds_ms": "half-time of bonds (ms)",
+    "t_half_qt_ms": "half-time Qt bound (ms)", "t_half_ft_ms": "half-time Ft bound (ms)",
+    "t_percolation_ms": "percolation time (ms)",
+}
+
+
+def sweep_plot(results: pd.DataFrame, y: str = "final_frac_bound", x: str | None = None,
+               out_dir: Path | None = None):
+    """A result of `sweep_results` (mean +- SD over replicas) against one swept parameter (default: the
+    first); one line per combination of the other swept parameters (89 mm)."""
+    swept = results.attrs.get("swept") or []
+    x = x or swept[0]
+    others = [k for k in swept if k != x]
+    with plt.rc_context(STYLE):
+        fig = _figure(SINGLE, 60 * MM)
+        ax = fig.add_subplot()
+        groups = results.groupby(others, sort=False) if others else [((), results)]
+        for i, (key, df) in enumerate(groups):
+            key = key if isinstance(key, tuple) else (key,)
+            df = df.sort_values(x)
+            label = ", ".join(f"{k} = {v:g}" if isinstance(v, (int, float)) else f"{k} = {v}"
+                              for k, v in zip(others, key)) or None
+            ax.errorbar(df[x], df[y], yerr=df.get(f"{y} sd"), marker="o", ms=3, capsize=2,
+                        color=RUN_COLORS[i % len(RUN_COLORS)], label=label)
+        ax.set_xlabel(x)
+        ax.set_ylabel(SWEEP_LABELS.get(y, y))
+        if others:
+            ax.legend()
+        if out_dir:
+            save(fig, out_dir / f"sweep_{y}")
+    return fig
+
+
 JOURNAL = [("g", p_counts), ("h", p_categories), ("i", p_mean_size), ("j", p_largest)]
 
 

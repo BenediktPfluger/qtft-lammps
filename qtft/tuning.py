@@ -6,8 +6,9 @@ fix brownian widens it by 1 / (1 - alpha/2), with alpha = 2 k dt (1/gamma_i + 1/
 (`Params.alpha`). The mean depth of overlapping pairs is sigma * sqrt(2/pi). At a fixed time step
 the overlap is smallest at alpha = 1; at a fixed alpha it scales with sqrt(dt).
 
-`alpha_sweep(p, alphas)` builds one run per target alpha (all four constants set to reach it),
-`sweep_table(run_dirs)` compares measured and predicted overlap and the binding kinetics.
+`alpha_sweep(p, {500.0: alphas})` builds one run per time step and target alpha (all four constants
+set to reach it) as a sweep, run with `start(sweep_dir)` through one queue;
+`sweep_table(sweep_dir)` compares measured and predicted overlap and the binding kinetics.
 """
 
 from __future__ import annotations
@@ -18,10 +19,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from .build import build_run
 from .ensemble import ensemble_stats
 from .overlap import overlap_ensemble
-from .params import Params, data_path
+from .params import Params
+from .sweep import build_sweep_from, is_sweep, sweep_runs
 
 
 def _gammas(p: Params) -> dict:
@@ -46,28 +47,31 @@ def predicted_overlap(p: Params) -> pd.Series:
     return pd.Series(out, name="predicted depth [nm]")
 
 
-def alpha_sweep(p: Params, alphas, timestep: float | None = None, prod_steps: int | None = None,
-                name: str = "sweep", overwrite: bool = False) -> list[Path]:
-    """Build one run per target alpha from the base parameters `p` (not started).
-
-    timestep/prod_steps override those of `p` (e.g. a smaller time step with more steps).
-    Runs go to <data_dir>/tuning/<name>/alpha<a>_dt<dt>ns/.
+def alpha_sweep(p: Params, alphas: dict[float, list], name: str = "sweep", overwrite: bool = False) -> Path:
+    """Build one run per time step and target alpha from the base parameters `p` (not started),
+    e.g. alphas = {500.0: [0.3, 0.7, 0.9], 250.0: [0.9]}. Equilibration and production steps are
+    scaled with the time step, so every run covers the same simulated time as `p`.
+    Runs go to <data_dir>/tuning/<name>/alpha<a>_dt<dt>ns/; start them with start(sweep_dir).
     """
-    q = dataclasses.replace(p, timestep=timestep or p.timestep, prod_steps=prod_steps or p.prod_steps)
-    run_dirs = []
-    for a in alphas:
-        r = dataclasses.replace(q, **constants_for_alpha(q, a), group="tuning",
-                                run_name=f"{name}/alpha{a:g}_dt{q.timestep:g}ns")
-        run_dirs.append(build_run(r, overwrite=overwrite))
-    return run_dirs
+    overrides, labels = [], []
+    for dt, values in alphas.items():
+        steps = {"timestep": dt, "equil_steps": round(p.equil_steps * p.timestep / dt),
+                 "prod_steps": round(p.prod_steps * p.timestep / dt)}
+        for a in values:
+            overrides.append({**steps, **constants_for_alpha(dataclasses.replace(p, timestep=dt), a)})
+            labels.append(f"alpha{a:g}_dt{dt:g}ns")
+    return build_sweep_from(p, overrides, labels, group=f"tuning/{name}", overwrite=overwrite,
+                            info={"name": name, "mode": "alpha", "alphas": {str(k): v for k, v in alphas.items()}})
 
 
-def sweep_table(run_dirs, every: int = 5, last_frames: int = 10, name: str = "sweep") -> pd.DataFrame:
+def sweep_table(sweep, every: int = 5, last_frames: int = 10) -> pd.DataFrame:
     """One row per run and pair family: alpha, k, predicted and measured overlap (mean over the
     last `last_frames` analysed frames of all replicas), final fraction bound and half-time of
-    bonds. Saved to <data_dir>/tuning/<name>/sweep_summary.csv."""
+    bonds. `sweep` is a sweep folder (or a list of run folders of one sweep). Saved to
+    sweep_summary.csv in the sweep folder."""
+    run_dirs = sweep_runs(sweep) if is_sweep(sweep) else [Path(r) for r in sweep]
     rows = []
-    for run_dir in map(Path, run_dirs):
+    for run_dir in run_dirs:
         p = Params.load(run_dir / "params.json")
         measured = overlap_ensemble(run_dir, every=every, last_frames=last_frames)["final"]
         final = ensemble_stats(run_dir)["final"]["mean"]
@@ -86,7 +90,5 @@ def sweep_table(run_dirs, every: int = 5, last_frames: int = 10, name: str = "sw
                 "t_half bonds [ms]": final["t_half_bonds_ms"],
             })
     df = pd.DataFrame(rows)
-    out = data_path(Params.load(Path(run_dirs[0]) / "params.json").data_dir) / "tuning" / name
-    out.mkdir(parents=True, exist_ok=True)
-    df.to_csv(out / "sweep_summary.csv", index=False)
+    df.to_csv(run_dirs[0].parent / "sweep_summary.csv", index=False)
     return df

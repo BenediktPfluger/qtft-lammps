@@ -2,7 +2,7 @@
 
 All simulation output is written to the data folder (default `runs/` inside the repository;
 gitignored, never committed). Runs with one replica go to `single/`, runs with several replicas to
-`ensemble/`. This page lists every file, what it contains and what creates it.
+`ensemble/`, parameter sweeps to `sweeps/`. This page lists every file, what it contains and what creates it.
 
 **Created by** means:
 
@@ -26,15 +26,19 @@ runs/
 │       │   ├── traj.dump, bonds.dump, rdf.dat, coord_qt.hist, coord_ft.hist, final.data
 │       │   └── fibsem/            only after the FIB-SEM export
 │       └── analysis/              only after the analysis
+├── sweeps/                        only after build_sweep()
+│   └── <sweep name>/
+│       ├── sweep.json, launcher.log, launcher.pid, sweep_results.csv
+│       └── <label>/               one run folder per combination (structure as above)
 ├── benchmark/                     only after benchmark()
-└── tuning/                        only after alpha_sweep()
+└── tuning/                        only after alpha_sweep() (same structure as sweeps/)
 ```
 
 ## Data folder `runs/`
 
 | File | Content | Created by |
 |---|---|---|
-| `index.csv` | One line per single and ensemble run: group (`single`/`ensemble`), name, date, status counts, key parameters, parameters that differ from the defaults, git commit | Python, automatic: `build_run()` and whenever a replica finishes |
+| `index.csv` | One line per single, ensemble and sweep run: group (`single`/`ensemble`/`sweeps/<name>`), name, date, status counts, key parameters, parameters that differ from the defaults, git commit | Python, automatic: `build_run()` and whenever a replica finishes |
 
 The folder and its `single/` / `ensemble/` subfolders are created by `build_run()` if they do not
 exist. The subfolder follows from `n_replicas`; the `group` parameter overrides it.
@@ -138,15 +142,27 @@ Comparisons of several runs (`compare_report(runs, out_dir)`) are written to the
 
 ## Benchmark `runs/benchmark/`
 
-Only after `benchmark()` (control notebook, section 5). One folder per measurement, named after the
+Only after `benchmark()` (control notebook, section 6). One folder per measurement, named after the
 number of hardware threads filled (`16cores/`, `8cores/`), each with one short run folder per tested
 setting (same structure as above) and `results.csv` with speed, timing breakdown and projected run
 times. Benchmark runs are not listed in `index.csv`.
 
+## Parameter sweep `runs/sweeps/<sweep name>/`
+
+Only after `build_sweep()` (control notebook, section 4). One run folder per combination of the listed values,
+named after the swept values only (e.g. `temperature300_k_on2e-06/`), with the same structure as a run folder
+above, except that the launcher files belong to the whole sweep.
+
+| File | Content | Created by |
+|---|---|---|
+| `sweep.json` | **The record of the sweep**: name, mode (`grid`), the listed values per parameter, base parameters, label and parameter values of every run, git commit, creation time | Python: `build_sweep()` |
+| `launcher.log`, `launcher.pid` | As for a run, for all replicas of the sweep (one queue); replicas are named `<label>/rep_XX` | Python: `start(sweep)` |
+| `sweep_results.csv` | One row per run: swept parameters, number of finished replicas, mean and SD over them of final fraction bound, bonds, largest cluster fraction, mean cluster size, half-times (bonds, Qt, Ft bound; ms), percolation time and number of percolated replicas | Python: `sweep_results()` (analysis notebook, section 6) |
+
 ## Force-constant sweep `runs/tuning/`
 
-Only after `alpha_sweep()` (control notebook, section 6). One folder per sweep (default `sweep/`), with one
-run folder per setting, named `alpha<α>_dt<Δt>ns/` (same structure as above, including `analysis/` after the
-evaluation), and `sweep_summary.csv` from `sweep_table()`: one row per run and pair family with α, force
+Only after `alpha_sweep()` (control notebook, section 7). One folder per sweep (default `sweep/`) with
+`sweep.json`, `launcher.log` and `launcher.pid` as for a parameter sweep, one run folder per setting, named
+`alpha<α>_dt<Δt>ns/` (same structure as above, including `analysis/` after the evaluation), and `sweep_summary.csv` from `sweep_table()`: one row per run and pair family with α, force
 constant, predicted and measured overlap depth (mean, 95th percentile, max; nm), fraction of pairs
 overlapping, final fraction bound and half-time of bonds. Sweep runs are not listed in `index.csv`.

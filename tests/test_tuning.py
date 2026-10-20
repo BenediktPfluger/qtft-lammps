@@ -2,7 +2,7 @@ import shutil
 
 import pytest
 
-from qtft import Params, start
+from qtft import Params, start, sweep_runs
 from qtft.tuning import alpha_sweep, constants_for_alpha, predicted_overlap, sweep_table
 
 
@@ -24,12 +24,13 @@ def test_predicted_overlap():
 def test_sweep_end_to_end(tmp_path):
     base = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, prod_steps=2000,
                   output_every=500, traj_every=500, n_replicas=1, data_dir=str(tmp_path))
-    runs = alpha_sweep(base, [0.3, 0.9])
-    assert [r.name for r in runs] == ["alpha0.3_dt500ns", "alpha0.9_dt500ns"]
-    assert runs[0].parent == tmp_path / "tuning" / "sweep"
-    for r in runs:
-        start(r, wait=True)
-    table = sweep_table(runs, every=1, last_frames=2)
-    assert len(table) == 6 and (tmp_path / "tuning" / "sweep" / "sweep_summary.csv").exists()
+    sweep = alpha_sweep(base, {500.0: [0.3, 0.9], 250.0: [0.9]})
+    runs = sweep_runs(sweep)
+    assert [r.name for r in runs] == ["alpha0.3_dt500ns", "alpha0.9_dt500ns", "alpha0.9_dt250ns"]
+    assert sweep == tmp_path / "tuning" / "sweep"
+    assert Params.load(runs[2] / "params.json").prod_steps == 4000                # same simulated time
+    start(sweep, wait=True)
+    table = sweep_table(sweep, every=1, last_frames=2)
+    assert len(table) == 9 and (sweep / "sweep_summary.csv").exists()
     assert table.groupby("run")["alpha"].first().to_dict() == pytest.approx(
-        {"alpha0.3_dt500ns": 0.3, "alpha0.9_dt500ns": 0.9})
+        {"alpha0.3_dt500ns": 0.3, "alpha0.9_dt500ns": 0.9, "alpha0.9_dt250ns": 0.9})

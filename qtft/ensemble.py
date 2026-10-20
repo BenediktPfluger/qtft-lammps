@@ -151,14 +151,15 @@ INDEX_PARAMS = ("n_qt", "n_ft", "box_length", "k_qq", "k_ff", "k_qf", "bond_k", 
 
 
 def update_index(data_dir: str | Path = "runs") -> pd.DataFrame:
-    """Rebuild <data_dir>/index.csv: one line per run folder (single and ensemble) with status
-    and changed parameters."""
+    """Rebuild <data_dir>/index.csv: one line per run folder (single, ensemble and sweep runs) with
+    status and changed parameters."""
     data_dir = data_path(data_dir)
     defaults = Params().to_dict()
     rows = []
-    for record_file in sorted(data_dir.glob("*/*/params.json")):
-        if record_file.parent.parent.name not in ("single", "ensemble"):
-            continue
+    records = [f for f in sorted(data_dir.glob("*/*/params.json"))
+               if f.parent.parent.name in ("single", "ensemble")]
+    records += sorted(data_dir.glob("sweeps/*/*/params.json"))
+    for record_file in records:
         record = json.loads(record_file.read_text())
         params = record["params"]
         statuses = [(rep / "status").read_text().strip() if (rep / "status").exists() else "?"
@@ -166,7 +167,7 @@ def update_index(data_dir: str | Path = "runs") -> pd.DataFrame:
         changed = [f"{k}={v}" for k, v in params.items()
                    if k not in TECHNICAL and v != defaults.get(k)]
         rows.append({
-            "group": record_file.parent.parent.name,
+            "group": record_file.parent.parent.relative_to(data_dir).as_posix(),
             "run": record_file.parent.name,
             "created": record.get("created"),
             "status": ", ".join(f"{s}:{statuses.count(s)}" for s in sorted(set(statuses))),

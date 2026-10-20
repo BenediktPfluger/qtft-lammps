@@ -27,8 +27,8 @@ agglomeration. Before making changes, read `README.md` (layout, usage), `docs/de
   - The notebooks call the public functions exported in `qtft/__init__.py`; keep their signatures
     stable, or update the notebooks too.
 - Simulation output goes to `runs/` inside the repo (gitignored, never committed):
-  `single/` for one replica, `ensemble/` for several, `benchmark/` for performance runs,
-  `tuning/` for force-constant sweeps.
+  `single/` for one replica, `ensemble/` for several, `sweeps/` for parameter sweeps,
+  `benchmark/` for performance runs, `tuning/` for force-constant sweeps.
 
 ## Workflow
 

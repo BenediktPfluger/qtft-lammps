@@ -51,8 +51,17 @@ and run length are chosen per run in the control notebook; there is no reference
   when the model changes.
 - Simulation output lives in `runs/` inside the repository but gitignored: runs with one replica
   in `runs/single/<run name>/`, runs with several in `runs/ensemble/<run name>/`, benchmarks in
-  `runs/benchmark/`, force-constant sweeps in `runs/tuning/`. `params.json` is the record of a run, `rep_XX/` holds the replicas,
-  `analysis/` the results; `runs/index.csv` lists all single and ensemble runs.
+  `runs/benchmark/`, force-constant sweeps in `runs/tuning/`, parameter sweeps in `runs/sweeps/<name>/<label>/`.
+  `params.json` is the record of a run, `rep_XX/` holds the replicas, `analysis/` the results;
+  `runs/index.csv` lists all single, ensemble and sweep runs.
+- Parameter sweeps (`qtft/sweep.py`): a grid of every combination of the listed values, built from the base
+  `Params` of the parameter cell (one value per parameter); the label of a run names only the swept values
+  (`temperature300_k_on2e-06`). Derived quantities are not adapted (a different temperature or time step
+  changes α). Execution settings (`n_replicas`, `mpi_procs`, `max_parallel`, `master_seed`, …) cannot be
+  swept. All variants use the same seeds (common random numbers), so differences between variants come from
+  the parameters rather than from noise. All replicas of a sweep run through one launcher and one queue, at
+  most `max_parallel` at once, replica-major (replica 1 of every variant first), so every variant gives a
+  first result early. The force-constant sweep (`alpha_sweep`) uses the same mechanism.
 - Notebooks are committed without outputs (`nbstripout`).
 - Commits are authored as Benedikt Pfluger <benedikt.pfluger@tum.de>; no co-author or
   "generated with" lines in commits.
@@ -100,7 +109,7 @@ depth) driven by thermal noise, so the mean depth of overlapping pairs is
 with k: at a fixed time step the overlap is smallest at α ≈ 1; at a fixed α it scales with √Δt
 (`qtft/tuning.py`: `predicted_overlap`, `constants_for_alpha`).
 
-Sweep 2026-10-20 (`runs/tuning/sweep/`, control notebook section 6): 400 Qt / 1000 Ft in 928.3 nm (production
+Sweep 2026-10-20 (`runs/tuning/sweep/`, control notebook section 7): 400 Qt / 1000 Ft in 928.3 nm (production
 concentration), 50 ms, 3 replicas per setting, all four constants (k_qq, k_ff, k_qf, bond_k) set to the same α.
 
 | α | Δt (ns) | k Qt–Qt / Ft–Ft / Qt–Ft (zJ/nm²) | mean depth Qt–Qt / Ft–Ft / Qt–Ft (nm) | predicted Qt–Ft (nm) | fraction bound at 10 / 50 ms |

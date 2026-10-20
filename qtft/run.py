@@ -7,6 +7,9 @@ built -> queued -> running -> done | failed | stopped.
 
 `watch(run_dir)` follows a run live in the notebook; the launcher writes the same summary to
 `launcher.log` (follow it in a terminal with `tail -f launcher.log`).
+
+All functions also take a sweep folder (with sweep.json, see sweep.py): its runs share one launcher
+and one queue, so at most `max_parallel` replicas of the whole sweep run at once.
 """
 
 from __future__ import annotations
@@ -36,6 +39,30 @@ def _replicas(run_dir: Path) -> list[Path]:
     return sorted(p for p in run_dir.glob("rep_*") if p.is_dir())
 
 
+def _runs(path: Path) -> list[Path]:
+    """Run folders behind a target: the runs of a sweep folder, or the run folder itself."""
+    if (path / "sweep.json").exists():
+        return [path / r["label"] for r in json.loads((path / "sweep.json").read_text())["runs"]]
+    return [path]
+
+
+def _all_replicas(path: Path) -> list[Path]:
+    """Replicas of all runs of a target, replica-major (rep_01 of every run first, then rep_02, ...)."""
+    per_run = [_replicas(r) for r in _runs(path)]
+    return [reps[i] for i in range(max(map(len, per_run), default=0)) for reps in per_run if i < len(reps)]
+
+
+def _launcher_pid(path: Path) -> Path:
+    """launcher.pid of a target; a run inside a sweep is run by the sweep's launcher."""
+    if not (path / "launcher.pid").exists() and (path.parent / "sweep.json").exists():
+        return path.parent / "launcher.pid"
+    return path / "launcher.pid"
+
+
+def _rep_name(path: Path, rep: Path) -> str:
+    return rep.name if rep.parent == path else f"{rep.parent.name}/{rep.name}"
+
+
 def _status(rep: Path) -> str:
     f = rep / "status"
     return f.read_text().strip() if f.exists() else "unknown"
@@ -58,11 +85,12 @@ def _command(params: dict) -> list[str]:
 
 
 def start(run_dir: str | Path, wait: bool = False) -> None:
-    """Run all replicas of a built run folder in the background (or in the foreground with wait=True)."""
+    """Run all replicas of a built run folder or sweep in the background (or in the foreground with
+    wait=True)."""
     run_dir = Path(run_dir).expanduser()
-    params = _record(run_dir)["params"]
-    reps = _replicas(run_dir)
-    busy = [r.name for r in reps if _status(r) in ("queued", "running")]
+    params = _record(_runs(run_dir)[0])["params"]
+    reps = _all_replicas(run_dir)
+    busy = [_rep_name(run_dir, r) for r in reps if _status(r) in ("queued", "running")]
     if busy:
         raise RuntimeError(f"replicas already queued/running: {busy}")
     for rep in reps:
@@ -87,10 +115,11 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
 
 
 def stop(run_dir: str | Path) -> None:
-    """Stop the launcher and all running replicas of a run."""
+    """Stop the launcher and all running replicas of a run or sweep. A single run inside a running
+    sweep stops only its own replicas; the sweep continues with the others."""
     run_dir = Path(run_dir).expanduser()
     _kill(run_dir / "launcher.pid")
-    for rep in _replicas(run_dir):
+    for rep in _all_replicas(run_dir):
         if _status(rep) in ("queued", "running"):
             _kill(rep / "pid")
             _set_status(rep, "stopped")
@@ -110,9 +139,11 @@ def progress(run_dir: str | Path) -> pd.DataFrame:
     """One row per replica: status, phase, step, bonds, fraction bound, speed, time left.
 
     phase "starting": LAMMPS is running but has not written its first thermo line yet
-    (setup, particle insertion).
+    (setup, particle insertion). For a sweep: one table with a (run, replica) index.
     """
     run_dir = Path(run_dir).expanduser()
+    if (run_dir / "sweep.json").exists():
+        return pd.concat({r.name: progress(r) for r in _runs(run_dir)}, names=["run", "replica"])
     params = _record(run_dir)["params"]
     rows = []
     for rep in _replicas(run_dir):
@@ -171,20 +202,22 @@ def _hms(seconds: float) -> str:
 
 
 def summary(run_dir: str | Path) -> dict:
-    """Overall state of a run: counts per status, start, elapsed time, estimated end.
+    """Overall state of a run or sweep: counts per status, start, elapsed time, estimated end.
 
     Replica start = time its pid file was written, end = last change of its status file.
     The estimate uses the speed of the running replicas (or the duration of finished ones)
     and fills the parallel slots with the queued replicas.
     """
     run_dir = Path(run_dir).expanduser()
-    params = _record(run_dir)["params"]
-    reps = _replicas(run_dir)
+    runs = _runs(run_dir)
+    params = _record(runs[0])["params"]
+    run_params = {r: _record(r)["params"] for r in runs}
+    reps = _all_replicas(run_dir)
     status = {rep: _status(rep) for rep in reps}
     counts = {s: list(status.values()).count(s) for s in ("done", "failed", "stopped", "running", "queued")}
     now = time.time()
     starts = [(rep / "pid").stat().st_mtime for rep in reps if (rep / "pid").exists()]
-    launcher_pid = run_dir / "launcher.pid"
+    launcher_pid = _launcher_pid(run_dir)
     started = launcher_pid.stat().st_mtime if launcher_pid.exists() else min(starts, default=None)
 
     finished = [(rep / "status").stat().st_mtime - (rep / "pid").stat().st_mtime
@@ -193,7 +226,7 @@ def summary(run_dir: str | Path) -> dict:
     for rep in reps:
         if status[rep] != "running" or not (rep / "pid").exists():
             continue
-        elapsed, f = now - (rep / "pid").stat().st_mtime, _fraction(params, rep)
+        elapsed, f = now - (rep / "pid").stat().st_mtime, _fraction(run_params[rep.parent], rep)
         if f > 0:
             per_replica.append(elapsed / f)
             left_running.append(elapsed * (1 - f) / f)
@@ -213,7 +246,8 @@ def summary(run_dir: str | Path) -> dict:
     active = counts["running"] + counts["queued"]
     end = max(((rep / "status").stat().st_mtime for rep in reps), default=now) if not active else None
     return {
-        "run": run_dir.name, "group": run_dir.parent.name, "replicas": len(reps),
+        "run": run_dir.name, "group": run_dir.parent.name, "sweep": (run_dir / "sweep.json").exists(),
+        "runs": len(runs), "replicas": len(reps),
         "parallel": _n_parallel(params), "mpi_procs": params["mpi_procs"], **counts,
         "started": started, "elapsed": ((end or now) - started) if started else None,
         "eta": eta if active else None, "finished": not active, "end": end,
@@ -224,8 +258,8 @@ def summary(run_dir: str | Path) -> dict:
 def summary_lines(s: dict) -> list[str]:
     """Human-readable summary (used by watch() and the launcher log)."""
     clock = lambda t: datetime.fromtimestamp(t).strftime("%H:%M:%S")
-    lines = [f"Run {s['run']}  ({s['group']}, {s['replicas']} replica(s), {s['parallel']} at once, "
-             f"{s['mpi_procs']} MPI proc(s) each)"]
+    what = f"Sweep {s['run']}  ({s['runs']} runs, " if s.get("sweep") else f"Run {s['run']}  ({s['group']}, "
+    lines = [what + f"{s['replicas']} replica(s), {s['parallel']} at once, {s['mpi_procs']} MPI proc(s) each)"]
     if s["started"] is None:
         return lines + ["not started"]
     state = (f"started {clock(s['started'])} · elapsed {_hms(s['elapsed'])} · "
