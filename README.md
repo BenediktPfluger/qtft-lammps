@@ -32,6 +32,7 @@ Simulation output is written to `~/qtft-data/` (outside the repository).
 | `control.ipynb` | set all parameters, build the LAMMPS input, run, monitor |
 | `analysis.ipynb` | ensemble statistics, structure and overlap analysis, figures and tables, comparison of runs, FIB-SEM export |
 | `docs/decisions.md` | model and project decisions with reasons, status of the implementation |
+| `docs/outputs.md` | every output file: content and what creates it |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
 | `qtft/params.py` | all parameters with defaults, derived values (γ = k_BT/D, α, p, …) and checks |
 | `qtft/build.py` | fills the template → `rep_XX/in.lammps`, writes `params.json`, derives seeds |
@@ -46,18 +47,10 @@ Simulation output is written to `~/qtft-data/` (outside the repository).
 | `qtft/benchmark.py` | performance measurement (MPI processes per replica, replicas in parallel) and sizing of `extra_special` |
 | `tests/` | quick checks (`pytest`); includes a short end-to-end LAMMPS run |
 
-## Output of one replica (`~/qtft-data/<run name>/rep_XX/`)
+## Output
 
-| File | Content |
-|---|---|
-| `in.lammps` | generated LAMMPS input, all numbers filled in |
-| `log.lammps` | LAMMPS log; thermo every `output_every` steps in YAML: energies, bonds, free/bound counts, cluster statistics, coordination, bond lengths, speed |
-| `traj.dump` | trajectory for OVITO: `id type x y z ix iy iz radius cluster nbonds` |
-| `bonds.dump` | bond list (`atom1 atom2`) per frame |
-| `rdf.dat` | Qt–Ft radial distribution function per frame |
-| `coord_qt.hist`, `coord_ft.hist` | distribution of bonds per Qt / per Ft per frame |
-| `final.data` | final state incl. all bonds (opens directly in OVITO, can restart a run) |
-| `status`, `lammps.out` | run status and MPI/launcher messages |
+Simulation output goes to `~/qtft-data/<run name>/` (outside the repository). Every output file,
+its content and what creates it is listed in [docs/outputs.md](docs/outputs.md).
 
 In OVITO, `radius`, `cluster` and `nbonds` are read as particle properties; colour by
 `cluster` with the *Color coding* modifier.
