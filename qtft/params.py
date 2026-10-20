@@ -57,7 +57,7 @@ class Params:
 
     # --- run -----------------------------------------------------------------
     timestep: float = 500.0          # [ns]
-    equil_steps: int = 1000          # equilibration, binding off
+    equil_steps: int = 5000          # equilibration, binding off
     prod_steps: int = 50_000         # production, binding on
 
     # --- output and in-run analysis ------------------------------------------
