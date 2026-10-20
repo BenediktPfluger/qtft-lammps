@@ -22,29 +22,29 @@ def test_geometry_defaults():
 
 def test_binding_probability():
     p = Params()
-    assert p.p_bind == pytest.approx(1 - math.exp(-1e-3))
-    assert Params(bind_every=10).p_bind == pytest.approx(1 - math.exp(-1e-2))
+    assert p.p_bind == pytest.approx(1 - math.exp(-5e-4))                # k_on dt = 1e-6 x 500
+    assert Params(bind_every=10).p_bind == pytest.approx(1 - math.exp(-5e-3))
 
 
-def test_stability_values_of_reference_set():
-    d = Params().derived()
-    assert d["alpha Qt-Qt"] == pytest.approx(0.62, abs=0.01)
-    assert d["alpha Ft-Ft"] == pytest.approx(0.93, abs=0.01)
-    assert d["alpha Qt-Ft"] == pytest.approx(0.41, abs=0.01)
-    assert d["alpha bond"] == pytest.approx(0.54, abs=0.01)
+def test_stability_values_of_reference_timestep():
+    d = Params().derived()                                               # dt = 500 ns
+    assert d["alpha Qt-Qt"] == pytest.approx(0.31, abs=0.01)
+    assert d["alpha Ft-Ft"] == pytest.approx(0.47, abs=0.01)
+    assert d["alpha Qt-Ft"] == pytest.approx(0.20, abs=0.01)
+    assert d["alpha bond"] == pytest.approx(0.27, abs=0.01)
     assert Params().check() == []
 
 
-def test_concentrations_match_full_system():
-    small, full = Params(), Params(n_qt=4000, n_ft=16000, box_length=2000)
-    assert small.derived()["c_Qt [uM]"] == pytest.approx(full.derived()["c_Qt [uM]"], rel=1e-3)
-    assert full.derived()["c_Qt [uM]"] == pytest.approx(0.83, abs=0.01)
+def test_concentrations():
+    small, large = Params(), Params(n_qt=4000, n_ft=16000, box_length=2000)
+    assert small.derived()["c_Qt [uM]"] == pytest.approx(large.derived()["c_Qt [uM]"], rel=1e-3)
+    assert large.derived()["c_Qt [uM]"] == pytest.approx(0.83, abs=0.01)
 
 
 def test_checks_catch_bad_values():
     assert any(lvl == "ERROR" for lvl, _ in Params(bind_radius=45.0).check())
     assert any(lvl == "ERROR" for lvl, _ in Params(timestep=5000.0).check())      # alpha >= 2
-    assert any(lvl == "WARNING" for lvl, _ in Params(k_ff=3.0).check())           # alpha > 1
+    assert any(lvl == "WARNING" for lvl, _ in Params(k_ff=3.0, timestep=1000.0).check())   # alpha > 1
     with pytest.raises(ValueError):
         Params(bind_radius=45.0).raise_on_error()
 

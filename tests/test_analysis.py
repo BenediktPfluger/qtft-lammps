@@ -91,7 +91,11 @@ def test_overlap_frame_matches_brute_force(runs):
         ti, tj = types[iu[0]], types[iu[1]]
         sel = ((ti == a) & (tj == b)) | ((ti == b) & (tj == a))
         assert result.loc[family, "n overlapping"] == (depth[iu][sel] > 0).sum()
-        assert result.loc[family, "closest [nm]"] == pytest.approx(dist[iu][sel].min())
+        closest = dist[iu][sel].min()
+        if closest <= 2 * max(p.radius_qt, p.radius_ft):          # search range of overlap_frame
+            assert result.loc[family, "closest [nm]"] == pytest.approx(closest)
+        else:                                                      # no pair within range -> NaN
+            assert np.isnan(result.loc[family, "closest [nm]"])
 
 
 def test_report_and_comparison(runs, tmp_path):

@@ -56,7 +56,7 @@ class Params:
     maxbond_ft: int = 10             # max bonds per Ft
 
     # --- run -----------------------------------------------------------------
-    timestep: float = 1000.0         # [ns]
+    timestep: float = 500.0          # [ns]
     equil_steps: int = 1000          # equilibration, binding off
     prod_steps: int = 50_000         # production, binding on
 

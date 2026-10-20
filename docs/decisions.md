@@ -12,8 +12,8 @@ conventions. Read this first when continuing the work.
 | Atom types | 2 types: 1 = Qt (r = 27.5 nm), 2 = Ft (r = 13.0 nm), named by `labelmap` (`traj.dump` writes the names Qt/Ft, `final.data` stores the labels); "bound" = at least one bond | the four ReaDDy reactions collapse to one Qt–Ft rule; no re-typing needed (also later for bond breaking); the names make OVITO show Qt/Ft, the readers convert them back to 1/2. No bound-state types (QtC/FtC): colour by `nbonds` in OVITO instead |
 | Dynamics | overdamped Brownian dynamics, `fix brownian` (Euler–Maruyama), Gaussian noise, one fix per species, γ = k_BT/D | particle timescales (µs steps) are ~10⁵ × the momentum relaxation time m/γ, so inertia is irrelevant; velocity Verlet + Langevin would need ~10⁶ × more steps |
 | Thermostat | none besides `fix brownian` (friction + noise satisfy fluctuation–dissipation) | `fix brownian` is the only integrator; never add `fix nve/langevin/nvt` |
-| Diffusion | D_Qt = 2 × 10⁻⁴, D_Ft = 5 × 10⁻⁴ nm²/ns (handover values, not Stokes–Einstein) | keeps Δt = 1 µs stable; Stokes–Einstein would be ~50× faster and need smaller Δt |
-| Timestep | Δt = 1000 ns | stability values α = 2kΔt(1/γᵢ + 1/γⱼ): Qt–Qt 0.62, Ft–Ft 0.93, Qt–Ft 0.41, bond 0.54 (all < 1) |
+| Diffusion | D_Qt = 2 × 10⁻⁴, D_Ft = 5 × 10⁻⁴ nm²/ns (handover values, not Stokes–Einstein) | keeps Δt = 500 ns well inside the stable range; Stokes–Einstein would be ~50× faster and need smaller Δt |
+| Timestep | Δt = 500 ns (reference) | stability values α = 2kΔt(1/γᵢ + 1/γⱼ): Qt–Qt 0.31, Ft–Ft 0.47, Qt–Ft 0.20, bond 0.27 (all well below 1); 1000 ns would still be stable (α up to 0.93) but with little margin |
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j; k_QQ = 3.32, k_FF = 2.0, k_QF = 1.245 zJ/nm² | soft excluded volume allows the large timestep; LAMMPS k includes the ½ (handover ½k values halved, ×1.6605 zJ per kJ/mol); k_FF lowered from 2.49 to 2.0 to bring α_FF below 1; all three pairs set explicitly (default geometric mixing would give a wrong Qt–Ft cutoff) |
 | Bond | `bond_style harmonic`, E = K (r − r₀)², K = 1.66 zJ/nm², r₀ = 40.5 nm | handover value (option A); energy jump at bond formation (K − k_QF)·δ² ≈ 0.4 k_BT for 2 nm overlap, dissipated immediately in BD |
 | Bonded pairs | `special_bonds lj 1.0e-50 1.0 1.0` | directly bonded pairs: repulsion off (the bond keeps the distance); pairs 2–3 bonds apart (e.g. two Qt on one Ft) keep the repulsion; 1e-50 instead of 0 keeps bonded pairs in the neighbour list so they appear in the RDF (`fix bond/create` still refuses duplicate bonds) |
@@ -25,11 +25,10 @@ conventions. Read this first when continuing the work.
 
 ReaDDy is not used for validation; the LAMMPS model stands on its own.
 
-## Reference parameter set
+## Reference parameters
 
-Full system: 4000 Qt / 16 000 Ft in a 2000 nm box (c_Qt ≈ 0.83 µM, c_Ft ≈ 3.3 µM), T = 310 K,
-500 000 steps = 500 ms production. Prototype/test system with the same concentrations:
-400 / 1600 in a 928.3 nm box, 50 000 steps.
+Only the time step has a reference value: **Δt = 500 ns** (the `Params` default). Particle numbers, box size
+and run length are chosen per run in the control notebook; there is no reference system.
 
 ## What is computed where
 
@@ -72,8 +71,8 @@ Full system: 4000 Qt / 16 000 Ft in a 2000 nm box (c_Qt ≈ 0.83 µM, c_Ft ≈ 3
 | 5 | FIB-SEM export, this document | merged |
 | later | bond breaking and phase schedules, parameter sweeps, HPC cluster runs | open |
 
-Open items: size `extra_special` from a full 500 ms run (`special_need`); check the full-system results;
-compare the real run speed with the benchmark projection.
+Open items: size `extra_special` from a long production run (`special_need`); compare the real run speed
+with the benchmark projection.
 
 ## Performance (local machine)
 
