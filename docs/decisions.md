@@ -54,8 +54,8 @@ Full system: 4000 Qt / 16 000 Ft in a 2000 nm box (c_Qt ≈ 0.83 µM, c_Ft ≈ 3
   of a run, `rep_XX/` holds the replicas, `analysis/` the results; `~/qtft-data/index.csv` lists all runs.
 - Notebooks are committed without outputs (`nbstripout`).
 - Commits are authored as Benedikt Pfluger <benedikt.pfluger@tum.de>; no co-author or
-  "generated with" lines in commits or pull requests.
-- One branch and pull request per step; the owner reviews and merges.
+  "generated with" lines in commits.
+- All work is committed directly on `main`; no feature branches or pull requests.
 - LAMMPS documentation is the reference for every command (docs.lammps.org).
 
 ## Status
@@ -64,10 +64,10 @@ Full system: 4000 Qt / 16 000 Ft in a 2000 nm box (c_Qt ≈ 0.83 µM, c_Ft ≈ 3
 |---|---|---|
 | 0 | setup: README, INSTALL, environment | merged |
 | 1 | simulation prototype: template, parameters, builder, runner, control notebook | merged |
-| 2 | performance benchmark, special-list sizing | PR, to be run on the local 18-core machine |
-| 3 | ensemble statistics, run index, run comparison | PR |
-| 4 | structure (OVITO) and overlap analysis, figures, tables | PR |
-| 5 | FIB-SEM export, this document | PR |
+| 2 | performance benchmark, special-list sizing | merged; benchmark still to be run on the local 18-core machine |
+| 3 | ensemble statistics, run index, run comparison | merged |
+| 4 | structure (OVITO) and overlap analysis, figures, tables | merged |
+| 5 | FIB-SEM export, this document | merged |
 | later | bond breaking and phase schedules, parameter sweeps, HPC cluster runs | open |
 
 Open items: run the benchmark on the local machine and set `mpi_procs` / `neighbor_skin`
