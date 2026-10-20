@@ -3,6 +3,7 @@
 `benchmark(p)` runs short productions of the system defined by `p` for several numbers of MPI
 processes per replica. For each setting it fills the machine (cores // procs replicas at once),
 so the measured throughput includes the competition for memory bandwidth of a real ensemble.
+Run it with `cores` = all hardware threads and = physical cores to see whether hyperthreading helps.
 
 `special_need(rep_dir)` reports how many 1-2/1-3/1-4 neighbours the atoms of a finished run
 actually have, to size `extra_special`.
@@ -20,9 +21,9 @@ import pandas as pd
 from scipy import sparse
 
 from .build import build_run
-from .params import Params
+from .params import Params, data_path
 from .read import read_bonds, read_dump
-from .run import start
+from .run import _status, start
 
 LOOP = re.compile(r"Loop time of (\S+) on (\d+) procs for (\d+) steps")
 SECTION = re.compile(r"^(Pair|Bond|Neigh|Comm|Output|Modify|Other)\s*\|.*\|\s*([\d.]+)\s*$")
@@ -45,17 +46,39 @@ def loop_timing(log_path: str | Path) -> dict:
     return out
 
 
-def benchmark(p: Params, procs=(1, 2, 4, 8, 16), cores: int | None = None, steps: int = 2000,
-              variants: dict | None = None, name: str = "benchmark") -> pd.DataFrame:
+def physical_cores() -> int:
+    """Number of physical cores (hardware threads of one core counted once)."""
+    try:
+        text = Path("/proc/cpuinfo").read_text()
+    except OSError:
+        return os.cpu_count() or 1
+    cores, phys = set(), "0"
+    for line in text.splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() == "physical id":
+            phys = value.strip()
+        elif key.strip() == "core id":
+            cores.add((phys, value.strip()))
+    return len(cores) or os.cpu_count() or 1
+
+
+def benchmark(p: Params, procs=None, cores: int | None = None, steps: int = 2000,
+              variants: dict | None = None, name: str | None = None) -> pd.DataFrame:
     """Measure throughput for each number of MPI processes per replica (and optional variants).
 
     p:        parameter set to measure (system size, potentials, ...); run settings are overridden
-    procs:    MPI processes per replica to try
-    cores:    cores to fill (default: all cores of this machine)
+    procs:    MPI processes per replica to try (default: 1, 2, 4, ... up to the physical cores;
+              Open MPI refuses more processes than physical cores in one mpirun)
+    cores:    hardware threads to fill (default: all of this machine)
     steps:    production steps per measurement (equilibration is kept short)
     variants: optional {label: {param: value}} to compare settings, e.g. {"skin 20": {"neighbor_skin": 20}}
+    name:     folder under <data_dir>/benchmark/ (default: "<cores>cores")
+
+    A setting whose replicas fail is reported and skipped.
     """
     cores = cores or os.cpu_count() or 1
+    name = name or f"{cores}cores"
+    procs = procs or [2**k for k in range(physical_cores().bit_length())]   # 1, 2, 4, ... <= cores
     variants = variants or {"default": {}}
     rows = []
     for label, overrides in variants.items():
@@ -66,24 +89,31 @@ def benchmark(p: Params, procs=(1, 2, 4, 8, 16), cores: int | None = None, steps
             q = dataclasses.replace(
                 p, **overrides, equil_steps=200, prod_steps=steps,
                 output_every=min(p.output_every, steps), traj_every=min(p.output_every, steps),
-                n_replicas=parallel, mpi_procs=n, max_parallel=parallel,
+                n_replicas=parallel, mpi_procs=n, max_parallel=parallel, group="benchmark",
                 run_name=f"{name}/{_slug(label)}_np{n}")
             run_dir = build_run(q, overwrite=True)
             start(run_dir, wait=True)
+            failed = [rep.name for rep in sorted(run_dir.glob("rep_*")) if _status(rep) != "done"]
+            if failed:
+                print(f"{label}, {n} procs/replica: {', '.join(failed)} failed, skipped "
+                      f"(see {run_dir}/rep_*/lammps.out)")
+                continue
             timings = [loop_timing(rep / "log.lammps") for rep in sorted(run_dir.glob("rep_*"))]
             wall = max(t["wall_s"] for t in timings)
             rate = steps / np.mean([t["wall_s"] for t in timings])          # steps/s of one replica
-            row = {"variant": label, "procs/replica": n, "replicas at once": parallel,
+            row = {"variant": label, "cores": cores, "procs/replica": n, "replicas at once": parallel,
                    "steps/s per replica": rate,
                    "replica-steps/s total": parallel * steps / wall}
             for key in [k for k in timings[0] if k.endswith("[%]")]:
                 row[key] = np.mean([t[key] for t in timings])
             rows.append(row)
+    if not rows:
+        raise RuntimeError("no benchmark setting completed")
     df = pd.DataFrame(rows)
     df["h per replica"] = p.prod_steps / df["steps/s per replica"] / 3600
     df[f"h for {p.n_replicas} replicas"] = (
         np.ceil(p.n_replicas / df["replicas at once"]) * df["h per replica"])
-    out = p.run_dir.parent / name
+    out = data_path(p.data_dir) / "benchmark" / name
     out.mkdir(parents=True, exist_ok=True)
     df.to_csv(out / "results.csv", index=False)
     return df

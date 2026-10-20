@@ -1,10 +1,12 @@
 import json
 import re
 
+import pandas as pd
 import pytest
 
 from qtft import Params, build_run
 from qtft.build import PLACEHOLDER, TEMPLATE, render, replica_seeds, template_values
+from qtft.params import REPO_DIR
 
 
 def test_template_placeholders_all_have_values():
@@ -42,3 +44,16 @@ def test_build_run(tmp_path):
     with pytest.raises(FileExistsError):
         build_run(p)
     build_run(p, overwrite=True)
+
+
+def test_run_folders_by_replica_count(tmp_path):
+    single = build_run(Params(n_replicas=1, data_dir=str(tmp_path), run_name="one"))
+    ensemble = build_run(Params(n_replicas=3, data_dir=str(tmp_path), run_name="three"))
+    assert single == tmp_path / "single" / "one"
+    assert ensemble == tmp_path / "ensemble" / "three"
+    index = pd.read_csv(tmp_path / "index.csv")
+    assert dict(zip(index["run"], index["group"])) == {"one": "single", "three": "ensemble"}
+
+
+def test_default_data_dir_inside_repo():
+    assert Params().run_dir.parent == REPO_DIR / "qtft-data" / "single"

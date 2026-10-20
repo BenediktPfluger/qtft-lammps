@@ -23,7 +23,9 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 2. `conda activate lammps`, open the repo in VS Code.
 3. Open `control.ipynb`: set the parameters, check the derived values, build and run.
 
-Simulation output is written to `~/qtft-data/` (outside the repository).
+Simulation output is written to `qtft-data/` inside the repository (gitignored, never committed):
+`qtft-data/single/` for runs with one replica, `qtft-data/ensemble/` for runs with several,
+`qtft-data/benchmark/` for performance measurements, and `qtft-data/index.csv` listing all runs.
 
 ## Repository layout
 
@@ -49,7 +51,8 @@ Simulation output is written to `~/qtft-data/` (outside the repository).
 
 ## Output
 
-Simulation output goes to `~/qtft-data/<run name>/` (outside the repository). Every output file,
+Simulation output goes to `qtft-data/<single|ensemble>/<run name>/` (inside the repository,
+gitignored). Every output file,
 its content and what creates it is listed in [docs/outputs.md](docs/outputs.md).
 
 In OVITO, `radius`, `cluster` and `nbonds` are read as particle properties; colour by

@@ -12,9 +12,8 @@ from pathlib import Path
 import numpy as np
 
 from .ensemble import update_index
-from .params import Params
+from .params import REPO_DIR, Params
 
-REPO_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE = REPO_DIR / "template.lmp"
 PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 SEED_NAMES = ("seed_place_qt", "seed_place_ft", "seed_bd_qt", "seed_bd_ft", "seed_bind")
@@ -91,7 +90,7 @@ def git_info() -> dict:
 
 
 def build_run(p: Params, overwrite: bool = False) -> Path:
-    """Create <data_dir>/<run name>/ with params.json and rep_XX/in.lammps for every replica."""
+    """Create <data_dir>/<single|ensemble>/<run name>/ with params.json and rep_XX/in.lammps for every replica."""
     p.raise_on_error()
     run_dir = p.run_dir
     if run_dir.exists():

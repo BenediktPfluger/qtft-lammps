@@ -1,7 +1,8 @@
 # Output files
 
-All simulation output is written to the data folder (default `~/qtft-data/`, outside the
-repository). This page lists every file, what it contains and what creates it.
+All simulation output is written to the data folder (default `qtft-data/` inside the repository;
+gitignored, never committed). Runs with one replica go to `single/`, runs with several replicas to
+`ensemble/`. This page lists every file, what it contains and what creates it.
 
 **Created by** means:
 
@@ -11,28 +12,33 @@ repository). This page lists every file, what it contains and what creates it.
 - **Python**: written by the `qtft` helpers (building, starting and monitoring a run, or analysis afterwards).
 
 ```
-~/qtft-data/
+qtft-data/
 ├── index.csv
-└── <run name>/
-    ├── params.json
-    ├── launcher.log, launcher.pid
-    ├── rep_01/ … rep_NN/          one folder per replica
-    │   ├── in.lammps, status, pid, lammps.out
-    │   ├── log.lammps
-    │   ├── traj.dump, bonds.dump, rdf.dat, coord_qt.hist, coord_ft.hist, final.data
-    │   └── fibsem/                only after the FIB-SEM export
-    └── analysis/                  only after the analysis
+├── single/                        runs with n_replicas = 1
+│   └── <run name>/                same structure as below, with rep_01/ only
+├── ensemble/                      runs with n_replicas > 1
+│   └── <run name>/
+│       ├── params.json
+│       ├── launcher.log, launcher.pid
+│       ├── rep_01/ … rep_NN/      one folder per replica
+│       │   ├── in.lammps, status, pid, lammps.out
+│       │   ├── log.lammps
+│       │   ├── traj.dump, bonds.dump, rdf.dat, coord_qt.hist, coord_ft.hist, final.data
+│       │   └── fibsem/            only after the FIB-SEM export
+│       └── analysis/              only after the analysis
+└── benchmark/                     only after benchmark()
 ```
 
-## Data folder `~/qtft-data/`
+## Data folder `qtft-data/`
 
 | File | Content | Created by |
 |---|---|---|
-| `index.csv` | One line per run: name, date, status counts, key parameters, parameters that differ from the defaults, git commit | Python, automatic: `build_run()` and whenever a replica finishes |
+| `index.csv` | One line per single and ensemble run: group (`single`/`ensemble`), name, date, status counts, key parameters, parameters that differ from the defaults, git commit | Python, automatic: `build_run()` and whenever a replica finishes |
 
-The folder itself is created by `build_run()` if it does not exist.
+The folder and its `single/` / `ensemble/` subfolders are created by `build_run()` if they do not
+exist. The subfolder follows from `n_replicas`; the `group` parameter overrides it.
 
-## Run folder `<run name>/`
+## Run folder `<single|ensemble>/<run name>/`
 
 | File | Content | Created by |
 |---|---|---|
@@ -129,7 +135,9 @@ Comparisons of several runs (`compare_report(runs, out_dir)`) are written to the
 `comparison`, `kinetics`, `large_agglomerates` (PDF/SVG/PNG), `panels/`, and
 `comparison_table.csv` / `.tex`.
 
-## Benchmark `~/qtft-data/benchmark/`
+## Benchmark `qtft-data/benchmark/`
 
-Only after `benchmark()` (control notebook, section 5): one short run folder per tested setting
-(same structure as above) and `results.csv` with speed, timing breakdown and projected run times.
+Only after `benchmark()` (control notebook, section 5). One folder per measurement, named after the
+number of hardware threads filled (`16cores/`, `8cores/`), each with one short run folder per tested
+setting (same structure as above) and `results.csv` with speed, timing breakdown and projected run
+times. Benchmark runs are not listed in `index.csv`.

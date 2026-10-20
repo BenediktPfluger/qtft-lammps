@@ -7,7 +7,7 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# LAMMPS output (simulation data lives in ~/qtft-data, never in git)
+# LAMMPS output (simulation data lives in qtft-data/, never in git)
 log.lammps
 log.cite
 *.dump
@@ -16,7 +16,7 @@ log.cite
 *.restart
 screen.txt
 
-# local run folders, if created inside the repo by mistake
+# simulation output folder (inside the repo, but not versioned)
 runs/
 qtft-data/
 

@@ -155,7 +155,6 @@ All four names must be printed.
 cd ~/projects/qtft-lammps
 conda activate lammps
 nbstripout --install      # strips notebook outputs automatically on every commit
-mkdir -p ~/qtft-data      # simulation output (outside the repository)
 pytest -q                 # quick self-test of the Python helpers
 ```
 
@@ -188,7 +187,8 @@ OMP_NUM_THREADS=2 mpirun -np 4 lmp -sf omp -in in.myscript   # hybrid MPI + Open
 
 - Keep simulation files in the Linux filesystem (`~/...`), **not** under
   `/mnt/c/...`. File I/O across the Windows boundary is very slow.
-- Use `N` ≤ the number of physical cores.
+- Use `N` ≤ the number of physical cores (`lscpu`: "Core(s) per socket" × "Socket(s)",
+  not "CPU(s)", which counts hyperthreads). Open MPI refuses more without `--use-hwthread-cpus`.
 - To view results from Windows (e.g. in OVITO), open
   `\\wsl$\Ubuntu-24.04\home\<user>\...` in Explorer.
 

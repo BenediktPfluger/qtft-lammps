@@ -4,7 +4,7 @@ from .build import build_run
 from .ensemble import compare, ensemble_stats, load_stats, update_index
 from .fibsem import fibsem_export, fibsem_export_run
 from .figures import compare_report, make_report
-from .params import Params
+from .params import Params, data_path
 from .quicklook import quicklook
 from .read import load_thermo, read_bonds, read_dump, read_histo, read_rdf, read_thermo
 from .run import progress, start, stop

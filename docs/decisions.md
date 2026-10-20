@@ -50,8 +50,10 @@ Full system: 4000 Qt / 16 000 Ft in a 2000 nm box (c_Qt ≈ 0.83 µM, c_Ft ≈ 3
 - All parameters are set in one place: the parameter cell of `control.ipynb` (defaults in
   `qtft/params.py`). The LAMMPS input is generated from `template.lmp`; edit the template only
   when the model changes.
-- Simulation output lives in `~/qtft-data/<run name>/` (outside git): `params.json` is the record
-  of a run, `rep_XX/` holds the replicas, `analysis/` the results; `~/qtft-data/index.csv` lists all runs.
+- Simulation output lives in `qtft-data/` inside the repository but gitignored: runs with one replica
+  in `qtft-data/single/<run name>/`, runs with several in `qtft-data/ensemble/<run name>/`, benchmarks in
+  `qtft-data/benchmark/`. `params.json` is the record of a run, `rep_XX/` holds the replicas,
+  `analysis/` the results; `qtft-data/index.csv` lists all single and ensemble runs.
 - Notebooks are committed without outputs (`nbstripout`).
 - Commits are authored as Benedikt Pfluger <benedikt.pfluger@tum.de>; no co-author or
   "generated with" lines in commits.
@@ -64,11 +66,11 @@ Full system: 4000 Qt / 16 000 Ft in a 2000 nm box (c_Qt ≈ 0.83 µM, c_Ft ≈ 3
 |---|---|---|
 | 0 | setup: README, INSTALL, environment | merged |
 | 1 | simulation prototype: template, parameters, builder, runner, control notebook | merged |
-| 2 | performance benchmark, special-list sizing | merged; benchmark still to be run on the local 18-core machine |
+| 2 | performance benchmark, special-list sizing | merged; benchmark still to be run on the local machine (8 cores, 16 threads) |
 | 3 | ensemble statistics, run index, run comparison | merged |
 | 4 | structure (OVITO) and overlap analysis, figures, tables | merged |
 | 5 | FIB-SEM export, this document | merged |
 | later | bond breaking and phase schedules, parameter sweeps, HPC cluster runs | open |
 
-Open items: run the benchmark on the local machine and set `mpi_procs` / `neighbor_skin`
+Open items: run the benchmark on the local machine (all threads vs. physical cores) and set `mpi_procs` / `neighbor_skin`
 accordingly; size `extra_special` from a full 500 ms run; check the full-system results.

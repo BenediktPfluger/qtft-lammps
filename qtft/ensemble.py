@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from .params import Params
+from .params import Params, data_path
 from .read import load_thermo
 
 SKIP_COLUMNS = {"Step", "time_ms", "S/CPU", "CPULeft"}
@@ -145,18 +144,21 @@ def load_stats(run_dir: str | Path) -> dict:
 
 # ------------------------------------------------------------------ index of all runs
 # settings that do not change the physics; ignored when listing or labelling parameter differences
-TECHNICAL = {"data_dir", "run_name", "n_replicas", "mpi_procs", "max_parallel",
+TECHNICAL = {"data_dir", "group", "run_name", "n_replicas", "mpi_procs", "max_parallel",
              "lmp_command", "mpirun_command", "master_seed"}
 INDEX_PARAMS = ("n_qt", "n_ft", "box_length", "k_qq", "k_ff", "k_qf", "bond_k", "k_on",
                 "timestep", "prod_steps", "n_replicas")
 
 
-def update_index(data_dir: str | Path = "~/qtft-data") -> pd.DataFrame:
-    """Rebuild <data_dir>/index.csv: one line per run folder with status and changed parameters."""
-    data_dir = Path(os.path.expanduser(data_dir))
+def update_index(data_dir: str | Path = "qtft-data") -> pd.DataFrame:
+    """Rebuild <data_dir>/index.csv: one line per run folder (single and ensemble) with status
+    and changed parameters."""
+    data_dir = data_path(data_dir)
     defaults = Params().to_dict()
     rows = []
-    for record_file in sorted(data_dir.glob("*/params.json")):
+    for record_file in sorted(data_dir.glob("*/*/params.json")):
+        if record_file.parent.parent.name not in ("single", "ensemble"):
+            continue
         record = json.loads(record_file.read_text())
         params = record["params"]
         statuses = [(rep / "status").read_text().strip() if (rep / "status").exists() else "?"
@@ -164,6 +166,7 @@ def update_index(data_dir: str | Path = "~/qtft-data") -> pd.DataFrame:
         changed = [f"{k}={v}" for k, v in params.items()
                    if k not in TECHNICAL and v != defaults.get(k)]
         rows.append({
+            "group": record_file.parent.parent.name,
             "run": record_file.parent.name,
             "created": record.get("created"),
             "status": ", ".join(f"{s}:{statuses.count(s)}" for s in sorted(set(statuses))),

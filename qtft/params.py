@@ -16,6 +16,14 @@ K_B = 1.380649e-2        # Boltzmann constant in zJ/K
 N_A = 6.02214076e23      # Avogadro constant in 1/mol
 NM3_TO_L = 1e-24         # 1 nm^3 in litres
 
+REPO_DIR = Path(__file__).resolve().parent.parent
+
+
+def data_path(data_dir: str | Path = "qtft-data") -> Path:
+    """Absolute output folder; a relative data_dir is taken relative to the repository."""
+    path = Path(os.path.expanduser(data_dir))
+    return path if path.is_absolute() else REPO_DIR / path
+
 
 @dataclass
 class Params:
@@ -70,7 +78,8 @@ class Params:
     mpi_procs: int = 1               # MPI processes per replica
     max_parallel: int | None = None  # replicas running at once; None -> cores // mpi_procs
     master_seed: int = 12345
-    data_dir: str = "~/qtft-data"
+    data_dir: str = "qtft-data"      # relative -> inside the repository (gitignored)
+    group: str | None = None         # subfolder; None -> "single" (1 replica) or "ensemble"
     run_name: str | None = None      # None -> generated from the parameters
     lmp_command: str = "lmp"
     mpirun_command: str = "mpirun --bind-to none"   # no core pinning: replicas run side by side
@@ -213,8 +222,12 @@ class Params:
         return self.run_name or self.auto_name()
 
     @property
+    def group_name(self) -> str:
+        return self.group or ("single" if self.n_replicas == 1 else "ensemble")
+
+    @property
     def run_dir(self) -> Path:
-        return Path(os.path.expanduser(self.data_dir)) / self.name
+        return data_path(self.data_dir) / self.group_name / self.name
 
     # ------------------------------------------------------------ persistence
     def to_dict(self) -> dict:

@@ -1,4 +1,6 @@
-from qtft.benchmark import loop_timing, special_need
+import os
+
+from qtft.benchmark import loop_timing, physical_cores, special_need
 
 LOG = """\
 Loop time of 0.5 on 1 procs for 1000 steps with 250 atoms
@@ -45,3 +47,7 @@ def test_special_need_chain(tmp_path):
     assert need["max up to 1-2"] == 2          # atoms 2 and 3
     assert need["max up to 1-3"] == 3          # atom 2: {1,3} + {4}; atom 3: {2,4} + {1}
     assert need["max up to 1-4"] == 3          # atom 1: {2}, {3}, {4}
+
+
+def test_physical_cores_within_threads():
+    assert 1 <= physical_cores() <= (os.cpu_count() or 1)
