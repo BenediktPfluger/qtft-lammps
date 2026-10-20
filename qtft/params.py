@@ -53,7 +53,7 @@ class Params:
     bind_radius: float | None = None  # [nm]; None -> r_Qt + r_Ft
     bind_every: int = 1              # attempt bond creation every N steps
     maxbond_qt: int = 60             # max bonds per Qt
-    maxbond_ft: int = 8              # max bonds per Ft
+    maxbond_ft: int = 10             # max bonds per Ft
 
     # --- run -----------------------------------------------------------------
     timestep: float = 1000.0         # [ns]

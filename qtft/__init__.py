@@ -7,7 +7,7 @@ from .figures import compare_report, make_report
 from .params import Params, data_path
 from .quicklook import quicklook
 from .read import load_thermo, read_bonds, read_dump, read_histo, read_rdf, read_thermo
-from .run import progress, start, stop
+from .run import progress, start, stop, summary, watch
 
 __all__ = [
     "Params", "build_run", "start", "stop", "progress", "quicklook",

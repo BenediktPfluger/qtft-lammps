@@ -43,7 +43,7 @@ exist. The subfolder follows from `n_replicas`; the `group` parameter overrides 
 | File | Content | Created by |
 |---|---|---|
 | `params.json` | **The record of the run**: all parameters, derived values (k_BT, γ, α, p, …), check results, seeds of every replica, git commit, creation time | Python: `build_run()` (control notebook, section 2) |
-| `launcher.log` | Messages of the background launcher: start, end or failure of every replica and the command used | Python: `start()` (section 3) |
+| `launcher.log` | Log of the background launcher: header (replicas, parallel slots, command); start of every replica; end or failure with wall time and count done; every minute a summary (elapsed, done/running/queued, estimated end) and one line per running replica (phase, step, %, speed, bonds); final summary. Follow it live with `tail -f launcher.log` | Python: `start()` (section 3) |
 | `launcher.pid` | Process ID of the launcher, used by `stop()` | Python: `start()` (background runs only) |
 
 ## Replica folder `rep_XX/`
@@ -53,8 +53,8 @@ exist. The subfolder follows from `n_replicas`; the `group` parameter overrides 
 | File | Content | Created by |
 |---|---|---|
 | `in.lammps` | Generated LAMMPS input of this replica, all numbers filled in. Can be rerun by hand: `lmp -in in.lammps` | Python: `build_run()` |
-| `status` | One word: `built` → `queued` → `running` → `done` / `failed` / `stopped` | Python: updated at each stage |
-| `pid` | Process ID of the running LAMMPS process, used by `stop()` | Python: when the replica starts |
+| `status` | One word: `built` → `queued` → `running` → `done` / `failed` / `stopped`. Its last change is the end time of the replica | Python: updated at each stage |
+| `pid` | Process ID of the running LAMMPS process, used by `stop()`; written when the replica starts, so its time is the start time | Python: when the replica starts |
 | `lammps.out` | Terminal output of LAMMPS/MPI (screen output is switched off, so usually almost empty). Check here first if a run fails | Python: output of the started process |
 
 ### LAMMPS output

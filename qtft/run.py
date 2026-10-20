@@ -4,6 +4,9 @@
 runs all replicas, at most `max_parallel` at a time. It keeps running when the notebook or
 VS Code is closed. Every replica folder holds a `status` file:
 built -> queued -> running -> done | failed | stopped.
+
+`watch(run_dir)` follows a run live in the notebook; the launcher writes the same summary to
+`launcher.log` (follow it in a terminal with `tail -f launcher.log`).
 """
 
 from __future__ import annotations
@@ -14,6 +17,8 @@ import shlex
 import signal
 import subprocess
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -40,6 +45,10 @@ def _set_status(rep: Path, status: str) -> None:
     (rep / "status").write_text(status + "\n")
 
 
+def _n_parallel(params: dict) -> int:
+    return params["max_parallel"] or max(1, (os.cpu_count() or 1) // params["mpi_procs"])
+
+
 def _command(params: dict) -> list[str]:
     lmp = shlex.split(params["lmp_command"])
     args = ["-in", "in.lammps", "-log", "log.lammps", "-screen", "none"]
@@ -58,6 +67,8 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
         raise RuntimeError(f"replicas already queued/running: {busy}")
     for rep in reps:
         _set_status(rep, "queued")
+        (rep / "pid").unlink(missing_ok=True)          # pid file = replica has started
+    (run_dir / "launcher.pid").unlink(missing_ok=True)
 
     cmd = [sys.executable, "-m", "qtft.launcher", str(run_dir)]
     pkg_root = str(Path(__file__).resolve().parent.parent)
@@ -69,9 +80,10 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
         proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL, start_new_session=True)
     (run_dir / "launcher.pid").write_text(str(proc.pid))
-    n_par = params["max_parallel"] or max(1, (os.cpu_count() or 1) // params["mpi_procs"])
+    n_par = _n_parallel(params)
     print(f"started {len(reps)} replica(s), up to {n_par} in parallel, "
-          f"{params['mpi_procs']} MPI process(es) each: {run_dir}")
+          f"{params['mpi_procs']} MPI process(es) each: {run_dir}\n"
+          f"follow it with watch(run_dir), or in a terminal: tail -f {run_dir / 'launcher.log'}")
 
 
 def stop(run_dir: str | Path) -> None:
@@ -95,14 +107,20 @@ def _kill(pid_file: Path) -> None:
 
 
 def progress(run_dir: str | Path) -> pd.DataFrame:
-    """One row per replica: status, phase, step, bonds, fraction bound, speed, time left."""
+    """One row per replica: status, phase, step, bonds, fraction bound, speed, time left.
+
+    phase "starting": LAMMPS is running but has not written its first thermo line yet
+    (setup, particle insertion).
+    """
     run_dir = Path(run_dir).expanduser()
     params = _record(run_dir)["params"]
     rows = []
     for rep in _replicas(run_dir):
         row = {"replica": rep.name, "status": _status(rep)}
         last = last_thermo(rep / "log.lammps")
-        if last is not None:
+        if last is None and row["status"] == "running":
+            row["phase"] = "starting"
+        elif last is not None:
             phase, values = last
             total = params["equil_steps"] if phase == "equilibration" else params["prod_steps"]
             row.update({
@@ -117,3 +135,136 @@ def progress(run_dir: str | Path) -> pd.DataFrame:
         rows.append(row)
     return pd.DataFrame(rows).set_index("replica")
 
+
+
+# ------------------------------------------------------------------ run summary and live view
+def _alive(pid_file: Path) -> bool | None:
+    """True/False if the process in pid_file exists; None without pid file."""
+    if not pid_file.exists():
+        return None
+    try:
+        pid = int(pid_file.read_text())
+        os.kill(pid, 0)
+    except (ProcessLookupError, ValueError):
+        return False
+    except PermissionError:
+        pass
+    try:   # an ended child of the notebook kernel stays a zombie until the kernel exits
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return True
+
+
+def _fraction(params: dict, rep: Path) -> float:
+    """Fraction of all steps (equilibration + production) a replica has completed."""
+    last = last_thermo(rep / "log.lammps")
+    if last is None:
+        return 0.0
+    phase, values = last
+    done = values["Step"] + (params["equil_steps"] if phase == "production" else 0)
+    return done / (params["equil_steps"] + params["prod_steps"])
+
+
+def _hms(seconds: float) -> str:
+    seconds = int(round(seconds))
+    return f"{seconds // 3600}:{seconds // 60 % 60:02d}:{seconds % 60:02d}"
+
+
+def summary(run_dir: str | Path) -> dict:
+    """Overall state of a run: counts per status, start, elapsed time, estimated end.
+
+    Replica start = time its pid file was written, end = last change of its status file.
+    The estimate uses the speed of the running replicas (or the duration of finished ones)
+    and fills the parallel slots with the queued replicas.
+    """
+    run_dir = Path(run_dir).expanduser()
+    params = _record(run_dir)["params"]
+    reps = _replicas(run_dir)
+    status = {rep: _status(rep) for rep in reps}
+    counts = {s: list(status.values()).count(s) for s in ("done", "failed", "stopped", "running", "queued")}
+    now = time.time()
+    starts = [(rep / "pid").stat().st_mtime for rep in reps if (rep / "pid").exists()]
+    launcher_pid = run_dir / "launcher.pid"
+    started = launcher_pid.stat().st_mtime if launcher_pid.exists() else min(starts, default=None)
+
+    finished = [(rep / "status").stat().st_mtime - (rep / "pid").stat().st_mtime
+                for rep in reps if status[rep] == "done" and (rep / "pid").exists()]
+    left_running, per_replica = [], []
+    for rep in reps:
+        if status[rep] != "running" or not (rep / "pid").exists():
+            continue
+        elapsed, f = now - (rep / "pid").stat().st_mtime, _fraction(params, rep)
+        if f > 0:
+            per_replica.append(elapsed / f)
+            left_running.append(elapsed * (1 - f) / f)
+        else:
+            left_running.append(None)
+    duration = (sum(finished) / len(finished) if finished
+                else sum(per_replica) / len(per_replica) if per_replica else None)
+    eta = None
+    if duration is not None:
+        slots = [duration if t is None else t for t in left_running]
+        slots += [0.0] * max(0, _n_parallel(params) - len(slots))
+        for _ in range(counts["queued"]):
+            i = slots.index(min(slots))
+            slots[i] += duration
+        eta = now + max(slots, default=0.0)
+
+    active = counts["running"] + counts["queued"]
+    end = max(((rep / "status").stat().st_mtime for rep in reps), default=now) if not active else None
+    return {
+        "run": run_dir.name, "group": run_dir.parent.name, "replicas": len(reps),
+        "parallel": _n_parallel(params), "mpi_procs": params["mpi_procs"], **counts,
+        "started": started, "elapsed": ((end or now) - started) if started else None,
+        "eta": eta if active else None, "finished": not active, "end": end,
+        "launcher_alive": _alive(launcher_pid),
+    }
+
+
+def summary_lines(s: dict) -> list[str]:
+    """Human-readable summary (used by watch() and the launcher log)."""
+    clock = lambda t: datetime.fromtimestamp(t).strftime("%H:%M:%S")
+    lines = [f"Run {s['run']}  ({s['group']}, {s['replicas']} replica(s), {s['parallel']} at once, "
+             f"{s['mpi_procs']} MPI proc(s) each)"]
+    if s["started"] is None:
+        return lines + ["not started"]
+    state = (f"started {clock(s['started'])} · elapsed {_hms(s['elapsed'])} · "
+             f"{s['done']}/{s['replicas']} done · {s['failed']} failed · "
+             f"{s['running']} running · {s['queued']} queued")
+    if s["stopped"]:
+        state += f" · {s['stopped']} stopped"
+    lines.append(state)
+    if s["finished"]:
+        lines.append(f"finished {clock(s['end'])}: {s['done']} done, {s['failed']} failed"
+                     + (f", {s['stopped']} stopped" if s["stopped"] else "")
+                     + f" (wall {_hms(s['elapsed'])})")
+    elif s["launcher_alive"] is False:
+        lines.append("WARNING: the launcher is not running any more (WSL restart, stop() or crash?): "
+                     "queued replicas will not start and status files are no longer updated; "
+                     "check the rep_XX/log.lammps files, then stop() and start() again")
+    elif s["eta"] is not None:
+        lines.append(f"estimated end ≈ {clock(s['eta'])} (≈ {_hms(s['eta'] - time.time())} left)")
+    else:
+        lines.append("estimated end: after the first thermo output")
+    return lines
+
+
+def watch(run_dir: str | Path, every: float = 10.0) -> None:
+    """Live view of a run in the notebook, refreshed every `every` seconds until it has finished.
+
+    Interrupting (stop button) only stops the view; the run continues in the background.
+    """
+    from IPython.display import clear_output, display
+
+    run_dir = Path(run_dir).expanduser()
+    try:
+        while True:
+            s = summary(run_dir)
+            clear_output(wait=True)
+            print("\n".join(summary_lines(s)) + "\n")
+            display(progress(run_dir))
+            if s["finished"] or s["launcher_alive"] is False:
+                return
+            time.sleep(every)
+    except KeyboardInterrupt:
+        print("stopped watching; the run continues in the background")
