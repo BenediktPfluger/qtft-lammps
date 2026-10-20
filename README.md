@@ -10,7 +10,7 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 | Component | LAMMPS implementation |
 |---|---|
 | Units | `units nano` (nm, ns, energy in zJ, force in pN) |
-| Box | cubic, periodic (`boundary p p p`) |
+| Box | periodic (`boundary p p p`); cubic (`box_length=2000.0`) or rectangular (`box_length=[2000.0, 3000.0, 4000.0]`) |
 | Dynamics | overdamped Brownian dynamics, `fix brownian`, γ = k_BT/D per species |
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j |
 | Bonds | `bond_style harmonic`, E = K (r − r₀)², r₀ = r_Qt + r_Ft |

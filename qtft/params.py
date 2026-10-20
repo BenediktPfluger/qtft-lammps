@@ -30,7 +30,7 @@ class Params:
     # --- system --------------------------------------------------------------
     n_qt: int = 400                  # number of Qt encapsulins
     n_ft: int = 1600                 # number of Ft ferritins
-    box_length: float = 928.3        # cubic periodic box edge [nm]
+    box_length: float | list[float] = 928.3   # periodic box [nm]: one edge (cube) or [Lx, Ly, Lz]
 
     # --- particles -----------------------------------------------------------
     radius_qt: float = 27.5          # effective Qt radius [nm]
@@ -85,6 +85,13 @@ class Params:
     mpirun_command: str = "mpirun --bind-to none"   # no core pinning: replicas run side by side
 
     # ---------------------------------------------------------------- derived
+    @property
+    def box(self) -> tuple[float, float, float]:
+        """Box edges (Lx, Ly, Lz) [nm]; a single box_length is a cube."""
+        if isinstance(self.box_length, (int, float)):
+            return (float(self.box_length),) * 3
+        return tuple(float(v) for v in self.box_length)
+
     @property
     def r0(self) -> float:
         return self.bond_r0 if self.bond_r0 is not None else self.radius_qt + self.radius_ft
@@ -143,7 +150,7 @@ class Params:
         return (max(5, round(0.02 * n)), max(20, round(0.10 * n)), max(50, round(0.25 * n)))
 
     def derived(self) -> dict:
-        vol = self.box_length ** 3
+        vol = math.prod(self.box)
         to_uM = 1e6 / (vol * NM3_TO_L * N_A)
         sphere = lambda r: 4 / 3 * math.pi * r ** 3
         gq, gf = self.gamma_qt, self.gamma_ft
@@ -173,6 +180,10 @@ class Params:
     def check(self) -> list[tuple[str, str]]:
         """Return a list of (level, message) with level 'ERROR' or 'WARNING'."""
         out = []
+        if isinstance(self.box_length, (list, tuple)) and len(self.box_length) != 3:
+            return [("ERROR", "box_length must be one number (cube) or three numbers [Lx, Ly, Lz]")]
+        if min(self.box) <= 0:
+            return [("ERROR", "box edges must be positive")]
         d = self.derived()
         if self.r_bind > self.cut_qf + 1e-9:
             out.append(("ERROR", f"R_bind {self.r_bind} nm exceeds the Qt-Ft pair cutoff {self.cut_qf} nm "
@@ -189,6 +200,9 @@ class Params:
             out.append(("WARNING", "total volume fraction > 0.3: overlap-free insertion may fail"))
         if self.comm_cut < self.rdf_cut + self.neighbor_skin:
             out.append(("ERROR", "comm cutoff must be >= rdf cutoff + neighbor skin"))
+        if min(self.box) < 2 * self.rdf_cut:
+            out.append(("WARNING", f"shortest box edge {min(self.box):g} nm < 2 x rdf cutoff ({self.rdf_cut:g} nm): "
+                                   "the RDF sees periodic images of the same particles"))
         if self.prod_steps % self.output_every:
             out.append(("WARNING", "prod_steps should be a multiple of output_every"))
         if self.traj_every % self.output_every:
@@ -213,7 +227,7 @@ class Params:
         return "\n".join(lines)
 
     def auto_name(self) -> str:
-        return (f"{self.n_qt}Qt_{self.n_ft}Ft_L{self.box_length:g}"
+        return (f"{self.n_qt}Qt_{self.n_ft}Ft_L{box_label(self.box_length)}"
                 f"_kQQ{self.k_qq:g}_kFF{self.k_ff:g}_kQF{self.k_qf:g}_K{self.bond_k:g}"
                 f"_kon{self.k_on:g}_dt{self.timestep:g}ns_{self.prod_steps * self.timestep * 1e-6:g}ms")
 
@@ -242,6 +256,13 @@ class Params:
     def load(cls, path: str | Path) -> "Params":
         data = json.loads(Path(path).read_text())
         return cls.from_dict(data.get("params", data))
+
+
+def box_label(box_length) -> str:
+    """'2000' for a cube, '2000x3000x4000' for a rectangular box (run names, sweep labels)."""
+    if isinstance(box_length, (int, float)):
+        return f"{box_length:g}"
+    return "x".join(f"{v:g}" for v in box_length)
 
 
 def _fmt(val) -> str:

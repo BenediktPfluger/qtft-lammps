@@ -34,7 +34,7 @@ def template_values(p: Params, replica: int, seeds: dict) -> dict:
     return {
         "run_name": p.name,
         "replica": replica,
-        "box_length": p.box_length,
+        "box_x": p.box[0], "box_y": p.box[1], "box_z": p.box[2],
         "extra_bond": max(p.maxbond_qt, p.maxbond_ft),
         "extra_special": p.extra_special,
         "k_qq": p.k_qq, "cut_qq": p.cut_qq,

@@ -95,7 +95,7 @@ def cluster_table(data, p: Params) -> pd.DataFrame:
     })
 
 
-def frame_metrics(data, table: pd.DataFrame, box_length: float) -> dict:
+def frame_metrics(data, table: pd.DataFrame, box) -> dict:
     """Per-frame structure metrics (handover definitions: Rg on clusters >= 3, spatial and
     composition metrics on clusters >= 2)."""
     big3 = table[table["size"] >= 3]
@@ -108,8 +108,9 @@ def frame_metrics(data, table: pd.DataFrame, box_length: float) -> dict:
         "inter_nn_mean": np.nan, "inter_nn_sd": np.nan, "intra_nn_mean": np.nan,
     }
     if len(big2) >= 2:
-        centres = np.mod(big2[["com_x", "com_y", "com_z"]].to_numpy(), box_length)
-        dist, _ = cKDTree(centres, boxsize=box_length).query(centres, k=2)
+        box = np.array(box)                                             # (Lx, Ly, Lz)
+        centres = np.mod(big2[["com_x", "com_y", "com_z"]].to_numpy(), box)
+        dist, _ = cKDTree(centres, boxsize=box).query(centres, k=2)
         out["inter_nn_mean"], out["inter_nn_sd"] = dist[:, 1].mean(), dist[:, 1].std()
     if len(big3):
         cl = np.asarray(data.particles["Cluster"]) - 1
@@ -133,7 +134,7 @@ def structure(rep_dir: str | Path, every: int = 10) -> tuple[pd.DataFrame, pd.Da
     for step, data in load_frames(rep_dir, every=every):
         table = cluster_table(data, p)
         rows.append({"Step": step, "time_ms": step * p.timestep * 1e-6,
-                     **frame_metrics(data, table, p.box_length)})
+                     **frame_metrics(data, table, p.box)})
     return pd.DataFrame(rows), table
 
 

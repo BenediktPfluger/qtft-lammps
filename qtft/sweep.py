@@ -23,7 +23,7 @@ import pandas as pd
 
 from .build import build_run, git_info
 from .ensemble import ensemble_stats
-from .params import Params, data_path
+from .params import Params, box_label, data_path
 
 # execution settings: shared by all variants (one queue, same seeds), not sweepable
 FIXED = {"n_replicas", "mpi_procs", "max_parallel", "master_seed", "data_dir", "group", "run_name",
@@ -33,6 +33,8 @@ RESULTS = ["final_frac_bound", "final_Bonds", "final_largest_frac", "final_mean_
 
 
 def _value_label(value) -> str:
+    if isinstance(value, (list, tuple)):
+        return box_label(value)
     return f"{value:g}" if isinstance(value, (int, float)) and not isinstance(value, bool) else str(value)
 
 

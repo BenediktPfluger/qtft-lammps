@@ -79,7 +79,7 @@ def fibsem_export(rep_dir: str | Path, voxel_nm: float = 4.0, plot: bool = True)
     # --- metadata
     qt_per_cluster = table.groupby("cluster").size()
     multi = sorted({c for c, s in zip(cluster[qt], size_of[qt]) if s > 1})
-    box = [p.box_length] * 3
+    box = list(p.box)
     upper = (xyz + p.radius_qt).max(axis=0)
     meta = {
         "source_trajectory": str(rep_dir / "traj.dump"),
@@ -114,18 +114,18 @@ def fibsem_export(rep_dir: str | Path, voxel_nm: float = 4.0, plot: bool = True)
     table.to_csv(out / "sim_encapsulin_centroids_clustered.csv", index=False)
     (out / "sim_metadata.json").write_text(json.dumps(meta, indent=2))
     if plot:
-        _check_plot(table, lower, p.box_length, out)
+        _check_plot(table, lower, p.box, out)
     return out
 
 
-def _check_plot(table: pd.DataFrame, lower: np.ndarray, box: float, out: Path) -> None:
+def _check_plot(table: pd.DataFrame, lower: np.ndarray, box, out: Path) -> None:
     """x-y scatter of the encapsulins coloured by cluster (free ones grey), with the original box."""
     fig, ax = plt.subplots(figsize=(5, 5), layout="constrained")
     free = ~table["is_clustered"]
     ax.scatter(table.loc[free, "x_nm"], table.loc[free, "y_nm"], s=2, c="0.75", lw=0, label="free")
     clustered = table[~free]
     ax.scatter(clustered["x_nm"], clustered["y_nm"], s=3, c=clustered["cluster"] % 20, cmap="tab20", lw=0)
-    ax.add_patch(plt.Rectangle((-lower[0], -lower[1]), box, box, fill=False, lw=0.8, ls="--", color="k"))
+    ax.add_patch(plt.Rectangle((-lower[0], -lower[1]), box[0], box[1], fill=False, lw=0.8, ls="--", color="k"))
     ax.set_aspect("equal")
     ax.set_xlabel("x (nm)")
     ax.set_ylabel("y (nm)")

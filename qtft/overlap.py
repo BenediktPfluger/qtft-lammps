@@ -21,13 +21,14 @@ FAMILIES = {"Qt-Qt": (1, 1), "Ft-Ft": (2, 2), "Qt-Ft": (1, 2)}
 
 def overlap_frame(atoms: pd.DataFrame, p: Params) -> pd.DataFrame:
     """Overlap statistics of one frame (atoms from read_dump), one row per pair family."""
-    pos = np.mod(atoms[["x", "y", "z"]].to_numpy(dtype=float), p.box_length)
+    box = np.array(p.box)
+    pos = np.mod(atoms[["x", "y", "z"]].to_numpy(dtype=float), box)
     types = atoms["type"].to_numpy()
     radius = np.where(types == 1, p.radius_qt, p.radius_ft)
-    tree = cKDTree(pos, boxsize=p.box_length)
+    tree = cKDTree(pos, boxsize=box)
     pairs = tree.query_pairs(2 * max(p.radius_qt, p.radius_ft), output_type="ndarray")
     delta = pos[pairs[:, 1]] - pos[pairs[:, 0]]
-    delta -= p.box_length * np.round(delta / p.box_length)
+    delta -= box * np.round(delta / box)
     dist = np.linalg.norm(delta, axis=1)
     contact = radius[pairs[:, 0]] + radius[pairs[:, 1]]
     depth = np.maximum(contact - dist, 0.0)
