@@ -19,7 +19,7 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 
 ## Usage
 
-1. Install everything as described in [INSTALL.md](INSTALL.md).
+1. Install everything as described in [docs/INSTALL.md](docs/INSTALL.md).
 2. `conda activate lammps`, open the repo in VS Code.
 3. Open `control.ipynb`: set the parameters, check the derived values, build and run.
 

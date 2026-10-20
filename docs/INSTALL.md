@@ -14,7 +14,7 @@ CMake build instructions: <https://docs.lammps.org/Build_cmake.html>.
 | LAMMPS | `stable` branch, built with CMake, installed into the conda env |
 | Editor | VS Code on Windows + WSL extension |
 
-The conda environment is defined in [`environment.yml`](environment.yml).
+The conda environment is defined in [`environment.yml`](../environment.yml).
 
 ---
 
