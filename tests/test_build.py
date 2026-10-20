@@ -34,8 +34,8 @@ def test_build_run(tmp_path):
     run_dir = build_run(p)
     text = (run_dir / "rep_01" / "in.lammps").read_text()
     assert "{{" not in text
-    assert "pair_coeff      1 2 1.245 40.5" in text
-    assert "bond_coeff      1 1.66 40.5" in text
+    assert "pair_coeff      1 2 4.3 40.5" in text
+    assert "bond_coeff      1 4.3 40.5" in text
     gammas = [float(g) for g in re.findall(r"gamma_t (\S+)", text)]
     assert gammas == pytest.approx([p.kT / p.D_qt, p.kT / p.D_ft])
     assert (run_dir / "rep_01" / "in.lammps").read_text() != (run_dir / "rep_02" / "in.lammps").read_text()
@@ -56,4 +56,4 @@ def test_run_folders_by_replica_count(tmp_path):
 
 
 def test_default_data_dir_inside_repo():
-    assert Params().run_dir.parent == REPO_DIR / "qtft-data" / "single"
+    assert Params().run_dir.parent == REPO_DIR / "runs" / "single"

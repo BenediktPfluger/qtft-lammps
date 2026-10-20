@@ -22,16 +22,14 @@ def test_geometry_defaults():
 
 def test_binding_probability():
     p = Params()
-    assert p.p_bind == pytest.approx(1 - math.exp(-5e-4))                # k_on dt = 1e-6 x 500
-    assert Params(bind_every=10).p_bind == pytest.approx(1 - math.exp(-5e-3))
+    assert p.p_bind == pytest.approx(1 - math.exp(-9.3e-4))              # k_on dt = 1.86e-6 x 500
+    assert Params(bind_every=10).p_bind == pytest.approx(1 - math.exp(-9.3e-3))
 
 
 def test_stability_values_of_reference_timestep():
     d = Params().derived()                                               # dt = 500 ns
-    assert d["alpha Qt-Qt"] == pytest.approx(0.31, abs=0.01)
-    assert d["alpha Ft-Ft"] == pytest.approx(0.47, abs=0.01)
-    assert d["alpha Qt-Ft"] == pytest.approx(0.20, abs=0.01)
-    assert d["alpha bond"] == pytest.approx(0.27, abs=0.01)
+    for name in ("alpha Qt-Qt", "alpha Ft-Ft", "alpha Qt-Ft", "alpha bond"):  # constants set for alpha 0.7
+        assert d[name] == pytest.approx(0.70, abs=0.01)
     assert Params().check() == []
 
 

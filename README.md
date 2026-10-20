@@ -23,9 +23,10 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 2. `conda activate lammps`, open the repo in VS Code.
 3. Open `control.ipynb`: set the parameters, check the derived values, build and run.
 
-Simulation output is written to `qtft-data/` inside the repository (gitignored, never committed):
-`qtft-data/single/` for runs with one replica, `qtft-data/ensemble/` for runs with several,
-`qtft-data/benchmark/` for performance measurements, and `qtft-data/index.csv` listing all runs.
+Simulation output is written to `runs/` inside the repository (gitignored, never committed):
+`runs/single/` for runs with one replica, `runs/ensemble/` for runs with several,
+`runs/benchmark/` for performance measurements, `runs/tuning/` for force-constant sweeps, and
+`runs/index.csv` listing all single and ensemble runs.
 
 ## Repository layout
 
@@ -40,18 +41,19 @@ Simulation output is written to `qtft-data/` inside the repository (gitignored, 
 | `qtft/build.py` | fills the template → `rep_XX/in.lammps`, writes `params.json`, derives seeds |
 | `qtft/run.py`, `qtft/launcher.py` | start runs in the background, live progress (`watch`, `launcher.log`), stop |
 | `qtft/read.py` | readers for `log.lammps` (YAML thermo), dumps, `rdf.dat`, histograms |
-| `qtft/quicklook.py` | quick overview plot of a run |
+| `qtft/quicklook.py` | quick overview plot of a run: thermo time series, potential energy, virial pressure, mean overlap per pair family |
 | `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, `index.csv` of all runs, comparison of runs |
 | `qtft/structure.py` | cluster geometry with OVITO (clusters from bonds, unwrapped across the periodic box): Rg, compactness, centres, nearest-neighbour distances, composition |
 | `qtft/overlap.py` | interpenetration diagnostics per pair family |
 | `qtft/figures.py` | Nature-style figures (overview, kinetics, large agglomerates, overlap, journal panels g–j, comparison), final-state table (CSV + LaTeX), `make_report` |
 | `qtft/fibsem.py` | export of the final frame in the FIB-SEM segmentation schema (encapsulins, clusters from bonds, unwrapped) |
+| `qtft/tuning.py` | force-constant sweep: constants for a target α, predicted vs measured overlap per pair family, binding kinetics |
 | `qtft/benchmark.py` | performance measurement (MPI processes per replica, replicas in parallel) and sizing of `extra_special` |
 | `tests/` | quick checks (`pytest`); includes a short end-to-end LAMMPS run |
 
 ## Output
 
-Simulation output goes to `qtft-data/<single|ensemble>/<run name>/` (inside the repository,
+Simulation output goes to `runs/<single|ensemble>/<run name>/` (inside the repository,
 gitignored). Every output file,
 its content and what creates it is listed in [docs/outputs.md](docs/outputs.md).
 

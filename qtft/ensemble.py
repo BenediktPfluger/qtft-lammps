@@ -150,7 +150,7 @@ INDEX_PARAMS = ("n_qt", "n_ft", "box_length", "k_qq", "k_ff", "k_qf", "bond_k", 
                 "timestep", "prod_steps", "n_replicas")
 
 
-def update_index(data_dir: str | Path = "qtft-data") -> pd.DataFrame:
+def update_index(data_dir: str | Path = "runs") -> pd.DataFrame:
     """Rebuild <data_dir>/index.csv: one line per run folder (single and ensemble) with status
     and changed parameters."""
     data_dir = data_path(data_dir)

@@ -1,6 +1,6 @@
 # Output files
 
-All simulation output is written to the data folder (default `qtft-data/` inside the repository;
+All simulation output is written to the data folder (default `runs/` inside the repository;
 gitignored, never committed). Runs with one replica go to `single/`, runs with several replicas to
 `ensemble/`. This page lists every file, what it contains and what creates it.
 
@@ -12,7 +12,7 @@ gitignored, never committed). Runs with one replica go to `single/`, runs with s
 - **Python**: written by the `qtft` helpers (building, starting and monitoring a run, or analysis afterwards).
 
 ```
-qtft-data/
+runs/
 ├── index.csv
 ├── single/                        runs with n_replicas = 1
 │   └── <run name>/                same structure as below, with rep_01/ only
@@ -26,10 +26,11 @@ qtft-data/
 │       │   ├── traj.dump, bonds.dump, rdf.dat, coord_qt.hist, coord_ft.hist, final.data
 │       │   └── fibsem/            only after the FIB-SEM export
 │       └── analysis/              only after the analysis
-└── benchmark/                     only after benchmark()
+├── benchmark/                     only after benchmark()
+└── tuning/                        only after alpha_sweep()
 ```
 
-## Data folder `qtft-data/`
+## Data folder `runs/`
 
 | File | Content | Created by |
 |---|---|---|
@@ -135,9 +136,17 @@ Comparisons of several runs (`compare_report(runs, out_dir)`) are written to the
 `comparison`, `kinetics`, `large_agglomerates` (PDF/SVG/PNG), `panels/`, and
 `comparison_table.csv` / `.tex`.
 
-## Benchmark `qtft-data/benchmark/`
+## Benchmark `runs/benchmark/`
 
 Only after `benchmark()` (control notebook, section 5). One folder per measurement, named after the
 number of hardware threads filled (`16cores/`, `8cores/`), each with one short run folder per tested
 setting (same structure as above) and `results.csv` with speed, timing breakdown and projected run
 times. Benchmark runs are not listed in `index.csv`.
+
+## Force-constant sweep `runs/tuning/`
+
+Only after `alpha_sweep()` (control notebook, section 6). One folder per sweep (default `sweep/`), with one
+run folder per setting, named `alpha<α>_dt<Δt>ns/` (same structure as above, including `analysis/` after the
+evaluation), and `sweep_summary.csv` from `sweep_table()`: one row per run and pair family with α, force
+constant, predicted and measured overlap depth (mean, 95th percentile, max; nm), fraction of pairs
+overlapping, final fraction bound and half-time of bonds. Sweep runs are not listed in `index.csv`.

@@ -26,8 +26,9 @@ agglomeration. Before making changes, read `README.md` (layout, usage), `docs/de
   - OVITO is used only in `structure.py` (cluster geometry, unwrapping) and via it in `fibsem.py`.
   - The notebooks call the public functions exported in `qtft/__init__.py`; keep their signatures
     stable, or update the notebooks too.
-- Simulation output goes to `qtft-data/` inside the repo (gitignored, never committed):
-  `single/` for one replica, `ensemble/` for several, `benchmark/` for performance runs.
+- Simulation output goes to `runs/` inside the repo (gitignored, never committed):
+  `single/` for one replica, `ensemble/` for several, `benchmark/` for performance runs,
+  `tuning/` for force-constant sweeps.
 
 ## Workflow
 
@@ -54,7 +55,7 @@ agglomeration. Before making changes, read `README.md` (layout, usage), `docs/de
 ## Never
 
 - Never commit secrets or API keys.
-- Never commit simulation output (`qtft-data/`, dumps, logs).
+- Never commit simulation output (`runs/`, dumps, logs).
 - **Never add Claude as a contributor.** No `Co-Authored-By: Claude …` trailer, no
   `Claude-Session:` link, no "Generated with Claude Code" line — in commit messages, PR
   descriptions, or anywhere else. GitHub parses a co-author trailer and lists Claude as a

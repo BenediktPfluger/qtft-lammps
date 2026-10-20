@@ -7,7 +7,7 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# LAMMPS output (simulation data lives in qtft-data/, never in git)
+# LAMMPS output (simulation data lives in runs/, never in git)
 log.lammps
 log.cite
 *.dump
@@ -18,7 +18,7 @@ screen.txt
 
 # simulation output folder (inside the repo, but not versioned)
 runs/
-qtft-data/
+runs/
 
 # editors / OS
 .vscode/

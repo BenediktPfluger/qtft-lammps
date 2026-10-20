@@ -143,3 +143,16 @@ def test_fibsem_export(runs):
     assert pairs.groupby("ours")["lammps"].nunique().max() == 1
     assert pairs.groupby("lammps")["ours"].nunique().max() == 1
     assert (table["is_clustered"].to_numpy() == (qt["nbonds"] > 0).to_numpy()).all()
+
+
+def test_quicklook(runs):
+    from qtft import quicklook
+
+    fig = quicklook(runs[0], overlap_every=1)
+    axes = fig.axes
+    assert len(axes) == 12
+    labels = [ax.get_ylabel() + ax.get_xlabel() for ax in axes]
+    assert not any("[" in label for label in labels) and "time (ms)" in labels[-2]
+    for ax in axes[8:11]:                                          # overlap panels, one line per replica
+        assert len(ax.get_lines()) == 2
+    assert len(quicklook(runs[0], overlap=False).axes[8].get_lines()) == 0

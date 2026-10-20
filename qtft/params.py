@@ -19,7 +19,7 @@ NM3_TO_L = 1e-24         # 1 nm^3 in litres
 REPO_DIR = Path(__file__).resolve().parent.parent
 
 
-def data_path(data_dir: str | Path = "qtft-data") -> Path:
+def data_path(data_dir: str | Path = "runs") -> Path:
     """Absolute output folder; a relative data_dir is taken relative to the repository."""
     path = Path(os.path.expanduser(data_dir))
     return path if path.is_absolute() else REPO_DIR / path
@@ -40,16 +40,16 @@ class Params:
     temperature: float = 310.0       # [K]
 
     # --- soft repulsion, pair_style harmonic/cut: E = k (r_c - r)^2 ----------
-    k_qq: float = 3.32               # Qt-Qt [zJ/nm^2], r_c = 2 r_Qt
-    k_ff: float = 2.0                # Ft-Ft [zJ/nm^2], r_c = 2 r_Ft
-    k_qf: float = 1.245              # Qt-Ft [zJ/nm^2], r_c = r_Qt + r_Ft
+    k_qq: float = 7.5                # Qt-Qt [zJ/nm^2], r_c = 2 r_Qt
+    k_ff: float = 3.0                # Ft-Ft [zJ/nm^2], r_c = 2 r_Ft
+    k_qf: float = 4.3                # Qt-Ft [zJ/nm^2], r_c = r_Qt + r_Ft
 
     # --- bonds, bond_style harmonic: E = K (r - r0)^2 ------------------------
-    bond_k: float = 1.66             # K [zJ/nm^2]
+    bond_k: float = 4.3              # K [zJ/nm^2]
     bond_r0: float | None = None     # r0 [nm]; None -> r_Qt + r_Ft
 
     # --- binding, fix bond/create --------------------------------------------
-    k_on: float = 1e-6               # microscopic binding rate per pair [1/ns]
+    k_on: float = 1.86e-6            # microscopic binding rate per pair [1/ns]
     bind_radius: float | None = None  # [nm]; None -> r_Qt + r_Ft
     bind_every: int = 1              # attempt bond creation every N steps
     maxbond_qt: int = 60             # max bonds per Qt
@@ -78,7 +78,7 @@ class Params:
     mpi_procs: int = 1               # MPI processes per replica
     max_parallel: int | None = None  # replicas running at once; None -> cores // mpi_procs
     master_seed: int = 12345
-    data_dir: str = "qtft-data"      # relative -> inside the repository (gitignored)
+    data_dir: str = "runs"           # relative -> inside the repository (gitignored)
     group: str | None = None         # subfolder; None -> "single" (1 replica) or "ensemble"
     run_name: str | None = None      # None -> generated from the parameters
     lmp_command: str = "lmp"
