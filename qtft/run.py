@@ -27,6 +27,7 @@ from pathlib import Path
 import pandas as pd
 
 from .read import last_thermo
+from .sweep import is_sweep, sweep_runs
 
 POLL_SECONDS = 2.0
 
@@ -41,9 +42,7 @@ def _replicas(run_dir: Path) -> list[Path]:
 
 def _runs(path: Path) -> list[Path]:
     """Run folders behind a target: the runs of a sweep folder, or the run folder itself."""
-    if (path / "sweep.json").exists():
-        return [path / r["label"] for r in json.loads((path / "sweep.json").read_text())["runs"]]
-    return [path]
+    return sweep_runs(path) if is_sweep(path) else [path]
 
 
 def _all_replicas(path: Path) -> list[Path]:
@@ -54,7 +53,7 @@ def _all_replicas(path: Path) -> list[Path]:
 
 def _launcher_pid(path: Path) -> Path:
     """launcher.pid of a target; a run inside a sweep is run by the sweep's launcher."""
-    if not (path / "launcher.pid").exists() and (path.parent / "sweep.json").exists():
+    if not (path / "launcher.pid").exists() and is_sweep(path.parent):
         return path.parent / "launcher.pid"
     return path / "launcher.pid"
 
@@ -142,7 +141,7 @@ def progress(run_dir: str | Path) -> pd.DataFrame:
     (setup, particle insertion). For a sweep: one table with a (run, replica) index.
     """
     run_dir = Path(run_dir).expanduser()
-    if (run_dir / "sweep.json").exists():
+    if is_sweep(run_dir):
         return pd.concat({r.name: progress(r) for r in _runs(run_dir)}, names=["run", "replica"])
     params = _record(run_dir)["params"]
     rows = []
@@ -246,7 +245,7 @@ def summary(run_dir: str | Path) -> dict:
     active = counts["running"] + counts["queued"]
     end = max(((rep / "status").stat().st_mtime for rep in reps), default=now) if not active else None
     return {
-        "run": run_dir.name, "group": run_dir.parent.name, "sweep": (run_dir / "sweep.json").exists(),
+        "run": run_dir.name, "group": run_dir.parent.name, "sweep": is_sweep(run_dir),
         "runs": len(runs), "replicas": len(reps),
         "parallel": _n_parallel(params), "mpi_procs": params["mpi_procs"], **counts,
         "started": started, "elapsed": ((end or now) - started) if started else None,

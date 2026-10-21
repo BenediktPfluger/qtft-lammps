@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import numbers
 import os
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
@@ -17,6 +18,11 @@ N_A = 6.02214076e23      # Avogadro constant in 1/mol
 NM3_TO_L = 1e-24         # 1 nm^3 in litres
 
 REPO_DIR = Path(__file__).resolve().parent.parent
+
+# settings that do not change the physics: shared by all runs of a sweep (not sweepable) and
+# ignored when listing or labelling parameter differences
+EXECUTION_SETTINGS = {"n_replicas", "mpi_procs", "max_parallel", "master_seed", "data_dir", "group",
+                      "run_name", "lmp_command", "mpirun_command"}
 
 
 def data_path(data_dir: str | Path = "runs") -> Path:
@@ -91,7 +97,7 @@ class Params:
     @property
     def box(self) -> tuple[float, float, float]:
         """Box edges (Lx, Ly, Lz) [nm]; a single box_length is a cube."""
-        if isinstance(self.box_length, (int, float)):
+        if isinstance(self.box_length, numbers.Real):
             return (float(self.box_length),) * 3
         return tuple(float(v) for v in self.box_length)
 
@@ -294,7 +300,7 @@ class Params:
 
 def box_label(box_length) -> str:
     """'2000' for a cube, '2000x3000x4000' for a rectangular box (run names, sweep labels)."""
-    if isinstance(box_length, (int, float)):
+    if isinstance(box_length, numbers.Real):
         return f"{box_length:g}"
     return "x".join(f"{v:g}" for v in box_length)
 

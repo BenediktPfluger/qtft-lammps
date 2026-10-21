@@ -24,6 +24,7 @@ runs/
 │       │   ├── in.lammps, status, pid, lammps.out
 │       │   ├── log.lammps
 │       │   ├── traj.dump, bonds.dump, rdf.dat, coord_qt.hist, coord_ft.hist, final.data
+│       │   ├── analysis/          percolation.csv, after the first ensemble_stats()
 │       │   └── fibsem/            only after the FIB-SEM export
 │       └── analysis/              only after the analysis
 ├── sweeps/                        only after build_sweep()
@@ -95,7 +96,7 @@ Written every `output_every` steps, once for the equilibration run and once for 
 |---|---|
 | `Step` | time step (production: time = Step × Δt) |
 | `PotEng`, `E_vdwl`, `E_bond` | potential energy: total, pair repulsion, bonds (zJ) |
-| `c_pvir` | virial pressure (forces only; 1 unit = 1 MPa) |
+| `c_pvir` | virial pressure from pair and bond forces only (no kinetic term, no wall forces; 1 unit = 1 MPa) |
 | `Bonds` | number of bonds |
 | `v_n_qt_bound`, `v_n_ft_bound` | Qt / Ft with at least one bond |
 | `v_frac_bound` | fraction of all particles that are bound |
@@ -119,6 +120,12 @@ Only after `fibsem_export_run(run_dir)` (analysis notebook, section 5).
 | `sim_metadata.json` | Counts, cluster-size histogram, box and applied offset, frame description, bond check, all parameters; `boundary` (`periodic`/`reflect`/`harmonic`), `wall_stiffness` (harmonic: k of Qt and Ft in zJ/nm², otherwise null), `wall_leaks` (walls: encapsulin spheres sticking out of the box and the largest depth, otherwise null) | Python: `fibsem_export()` |
 | `check_xy.png` | x–y scatter of the encapsulins coloured by cluster, with the periodic box or the walls as dashed outline | Python: `fibsem_export()` |
 
+## Replica analysis `rep_XX/analysis/`
+
+| File | Content | Created by |
+|---|---|---|
+| `percolation.csv` | Per `traj.dump` frame: `Step, time_ms, axes` = the axes along which one cluster spans the box (`""` = none, e.g. `xz`); written once the replica is done and reused afterwards (delete it to recompute) | Python: `structure.percolation()`, called by `ensemble_stats()` |
+
 ## Analysis folder `<run name>/analysis/`
 
 Only after `ensemble_stats()` or `make_report()` (analysis notebook). Everything here can be
@@ -126,12 +133,12 @@ regenerated from the replica files at any time.
 
 | File | Content | Created by |
 |---|---|---|
-| `ensemble_stats.json` | Mean, SD and per-replica traces of all logged quantities on a common time grid; half-times, percolation, final values per replica | Python: `ensemble_stats()` |
+| `ensemble_stats.json` | Mean, SD (sample SD, ddof = 1) and per-replica traces of all logged quantities on a common time grid; half-times, percolation (`percolated`: a cluster spans the box in the last frame, `t_percolation_ms`: first frame with a spanning cluster), final values per replica | Python: `ensemble_stats()` |
 | `ensemble_timeseries.csv` | The same time series as a table (`<quantity>_mean`, `<quantity>_sd`) | Python: `ensemble_stats()` |
-| `final_state.csv` | Final values per quantity: mean, SD, number of replicas | Python: `ensemble_stats()` |
+| `final_state.csv` | Final values per quantity: mean, SD, number of replicas (row `percolated`: mean = fraction of percolated replicas) | Python: `ensemble_stats()` |
 | `structure_timeseries.csv` | Per analysed frame, mean/SD over replicas: Rg, Rg/Rg_ideal, inter- and intra-cluster nearest-neighbour distances, Qt fraction per cluster | Python + OVITO: `structure_ensemble()` |
 | `structure_per_replica.csv` | The same per replica | Python + OVITO: `structure_ensemble()` |
-| `clusters_final.csv` | Every cluster of the last frame of every replica: size, Qt/Ft count, bonds, Rg, ideal Rg, centre | Python + OVITO: `structure_ensemble()` |
+| `clusters_final.csv` | Every cluster of the last frame of every replica: size, Qt/Ft count, bonds, Rg, ideal Rg (solid sphere of the cluster's particle volumes at packing 0.64), centre | Python + OVITO: `structure_ensemble()` |
 | `overlap_timeseries.csv` | Interpenetration statistics per pair family and frame (mean over replicas); with walls also the rows `Qt-wall` / `Ft-wall` (spheres beyond a box face) | Python: `overlap_ensemble()` |
 | `overlap_final.csv` | The same, pooled over the last frames | Python: `overlap_ensemble()` |
 | `final_table.csv`, `final_table.tex` | Final-state table (bonds, clusters, sizes, fraction bound, half-time, Rg, Qt fraction) as CSV and LaTeX | Python: `make_report()` |

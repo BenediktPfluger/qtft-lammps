@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from qtft import Params, build_run, start
-from qtft.ensemble import common_grid, compare, ensemble_stats, half_time, load_stats, update_index
+from qtft.ensemble import cached_stats, common_grid, compare, ensemble_stats, half_time, load_stats, update_index
 
 
 def test_common_grid_identical_and_overlap():
@@ -43,7 +43,7 @@ def test_ensemble_of_tiny_runs(tmp_path):
     assert stats["traces"]["Bonds"].shape == (3, 5)                        # 3 replicas, 5 frames
     finals = stats["per_replica"]["final_Bonds"]
     assert stats["final"].loc["final_Bonds", "mean"] == pytest.approx(finals.mean())
-    assert stats["final"].loc["final_Bonds", "sd"] == pytest.approx(finals.std(ddof=0))
+    assert stats["final"].loc["final_Bonds", "sd"] == pytest.approx(finals.std(ddof=1))
     assert stats["mean"]["Bonds"][-1] == pytest.approx(finals.mean())
     for name in ("ensemble_stats.json", "ensemble_timeseries.csv", "final_state.csv"):
         assert (runs[0] / "analysis" / name).exists()
@@ -55,3 +55,9 @@ def test_ensemble_of_tiny_runs(tmp_path):
 
     index = pd.read_csv(tmp_path / "index.csv")
     assert set(index["status"]) == {"done:3"}
+
+    # the saved stats are reused only while they cover exactly the finished replicas
+    assert cached_stats(runs[0])["replicas"] == ["rep_01", "rep_02", "rep_03"]
+    (runs[0] / "rep_03" / "status").write_text("failed\n")
+    assert cached_stats(runs[0])["replicas"] == ["rep_01", "rep_02"]
+    assert load_stats(runs[0])["replicas"] == ["rep_01", "rep_02"]          # and saved again

@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import MultipleLocator
 
-from .ensemble import ensemble_stats, load_stats
+from .ensemble import cached_stats, ensemble_stats
 from .params import Params
 from .read import read_histo
 
@@ -66,7 +66,7 @@ def load_run(run_dir: str | Path, label: str | None = None, color: str | None = 
     run_dir = Path(run_dir).expanduser()
     p = Params.load(run_dir / "params.json")
     analysis = run_dir / "analysis"
-    stats = load_stats(run_dir) if (analysis / "ensemble_stats.json").exists() else ensemble_stats(run_dir)
+    stats = cached_stats(run_dir)
     structure = None
     if (analysis / "structure_timeseries.csv").exists():
         structure = pd.read_csv(analysis / "structure_timeseries.csv")
@@ -271,9 +271,11 @@ def p_overlap(ax, runs, traces=False):
     if r.overlap is None:
         _no_data(ax, "run overlap analysis")
         return
-    colors = {"Qt-Qt": SPECIES["Qt"], "Ft-Ft": SPECIES["Ft"], "Qt-Ft": "#555555"}
+    colors = {"Qt-Qt": SPECIES["Qt"], "Ft-Ft": SPECIES["Ft"], "Qt-Ft": "#555555",
+              "Qt-wall": SPECIES["Qt"], "Ft-wall": SPECIES["Ft"]}            # wall rows only with walls
     for family, df in r.overlap.groupby("family"):
-        ax.plot(df["time_ms"], df["n overlapping"].clip(lower=0.5), color=colors[family], label=family)
+        ax.plot(df["time_ms"], df["n overlapping"].clip(lower=0.5), color=colors[family], label=family,
+                ls="--" if family.endswith("wall") else "-")
     ax.set_yscale("log")
     ax.set_ylabel("overlapping pairs")
     ax.legend()

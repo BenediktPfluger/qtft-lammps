@@ -68,12 +68,13 @@ if "{{boundary}} == reflect" then &
   "fix wall_qt Qt wall/reflect xlo {{qt_lo}} xhi {{qt_hi_x}} ylo {{qt_lo}} yhi {{qt_hi_y}} zlo {{qt_lo}} zhi {{qt_hi_z}} units box" &
   "fix wall_ft Ft wall/reflect xlo {{ft_lo}} xhi {{ft_hi_x}} ylo {{ft_lo}} yhi {{ft_hi_y}} zlo {{ft_lo}} zhi {{ft_hi_z}} units box"
 # harmonic: E = k (r_i - d)^2 for centre-face distance d < r_i (args: face position, k, sigma unused,
-# cutoff); wall energy and virial are included in pe and c_pvir
+# cutoff); the wall energy is included in pe, its virial not (c_pvir = interaction pressure, as in
+# the periodic box)
 if "{{boundary}} == harmonic" then &
   "fix wall_qt Qt wall/harmonic xlo EDGE {{wall_k_qt}} 0.0 {{radius_qt}} xhi EDGE {{wall_k_qt}} 0.0 {{radius_qt}} ylo EDGE {{wall_k_qt}} 0.0 {{radius_qt}} yhi EDGE {{wall_k_qt}} 0.0 {{radius_qt}} zlo EDGE {{wall_k_qt}} 0.0 {{radius_qt}} zhi EDGE {{wall_k_qt}} 0.0 {{radius_qt}} units box" &
   "fix wall_ft Ft wall/harmonic xlo EDGE {{wall_k_ft}} 0.0 {{radius_ft}} xhi EDGE {{wall_k_ft}} 0.0 {{radius_ft}} ylo EDGE {{wall_k_ft}} 0.0 {{radius_ft}} yhi EDGE {{wall_k_ft}} 0.0 {{radius_ft}} zlo EDGE {{wall_k_ft}} 0.0 {{radius_ft}} zhi EDGE {{wall_k_ft}} 0.0 {{radius_ft}} units box" &
-  "fix_modify wall_qt energy yes virial yes" &
-  "fix_modify wall_ft energy yes virial yes"
+  "fix_modify wall_qt energy yes" &
+  "fix_modify wall_ft energy yes"
 
 # ---------------------------------------------------------------- 7. in-run analysis
 # bonds per atom and cluster (= bond-connected fragment, free particles are 1-particle clusters)

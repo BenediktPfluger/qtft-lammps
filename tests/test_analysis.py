@@ -72,6 +72,9 @@ def test_ovito_clusters_match_reference(runs):
     assert rg == pytest.approx(rg_ref, abs=1e-3)
     assert table["n_bonds"].sum() == len(bonds)
     assert (table["n_qt"] + table["n_ft"] == table["size"]).all()
+    # a single Qt: solid sphere of volume V_Qt / 0.64
+    one_qt = table[(table["size"] == 1) & (table["n_qt"] == 1)].iloc[0]
+    assert one_qt["rg_ideal"] == pytest.approx(np.sqrt(3 / 5) * p.radius_qt / 0.64 ** (1 / 3))
 
 
 def test_overlap_frame_matches_brute_force(runs):

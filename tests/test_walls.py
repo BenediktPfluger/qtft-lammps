@@ -74,6 +74,11 @@ def test_wall_run(tmp_path, boundary):
     metrics, _ = structure(rep, every=1)
     assert metrics["n_clusters_ge2"].iloc[-1] > 0
 
+    import matplotlib
+    matplotlib.use("Agg")
+    from qtft import make_report
+    assert (make_report(run, every=1) / "figures" / "overlap.pdf").exists()
+
     out = fibsem_export(rep, plot=False)
     meta = json.loads((out / "sim_metadata.json").read_text())
     assert meta["boundary"] == boundary and meta["offset_applied_xyz_nm"] == [0.0, 0.0, 0.0]

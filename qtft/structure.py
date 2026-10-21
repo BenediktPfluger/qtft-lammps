@@ -4,6 +4,12 @@ OVITO unwraps each cluster across the boundaries before measuring it (with walls
 periodic and positions are used as they are).
 
 Frames are read from traj.dump (positions) and bonds.dump (bond list of the same step).
+
+Percolation (`percolation`, numpy/scipy only): a cluster percolates when it spans the box along at
+least one axis. Periodic box: the cluster wraps around the box, i.e. a closed bond path adds up to a
+whole box length (unwrapping it along a spanning tree leaves a bond that disagrees with its minimum
+image by a multiple of L). Walls: the cluster touches both opposite walls (a particle surface within
+WALL_TOUCH of the face).
 """
 
 from __future__ import annotations
@@ -13,12 +19,15 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy import sparse
+from scipy.sparse.csgraph import breadth_first_order, connected_components
 from scipy.spatial import cKDTree
 
 from .params import Params
-from .read import TYPE_IDS, read_bonds
+from .read import TYPE_IDS, dump_steps, read_bonds, read_dump
 
-PACKING = 0.64          # random close packing, for the ideal compact sphere
+PACKING = 0.64          # random close packing, for the ideal compact sphere (Rg_ideal)
+WALL_TOUCH = 5.0        # [nm] a particle surface this close to a wall touches it (percolation with walls)
 
 
 def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True, last_only: bool = False):
@@ -40,7 +49,10 @@ def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True, last_onl
     frames = [n - 1] if last_only else list(range(0, n, every))
     if last and frames[-1] != n - 1:
         frames.append(n - 1)
-    steps = {pipeline.source.compute(f).attributes["Timestep"]: f for f in frames}
+    all_steps = dump_steps(rep_dir / "traj.dump")
+    if len(all_steps) != n:
+        raise ValueError(f"{rep_dir / 'traj.dump'}: OVITO sees {n} frames, the file has {len(all_steps)}")
+    steps = {all_steps[f]: f for f in frames}
     bonds = {s: b for s, b in read_bonds(rep_dir / "bonds.dump") if s in steps}
 
     modifier = ClusterAnalysisModifier(
@@ -78,7 +90,10 @@ def particle_types(data) -> np.ndarray:
 
 
 def cluster_table(data, p: Params) -> pd.DataFrame:
-    """One row per cluster: size, composition, bonds, Rg, ideal Rg, centre of mass."""
+    """One row per cluster: size, composition, bonds, Rg, ideal Rg, centre of mass.
+
+    Rg_ideal is the Rg of a solid sphere holding the particle volumes of the cluster at random close
+    packing: V = (n_Qt V_Qt + n_Ft V_Ft) / 0.64, Rg_ideal = sqrt(3/5) (3V / 4 pi)^(1/3)."""
     t = data.tables["clusters"]
     size = np.asarray(t["Cluster Size"])
     cl = np.asarray(data.particles["Cluster"]) - 1                  # 0-based cluster index
@@ -87,8 +102,8 @@ def cluster_table(data, p: Params) -> pd.DataFrame:
     topo = np.asarray(data.particles.bonds.topology) if data.particles.bonds is not None else np.empty((0, 2), int)
     n_bonds = np.bincount(cl[topo[:, 0]], minlength=len(size)) if len(topo) else np.zeros(len(size), int)
     com = np.asarray(t["Center of Mass"])
-    r_mean = (p.radius_qt + p.radius_ft) / 2
-    volume = size * 4 / 3 * math.pi * r_mean**3 / PACKING
+    sphere = lambda r: 4 / 3 * math.pi * r**3
+    volume = (n_qt * sphere(p.radius_qt) + (size - n_qt) * sphere(p.radius_ft)) / PACKING
     rg_ideal = math.sqrt(3 / 5) * (3 * volume / (4 * math.pi)) ** (1 / 3)
     return pd.DataFrame({
         "cluster": np.asarray(t["Cluster Identifier"]),
@@ -158,7 +173,7 @@ def structure_ensemble(run_dir: str | Path, every: int = 10, save: bool = True) 
         raise ValueError(f"no finished replicas in {run_dir}")
     stacked = pd.concat(per_rep, names=["replica", "Step"])
     grouped = stacked.groupby(level="Step")
-    mean, sd = grouped.mean(), grouped.std(ddof=0)
+    mean, sd = grouped.mean(), grouped.std(ddof=1)                      # NaN with one replica
     result = {"mean": mean, "sd": sd, "per_replica": stacked,
               "clusters_final": pd.concat(finals, ignore_index=True)}
     if save:
@@ -168,3 +183,74 @@ def structure_ensemble(run_dir: str | Path, every: int = 10, save: bool = True) 
         stacked.to_csv(out / "structure_per_replica.csv")
         result["clusters_final"].to_csv(out / "clusters_final.csv", index=False)
     return result
+
+
+# ------------------------------------------------------------------ percolation (box-spanning cluster)
+def spanning_axes(atoms: pd.DataFrame, bonds: np.ndarray, p: Params) -> str:
+    """Axes ("x", "y", "z") along which a single cluster spans the box in one frame, e.g. "" or "xz".
+    `atoms` from read_dump, `bonds` (atom ID pairs) from read_bonds."""
+    ids = atoms["id"].to_numpy()
+    pos = atoms[["x", "y", "z"]].to_numpy(dtype=float)
+    box = np.array(p.box)
+    n = len(ids)
+    if not len(bonds):
+        return ""
+    index = np.empty(ids.max() + 1, dtype=np.int64)
+    index[ids] = np.arange(n)
+    i, j = index[bonds[:, 0]], index[bonds[:, 1]]
+    graph = sparse.coo_matrix((np.ones(len(i)), (i, j)), shape=(n, n)).tocsr()
+    n_comp, label = connected_components(graph, directed=False)
+    spans = np.zeros((n_comp, 3), dtype=bool)
+
+    if p.periodic:
+        def mic(d):
+            return d - box * np.round(d / box)
+        # unwrap every cluster along a breadth-first spanning tree, started from a virtual root that
+        # is linked to one particle per cluster
+        roots = np.unique(label, return_index=True)[1]
+        tree = sparse.coo_matrix((np.ones(n_comp), (np.full(n_comp, n), roots)), shape=(n + 1, n + 1))
+        full = sparse.bmat([[graph, None], [None, sparse.csr_matrix((1, 1))]]).tocsr() + tree.tocsr()
+        order, pred = breadth_first_order(full, n, directed=False, return_predecessors=True)
+        depth = np.zeros(n + 1, dtype=np.int64)
+        for node in order[1:]:
+            depth[node] = depth[pred[node]] + 1
+        u = pos.copy()
+        nodes = order[1:]
+        for d in range(2, depth.max() + 1):                    # depth 1 = cluster roots, kept in place
+            level = nodes[depth[nodes] == d]
+            u[level] = u[pred[level]] + mic(pos[level] - pos[pred[level]])
+        # a bond that disagrees with its minimum image by a box length closes a path around the box
+        wraps = np.abs(np.round(((u[j] - u[i]) - mic(pos[j] - pos[i])) / box)) > 0
+        np.logical_or.at(spans, label[i], wraps)
+    else:
+        radius = np.where(atoms["type"].to_numpy() == 1, p.radius_qt, p.radius_ft)[:, None]
+        lo = np.zeros((n_comp, 3), dtype=bool)
+        hi = np.zeros((n_comp, 3), dtype=bool)
+        np.logical_or.at(lo, label, pos - radius <= WALL_TOUCH)
+        np.logical_or.at(hi, label, box - pos - radius <= WALL_TOUCH)
+        spans = lo & hi
+    return "".join(axis for axis, s in zip("xyz", spans.any(axis=0)) if s)
+
+
+def percolation(rep_dir: str | Path) -> pd.DataFrame:
+    """Spanning axes of every traj.dump frame of a replica (columns Step, time_ms, axes). Cached in
+    rep_XX/analysis/percolation.csv once the replica is done."""
+    rep_dir = Path(rep_dir)
+    cache = rep_dir / "analysis" / "percolation.csv"
+    if cache.exists():
+        return pd.read_csv(cache, keep_default_na=False)
+    p = Params.load(rep_dir.parent / "params.json")
+    bond_frames = read_bonds(rep_dir / "bonds.dump")
+    rows = []
+    for step, atoms in read_dump(rep_dir / "traj.dump"):
+        for bond_step, bonds in bond_frames:                    # bonds.dump has every traj.dump step
+            if bond_step == step:
+                break
+        else:
+            raise ValueError(f"step {step} missing in {rep_dir / 'bonds.dump'}")
+        rows.append({"Step": step, "time_ms": step * p.timestep * 1e-6, "axes": spanning_axes(atoms, bonds, p)})
+    df = pd.DataFrame(rows, columns=["Step", "time_ms", "axes"])
+    if (rep_dir / "status").exists() and (rep_dir / "status").read_text().strip() == "done":
+        cache.parent.mkdir(exist_ok=True)
+        df.to_csv(cache, index=False)
+    return df

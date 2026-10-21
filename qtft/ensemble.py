@@ -1,7 +1,8 @@
 """Ensemble statistics over the replicas of a run, and the index of all runs in the data folder.
 
 All time series come from the production thermo data in log.lammps (computed by LAMMPS
-during the run). Averages are mean +- population SD over replicas on a common time grid.
+during the run). Averages are mean +- sample SD (ddof = 1) over replicas on a common time grid;
+with a single replica the SD is NaN.
 """
 
 from __future__ import annotations
@@ -13,15 +14,17 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .params import Params, data_path
+from .params import EXECUTION_SETTINGS, Params, data_path
 from .read import load_thermo
+from .structure import percolation
 
 SKIP_COLUMNS = {"Step", "time_ms", "S/CPU", "CPULeft"}
 
 
 # ------------------------------------------------------------------ per-replica data
-def replica_series(run_dir: str | Path, only_done: bool = True) -> dict[str, pd.DataFrame]:
-    """Production thermo data of every finished replica, with derived fraction columns."""
+def replica_series(run_dir: str | Path, only_done: bool = True, names_only: bool = False) -> dict:
+    """Production thermo data of every finished replica, with derived fraction columns
+    (`names_only`: only the replica names as keys, nothing read)."""
     run_dir = Path(run_dir).expanduser()
     p = Params.load(run_dir / "params.json")
     n_total = p.n_qt + p.n_ft
@@ -29,6 +32,9 @@ def replica_series(run_dir: str | Path, only_done: bool = True) -> dict[str, pd.
     for rep in sorted(run_dir.glob("rep_*")):
         status = (rep / "status").read_text().strip() if (rep / "status").exists() else ""
         if only_done and status != "done":
+            continue
+        if names_only:
+            out[rep.name] = None
             continue
         df = load_thermo(rep)
         df["frac_bound_qt"] = df["n_qt_bound"] / p.n_qt
@@ -65,6 +71,10 @@ def half_time(t: np.ndarray, y: np.ndarray, level: float) -> float:
 def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
     """Mean/SD time series, per-replica traces and final-state scalars of a run.
 
+    Percolation = a cluster spans the box along at least one axis (structure.percolation, from the
+    trajectory, cached per replica): `percolated` in the last frame (the mean over replicas is the
+    fraction of percolated replicas) and `t_percolation_ms`, the first frame with a spanning cluster.
+
     Saved to <run>/analysis/: ensemble_stats.json, ensemble_timeseries.csv, final_state.csv.
     """
     run_dir = Path(run_dir).expanduser()
@@ -77,28 +87,29 @@ def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
               for c in columns}
 
     mean = {c: traces[c].mean(axis=0) for c in columns}
-    sd = {c: traces[c].std(axis=0) for c in columns}
+    sd = {c: traces[c].std(axis=0, ddof=1) if len(series) > 1 else np.full(len(t), np.nan)
+          for c in columns}
 
     per_rep = []
     for name, df in series.items():
         tt = df["time_ms"].to_numpy()
         bonds = df["Bonds"].to_numpy()
-        largest = df["largest_frac"].to_numpy()
+        spanning = percolation(run_dir / name)
+        spanned = spanning.loc[spanning["axes"] != "", "time_ms"]
         per_rep.append({
             "replica": name,
             "t_half_bonds_ms": half_time(tt, bonds, 0.5 * bonds[-1]) if bonds[-1] > 0 else float("nan"),
             "t_half_qt_ms": half_time(tt, df["frac_bound_qt"].to_numpy(), 0.5),
             "t_half_ft_ms": half_time(tt, df["frac_bound_ft"].to_numpy(), 0.5),
-            "percolated": bool(largest[-1] >= 0.5),
-            "t_percolation_ms": half_time(tt, largest, 0.5),
+            "percolated": float(spanning["axes"].iloc[-1] != "") if len(spanning) else float("nan"),
+            "t_percolation_ms": float(spanned.iloc[0]) if len(spanned) else float("nan"),
             **{f"final_{c}": float(df[c].iloc[-1]) for c in columns},
         })
     per_rep = pd.DataFrame(per_rep).set_index("replica")
 
     final = pd.DataFrame({"mean": per_rep.mean(numeric_only=True),
-                          "sd": per_rep.std(numeric_only=True, ddof=0),
+                          "sd": per_rep.std(numeric_only=True, ddof=1),
                           "n": per_rep.count(numeric_only=True)})
-    final.loc["percolated_replicas", ["mean", "sd", "n"]] = [per_rep["percolated"].sum(), 0, len(per_rep)]
 
     result = {"time_ms": t, "mean": mean, "sd": sd, "traces": traces,
               "replicas": list(series), "per_replica": per_rep, "final": final}
@@ -128,6 +139,17 @@ def _save(run_dir: Path, r: dict) -> None:
     (out / "ensemble_stats.json").write_text(json.dumps(payload))
 
 
+def cached_stats(run_dir: str | Path) -> dict:
+    """The saved ensemble_stats.json if it covers exactly the replicas finished now, otherwise
+    ensemble_stats() computed afresh (and saved)."""
+    run_dir = Path(run_dir).expanduser()
+    if (run_dir / "analysis" / "ensemble_stats.json").exists():
+        stats = load_stats(run_dir)
+        if stats["replicas"] == list(replica_series(run_dir, names_only=True)):
+            return stats
+    return ensemble_stats(run_dir)
+
+
 def load_stats(run_dir: str | Path) -> dict:
     """Read a saved ensemble_stats.json back (arrays as numpy, tables as DataFrames)."""
     d = json.loads((Path(run_dir).expanduser() / "analysis" / "ensemble_stats.json").read_text())
@@ -137,16 +159,14 @@ def load_stats(run_dir: str | Path) -> dict:
         "mean": {c: np.array(v) for c, v in d["mean"].items()},
         "sd": {c: np.array(v) for c, v in d["sd"].items()},
         "traces": {c: np.array(v) for c, v in d["traces"].items()},
-        "per_replica": pd.DataFrame.from_dict(d["per_replica"], orient="index"),
-        "final": pd.DataFrame.from_dict(d["final"], orient="index"),
+        # to_json writes NaN as null: back to float
+        "per_replica": pd.DataFrame.from_dict(d["per_replica"], orient="index").astype(float),
+        "final": pd.DataFrame.from_dict(d["final"], orient="index").astype(float),
     }
 
 
 # ------------------------------------------------------------------ index of all runs
-# settings that do not change the physics; ignored when listing or labelling parameter differences
-TECHNICAL = {"data_dir", "group", "run_name", "n_replicas", "mpi_procs", "max_parallel",
-             "lmp_command", "mpirun_command", "master_seed"}
-INDEX_PARAMS = ("n_qt", "n_ft", "box_length", "k_qq", "k_ff", "k_qf", "bond_k", "k_on",
+INDEX_PARAMS = ("n_qt", "n_ft", "box_length", "boundary", "k_qq", "k_ff", "k_qf", "bond_k", "k_on",
                 "timestep", "prod_steps", "n_replicas")
 
 
@@ -165,7 +185,7 @@ def update_index(data_dir: str | Path = "runs") -> pd.DataFrame:
         statuses = [(rep / "status").read_text().strip() if (rep / "status").exists() else "?"
                     for rep in sorted(record_file.parent.glob("rep_*"))]
         changed = [f"{k}={v}" for k, v in params.items()
-                   if k not in TECHNICAL and v != defaults.get(k)]
+                   if k not in EXECUTION_SETTINGS and v != defaults.get(k)]
         rows.append({
             "group": record_file.parent.parent.relative_to(data_dir).as_posix(),
             "run": record_file.parent.name,
@@ -186,7 +206,7 @@ def differing_labels(run_dirs) -> tuple[list[str], list[str]]:
     run_dirs = [Path(r).expanduser() for r in run_dirs]
     params = [Params.load(r / "params.json") for r in run_dirs]
     differing = [f.name for f in dataclasses.fields(Params)
-                 if f.name not in TECHNICAL
+                 if f.name not in EXECUTION_SETTINGS
                  and len({json.dumps(getattr(q, f.name)) for q in params}) > 1]
     labels = [", ".join(f"{k}={getattr(q, k)}" for k in differing) or r.name
               for r, q in zip(run_dirs, params)]
@@ -199,8 +219,7 @@ def compare(run_dirs: list[str | Path]) -> pd.DataFrame:
     labels, differing = differing_labels(run_dirs)
     cols = {}
     for r, label in zip(run_dirs, labels):
-        stats_file = r / "analysis" / "ensemble_stats.json"
-        final = load_stats(r)["final"] if stats_file.exists() else ensemble_stats(r)["final"]
+        final = cached_stats(r)["final"]
         cols[label] = final.apply(lambda row: f"{row['mean']:.4g} ± {row['sd']:.2g}", axis=1)
     table = pd.DataFrame(cols)
     table.attrs["differing parameters"] = differing

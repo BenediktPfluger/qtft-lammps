@@ -23,11 +23,7 @@ import pandas as pd
 
 from .build import build_run, git_info
 from .ensemble import ensemble_stats
-from .params import Params, box_label, data_path
-
-# execution settings: shared by all variants (one queue, same seeds), not sweepable
-FIXED = {"n_replicas", "mpi_procs", "max_parallel", "master_seed", "data_dir", "group", "run_name",
-         "lmp_command", "mpirun_command"}
+from .params import EXECUTION_SETTINGS, Params, box_label, data_path
 RESULTS = ["final_frac_bound", "final_Bonds", "final_largest_frac", "final_mean_size",
            "t_half_bonds_ms", "t_half_qt_ms", "t_half_ft_ms", "t_percolation_ms"]
 
@@ -46,8 +42,8 @@ def build_sweep_from(p: Params, overrides: list[dict], labels: list[str], group:
     keys = {k for o in overrides for k in o}
     if keys - fields:
         raise ValueError(f"unknown parameters: {sorted(keys - fields)}")
-    if keys & FIXED:
-        raise ValueError(f"cannot sweep execution settings: {sorted(keys & FIXED)}")
+    if keys & EXECUTION_SETTINGS:                # shared by all variants (one queue, same seeds)
+        raise ValueError(f"cannot sweep execution settings: {sorted(keys & EXECUTION_SETTINGS)}")
     if len(set(labels)) != len(labels):
         raise ValueError(f"run labels are not unique: {labels}")
     variants = [dataclasses.replace(p, **o, group=group, run_name=label) for o, label in zip(overrides, labels)]
@@ -116,15 +112,16 @@ def sweep_results(sweep_dir: str | Path, save: bool = True) -> pd.DataFrame:
         row = {"run": run["label"], **run["overrides"]}
         run_dir = sweep_dir / run["label"]
         try:
-            final = ensemble_stats(run_dir)["final"]
+            stats = ensemble_stats(run_dir)
         except ValueError:                       # no finished replica yet
             rows.append({**row, "replicas done": 0})
             continue
-        row["replicas done"] = int(final.loc["percolated_replicas", "n"])
+        final = stats["final"]
+        row["replicas done"] = len(stats["replicas"])
         for key in RESULTS:
             row[key] = final.loc[key, "mean"] if key in final.index else np.nan
             row[f"{key} sd"] = final.loc[key, "sd"] if key in final.index else np.nan
-        row["percolated replicas"] = int(final.loc["percolated_replicas", "mean"])
+        row["percolated replicas"] = int(stats["per_replica"]["percolated"].sum())
         rows.append(row)
     df = pd.DataFrame(rows).set_index("run")
     df.attrs["swept"] = list(record.get("variants") or dict.fromkeys(k for r in record["runs"] for k in r["overrides"]))

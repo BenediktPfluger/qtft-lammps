@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import json
+import io
+from itertools import islice
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
+
+from .params import Params
 
 PHASES = ("equilibration", "production")
 TYPE_IDS = {"Qt": 1, "Ft": 2}   # type labels in traj.dump -> numeric atom types
@@ -49,12 +52,12 @@ def last_thermo(log_path: str | Path) -> tuple[str, dict] | None:
 def load_thermo(rep_dir: str | Path) -> pd.DataFrame:
     """Production thermo data of a replica with a time column in ms and short column names."""
     rep_dir = Path(rep_dir)
-    params = json.loads((rep_dir.parent / "params.json").read_text())["params"]
+    p = Params.load(rep_dir.parent / "params.json")
     blocks = read_thermo(rep_dir / "log.lammps")
     if len(blocks) < 2:
         raise ValueError(f"no production data in {rep_dir / 'log.lammps'}")
     df = blocks[1].rename(columns=lambda c: c.removeprefix("v_").removeprefix("c_"))
-    df.insert(1, "time_ms", df["Step"] * params["timestep"] * 1e-6)
+    df.insert(1, "time_ms", df["Step"] * p.timestep * 1e-6)
     return df
 
 
@@ -105,11 +108,28 @@ def read_dump(path: str | Path):
                 for _ in range(4):
                     f.readline()
                 columns = f.readline().split()[2:]
-                rows = [f.readline().split() for _ in range(n)]
-                df = pd.DataFrame(rows, columns=columns)
-                if "type" in df:
-                    df["type"] = df["type"].replace(TYPE_IDS)
-                yield step, df.apply(pd.to_numeric)
+                block = "".join(islice(f, n))
+                if not block:
+                    yield step, pd.DataFrame(columns=columns)
+                    continue
+                df = pd.read_csv(io.StringIO(block), sep=r"\s+", header=None, names=columns)
+                if "type" in df and not pd.api.types.is_numeric_dtype(df["type"]):
+                    df["type"] = pd.to_numeric(df["type"].replace(TYPE_IDS))
+                yield step, df
+
+
+def dump_steps(path: str | Path) -> list[int]:
+    """Timesteps of all frames of a dump file (headers only, atom lines are skipped unparsed)."""
+    steps = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("ITEM: TIMESTEP"):
+                steps.append(int(next(f)))
+                next(f)
+                n = int(next(f))
+                for _ in islice(f, 5 + n):          # box bounds, column header, atom lines
+                    pass
+    return steps
 
 
 def read_bonds(path: str | Path):
