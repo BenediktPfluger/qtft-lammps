@@ -18,7 +18,7 @@ conventions. Read this first when continuing the work.
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j; k_QQ = 7.5, k_FF = 3.0, k_QF = 4.3 zJ/nm² | soft excluded volume allows the large timestep; LAMMPS k includes the ½; set for α ≈ 0.7 at Δt = 500 ns (least overlap with margin to α = 1, see Overlap and force constants; former handover values 3.32 / 2.0 / 1.245); all three pairs set explicitly (default geometric mixing would give a wrong Qt–Ft cutoff) |
 | Bond | `bond_style harmonic`, E = K (r − r₀)², K = 4.3 zJ/nm², r₀ = 40.5 nm | set for α ≈ 0.7 like the repulsion (former handover value 1.66); K = k_QF, so a pair inside contact has the same energy before and after bonding (no jump at bond formation) |
 | Bonded pairs | `special_bonds lj 1.0e-50 1.0 1.0` | directly bonded pairs: repulsion off (the bond keeps the distance); pairs 2–3 bonds apart (e.g. two Qt on one Ft) keep the repulsion; 1e-50 instead of 0 keeps bonded pairs in the neighbour list so they appear in the RDF (`fix bond/create` still refuses duplicate bonds) |
-| Binding | `fix bond/create` every step, Qt–Ft only, R_bind = 40.5 nm, prob p = 1 − exp(−k_on Δt), k_on = 1.86·10⁻⁶ ns⁻¹ (10⁻⁶ × √(4.3/1.245): same kinetics as with the former k_QF, see Overlap and force constants; to be calibrated against experiment); max 60 bonds per Qt, 10 per Ft; loops allowed | time-discretised Doi model; difference to ReaDDy accepted: each atom bonds at most once per step, with its closest eligible partner |
+| Binding | `fix bond/create` every step, Qt–Ft only, R_bind = 40.5 nm, prob p = 1 − exp(−k_on Δt), k_on = 1.86·10⁻⁶ ns⁻¹ (10⁻⁶ × √(4.3/1.245): same kinetics as with the former k_QF, see Overlap and force constants; to be calibrated against experiment); max 60 bonds per Qt, 10 per Ft; loops allowed | contact reaction of the Collins–Kimball type (partially reactive surface at contact, see Binding model); difference to ReaDDy accepted: each atom bonds at most once per step, and only with a partner that also has it as its closest eligible partner |
 | Bond bookkeeping | `extra/bond/per/atom 60`, `extra/special/per/atom 1000` (LAMMPS reserves 2001 slots); `comm_modify cutoff` = max(2.5 r₀, RDF cutoff) + skin = 141.5 nm (skin 20) | bond/create keeps 1-2/1-3/1-4 neighbour lists and needs partners 2 bonds away as ghosts; actual need measured with `benchmark.special_need` |
 | Start | overlap-free random insertion (`create_atoms random … overlap`): Qt with 55 nm, then Ft with 40.5 nm; 5000 steps (2.5 ms) equilibration without binding | dilute system (φ ≈ 6 %), so the insertion is already close to an equilibrium fluid; only the contact pairs (overlap, needed for binding) are missing at the start: repulsion energy and pressure reach their plateau within ≈ 1000 steps (test 2026-10-20, 4000 Qt / 10 000 Ft, 20 000 steps), 5000 steps give a 5× margin at 0.5 % of a 10⁶-step production; the Ft–Ft start bias (≥ 40.5 instead of 26 nm) is erased (RMS displacement in 2.5 ms: Qt ≈ 55 nm, Ft ≈ 87 nm) |
 | Bond breaking | not implemented yet | planned for later (`fix bond/break` is length-based; rate-based breaking needs another approach) |
@@ -143,3 +143,39 @@ With harmonic walls the same estimate holds for the wall with α = 2 k Δt / γ�
 Decision (2026-10-20): α ≈ 0.7 at Δt = 500 ns, rounded: k_qq = 7.5, k_ff = 3.0, k_qf = bond_k = 4.3 zJ/nm²
 (α 0.70 / 0.70 / 0.70 / 0.70; predicted overlap 0.53 / 0.84 / 0.70 nm), k_on = 1.86·10⁻⁶ ns⁻¹. Most of the
 reduction possible at this time step, with margin to the α > 1 warning; the run time is unchanged.
+
+## Binding model (Collins–Kimball)
+
+A Qt–Ft pair can bond only within R_bind = r_Qt + r_Ft, i.e. while the two spheres overlap (`fix bond/create`
+requires R_bind ≤ pair cutoff, and the repulsion ends at contact). Binding is therefore a reaction at contact
+with a finite rate: the **Collins–Kimball** model (partially reactive surface). Particles diffuse with
+D = D_Qt + D_Ft relative to each other and react at the contact surface R = 40.5 nm with a surface
+reactivity κ. The overlap layer is how this surface is realised; its Boltzmann-weighted thickness is
+σ √(π/2) with σ² = k_BT / (2 k_QF) / (1 − α/2) (the overlap spread, see Overlap and force constants), so
+
+- intrinsic (reaction-limited) rate κ = k_on · 4πR² · σ √(π/2)
+- diffusion-limited (Smoluchowski) rate k_D = 4π D R
+- association rate constant k_a = k_D κ / (k_D + κ)
+
+Defaults (k_QF = 4.3 zJ/nm², Δt = 500 ns, k_on = 1.86·10⁻⁶ ns⁻¹): σ √(π/2) = 1.10 nm,
+κ = 0.042 nm³/ns = 2.5·10⁷ M⁻¹ s⁻¹, k_D = 0.356 nm³/ns = 2.1·10⁸ M⁻¹ s⁻¹, **k_a = 2.3·10⁷ M⁻¹ s⁻¹**
+(1 nm³/ns = 6.02·10⁸ M⁻¹ s⁻¹); κ/k_D = 0.12, so binding is mostly reaction-limited. Check against a run
+(4000 Qt / 10 000 Ft, 2000 nm box, k_QF = 1.245, k_on = 10⁻⁶ ns⁻¹): predicted k_a gives 162 bonds/ms at the start,
+measured 153–158 bonds/ms over the first 1–5 ms.
+
+Consequences:
+- k_on is not a physical constant: κ depends on k_QF and Δt through σ. **The physical quantity to report is
+  k_a (or κ) in M⁻¹ s⁻¹**, measured from the run as the initial bond formation rate per Qt–Ft pair
+  concentration, k_a = (dN_bonds/dt)|₀ · V / (N_Qt N_Ft) (`binding_rate(run_dir)`: fit through the origin
+  over the frames up to 10 % bound, mean ± SD over replicas, next to the prediction; figure `binding_rate`),
+  and compared with experiment. The force constants and
+  Δt are fixed (α ≈ 0.7 at 500 ns); changing them requires recalibrating k_on to the same k_a.
+- k_a is a rate per Qt–Ft *particle* pair; with up to 60 Ft per Qt, a per-site rate would divide by the
+  number of sites.
+- Remaining artefact: where particles are pressed together (inside clusters, dense regions) they overlap
+  more and bind somewhat faster than at an isolated contact.
+- A binding shell beyond contact (R_bind = contact + 2 nm through an extra force-free `pair_style zero`
+  cutoff, which would make κ nearly independent of k_QF) was tested on 2026-10-21 and not adopted: the
+  contact reaction is a standard model, the constants stay fixed, and the shell would only shift the
+  calibration (its neighbour-list cost was 1–2 %).
+

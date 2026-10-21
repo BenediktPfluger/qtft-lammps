@@ -106,9 +106,9 @@ def test_report_and_comparison(runs, tmp_path):
 
     out = make_report(runs[0], every=2)
     for name in ("final_table.csv", "final_table.tex", "bonds_timeseries.csv", "structure_timeseries.csv",
-                 "clusters_final.csv", "overlap_final.csv"):
+                 "clusters_final.csv", "overlap_final.csv", "binding_rate.csv"):
         assert (out / name).exists(), name
-    for name in ("overview", "kinetics", "large_agglomerates", "overlap", "journal/panel_g"):
+    for name in ("overview", "kinetics", "large_agglomerates", "overlap", "binding_rate", "journal/panel_g"):
         for ext in ("pdf", "svg", "png"):
             assert (out / "figures" / f"{name}.{ext}").exists(), f"{name}.{ext}"
     assert len(list((out / "figures" / "panels").glob("*.pdf"))) == 12

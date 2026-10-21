@@ -14,7 +14,7 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 | Dynamics | overdamped Brownian dynamics, `fix brownian`, γ = k_BT/D per species |
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j |
 | Bonds | `bond_style harmonic`, E = K (r − r₀)², r₀ = r_Qt + r_Ft |
-| Binding | `fix bond/create`, Qt–Ft only, probability 1 − exp(−k_on Δt) per step |
+| Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on Δt) per step: a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ (see `docs/decisions.md`) |
 | Start | overlap-free random insertion, short equilibration without binding |
 
 ## Usage
@@ -43,7 +43,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `qtft/run.py`, `qtft/launcher.py` | start runs or whole sweeps in the background (one queue, at most `max_parallel` replicas at once), live progress (`watch`, `launcher.log`), stop |
 | `qtft/read.py` | readers for `log.lammps` (YAML thermo), dumps, `rdf.dat`, histograms |
 | `qtft/quicklook.py` | quick overview plot of a run: thermo time series, potential energy, virial pressure, mean overlap per pair family |
-| `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, `index.csv` of all runs, comparison of runs |
+| `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, association rate k_a (`binding_rate`, measured and Collins–Kimball), `index.csv` of all runs, comparison of runs |
 | `qtft/structure.py` | cluster geometry with OVITO (clusters from bonds, unwrapped across the periodic box; not needed with walls): Rg, compactness, centres, nearest-neighbour distances, composition; percolation (a cluster spanning the box) |
 | `qtft/overlap.py` | interpenetration diagnostics per pair family (with walls also particle–wall) |
 | `qtft/figures.py` | Nature-style figures (overview, kinetics, large agglomerates, overlap, journal panels g–j, comparison), final-state table (CSV + LaTeX), `make_report` |

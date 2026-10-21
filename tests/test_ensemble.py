@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from qtft import Params, build_run, start
-from qtft.ensemble import cached_stats, common_grid, compare, ensemble_stats, half_time, load_stats, update_index
+from qtft.ensemble import binding_rate, cached_stats, common_grid, compare, ensemble_stats, half_time, load_stats, update_index
 
 
 def test_common_grid_identical_and_overlap():
@@ -55,6 +55,15 @@ def test_ensemble_of_tiny_runs(tmp_path):
 
     index = pd.read_csv(tmp_path / "index.csv")
     assert set(index["status"]) == {"done:3"}
+
+    # association rate: positive, per replica, in both units; theory k_a between kappa and k_D
+    rate = binding_rate(runs[0], save=False)
+    k = rate["per_replica"]["k_a [nm^3/ns]"]
+    assert len(k) == 3 and (k > 0).all()
+    assert rate["per_replica"]["k_a [1/(M s)]"].iloc[0] == pytest.approx(k.iloc[0] * 6.02214076e8)
+    s = rate["summary"]["nm^3/ns"]
+    assert s["k_a theory"] < min(s["kappa theory (reaction-limited)"], s["k_D theory (diffusion-limited)"])
+    assert s["k_a measured (mean)"] == pytest.approx(k.mean())
 
     # the saved stats are reused only while they cover exactly the finished replicas
     assert cached_stats(runs[0])["replicas"] == ["rep_01", "rep_02", "rep_03"]

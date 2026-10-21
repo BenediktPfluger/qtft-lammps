@@ -9,6 +9,7 @@ a +-1 SD band, optionally the individual replicas. Time in ms.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,7 +18,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import MultipleLocator
 
-from .ensemble import cached_stats, ensemble_stats
+from .ensemble import TO_PER_M_S, binding_rate, cached_stats, ensemble_stats
 from .params import Params
 from .read import read_histo
 
@@ -413,6 +414,43 @@ def fig_overlap(run: RunData, out_dir: Path | None = None):
     return fig
 
 
+def _sci(x: float) -> str:
+    """1.91e7 -> '1.91·10⁷'."""
+    exponent = math.floor(math.log10(abs(x))) if x else 0
+    return f"{x / 10**exponent:.3g}·10" + str(exponent).translate(str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"))
+
+
+def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: float = 0.1):
+    """Start of the bond count (mean +- SD over replicas) with the fitted initial rate (solid) and the
+    Collins-Kimball prediction (dashed); k_a in 1/(M s) in the legend (89 mm)."""
+    rate = binding_rate(run.run_dir, max_frac_bound=max_frac_bound, save=False)
+    s = rate["summary"]["nm^3/ns"]
+    pairs_per_volume = run.p.n_qt * run.p.n_ft / math.prod(run.p.box)
+    window = rate["window_ms"]
+    t_all = run.stats["time_ms"]
+    show = t_all <= 2 * window
+    with plt.rc_context(STYLE):
+        fig = _figure(SINGLE, 60 * MM)
+        ax = fig.add_subplot()
+        t = t_all[show]
+        band(ax, t, run.stats["mean"]["Bonds"][show], run.stats["sd"]["Bonds"][show], run.color, "simulation")
+        sd = s["k_a measured (SD)"] * TO_PER_M_S
+        ax.plot(t, s["k_a measured (mean)"] * pairs_per_volume * t * 1e6, color="k", lw=0.8,
+                label=f"fit: k_a = {_sci(s['k_a measured (mean)'] * TO_PER_M_S)}"
+                      + (f" ± {_sci(sd)}" if sd == sd else "") + " M⁻¹ s⁻¹")
+        ax.plot(t, s["k_a theory"] * pairs_per_volume * t * 1e6, color="0.4", lw=0.8, ls="--",
+                label=f"Collins–Kimball: {_sci(s['k_a theory'] * TO_PER_M_S)} M⁻¹ s⁻¹")
+        ax.axvline(window, color="0.6", lw=0.5, ls=":")
+        ax.set_xlim(0, t[-1])
+        ax.set_ylim(bottom=0)
+        ax.set_xlabel("time (ms)")
+        ax.set_ylabel("bonds")
+        ax.legend(loc="upper left")
+        if out_dir:
+            save(fig, out_dir / "binding_rate")
+    return fig
+
+
 SWEEP_LABELS = {
     "final_frac_bound": "fraction bound (final)", "final_Bonds": "bonds (final)",
     "final_largest_frac": "largest cluster (fraction of particles, final)",
@@ -544,8 +582,10 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
 
     figs = out / "figures"
     for f in (fig_overview(run, figs, traces=traces), fig_kinetics([run], figs, traces=traces),
-              fig_large_count([run], figs, traces=traces), fig_overlap(run, figs), *fig_journal(run, figs)):
+              fig_large_count([run], figs, traces=traces), fig_overlap(run, figs), fig_binding_rate(run, figs),
+              *fig_journal(run, figs)):
         plt.close(f)
+    binding_rate(run_dir)                                   # analysis/binding_rate.csv
 
     table = final_table(run)
     table.to_csv(out / "final_table.csv")

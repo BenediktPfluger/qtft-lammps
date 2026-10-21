@@ -141,10 +141,11 @@ regenerated from the replica files at any time.
 | `clusters_final.csv` | Every cluster of the last frame of every replica: size, Qt/Ft count, bonds, Rg, ideal Rg (solid sphere of the cluster's particle volumes at packing 0.64), centre | Python + OVITO: `structure_ensemble()` |
 | `overlap_timeseries.csv` | Interpenetration statistics per pair family and frame (mean over replicas); with walls also the rows `Qt-wall` / `Ft-wall` (spheres beyond a box face) | Python: `overlap_ensemble()` |
 | `overlap_final.csv` | The same, pooled over the last frames | Python: `overlap_ensemble()` |
+| `binding_rate.csv` | Association rate constant k_a in nm³/ns and M⁻¹ s⁻¹: measured from the start of the bond curve (mean and SD over replicas, frames up to 10 % bound) and the Collins–Kimball prediction (k_a, κ, k_D) | Python: `binding_rate()`, also `make_report()` |
 | `final_table.csv`, `final_table.tex` | Final-state table (bonds, clusters, sizes, fraction bound, half-time, Rg, Qt fraction) as CSV and LaTeX | Python: `make_report()` |
 | `bonds_timeseries.csv` | Bond count over time: step, time (µs, ms), mean, SD | Python: `make_report()` |
 | `report.json` | Settings used for the report | Python: `make_report()` |
-| `figures/` | All figures as PDF + SVG + PNG: `overview`, `kinetics`, `large_agglomerates`, `overlap`; `figures/panels/` single panels of the overview; `figures/journal/` panels g–j | Python: `make_report()` |
+| `figures/` | All figures as PDF + SVG + PNG: `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (start of the bond curve with the fitted k_a and the Collins–Kimball line); `figures/panels/` single panels of the overview; `figures/journal/` panels g–j | Python: `make_report()` |
 
 Comparisons of several runs (`compare_report(runs, out_dir)`) are written to the chosen `out_dir`:
 `comparison`, `kinetics`, `large_agglomerates` (PDF/SVG/PNG), `panels/`, and
