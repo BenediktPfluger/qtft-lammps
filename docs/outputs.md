@@ -111,7 +111,7 @@ repeated steps.
 | `v_f_mono` … `v_f_vlarge` | fraction of particles in monomers / small / medium / large / very large clusters |
 | `v_deg_qt_mean`, `v_deg_ft_mean`, `v_deg_qt_max`, `v_deg_ft_max` | mean (over bound particles) and maximum bonds per Qt / Ft |
 | `v_bond_mean`, `v_bond_max` | mean and maximum bond length (nm) |
-| `S/CPU`, `CPULeft` | speed (steps per second) and estimated time left (s) |
+| `S/CPU`, `CPULeft` | speed (steps per second) and LAMMPS's estimated time left (s) of the current `run` command, i.e. of one production segment (`progress()` computes the time left of the whole phase from the remaining steps instead) |
 
 Kinetic energy and temperature are not logged: they are meaningless in overdamped Brownian dynamics.
 

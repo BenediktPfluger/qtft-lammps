@@ -387,10 +387,6 @@ class Params:
     @classmethod
     def from_dict(cls, data: dict) -> "Params":
         known = {f.name for f in fields(cls)}
-        if "prod_steps" in data and "t_influx_s" not in data:
-            # record from before the calcium control: its production as one influx phase
-            t = data["prod_steps"] * data.get("timestep", cls.timestep) * 1e-9
-            data = {**data, "t_baseline_s": 0.0, "t_influx_s": t, "t_pumpout_s": 0.0}
         return cls(**{k: v for k, v in data.items() if k in known})
 
     @classmethod

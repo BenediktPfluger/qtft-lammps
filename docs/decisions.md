@@ -235,7 +235,8 @@ near its maximum, but the 11 % unloaded calmodulin dominates unbinding even at t
 start and a new seed (seed + segment number). A phase boundary inside a segment takes effect at the next segment
 (warning in `check()`). The segment starts write "Inconsistent image flags" (bonds across the periodic boundary,
 harmless; the analysis uses the minimum image) and "Using fix bond/create … with fix bond/break may not work as
-expected"; the number of printed warnings is limited to 20. Checked: after a full protocol the special lists are
+expected" (≈ 2 log lines per segment, ≈ 26 000 lines for 130 s; not limited, so that other warnings stay
+visible). Checked: after a full protocol the special lists are
 consistent (energy unchanged after rebuilding them), the bond count in the thermo output equals `bonds.dump`, and
 no bond is duplicated.
 

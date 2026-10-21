@@ -49,14 +49,6 @@ def test_calcium_checks():
     assert not errors(Params())
 
 
-def test_old_record_loads_as_influx(tmp_path):
-    record = {"params": {"n_qt": 400, "timestep": 500.0, "prod_steps": 100_000, "k_on": 1e-6}}
-    path = tmp_path / "params.json"
-    path.write_text(json.dumps(record))
-    p = Params.load(path)
-    assert (p.t_baseline_s, p.t_pumpout_s) == (0.0, 0.0) and p.prod_steps == 100_000
-
-
 def test_input_has_segment_loop(tmp_path):
     p = Params(data_dir=str(tmp_path), run_name="ca")
     text = (build_run(p) / "rep_01" / "in.lammps").read_text()

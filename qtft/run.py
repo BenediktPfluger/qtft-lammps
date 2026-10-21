@@ -161,7 +161,10 @@ def progress(run_dir: str | Path) -> pd.DataFrame:
                 "bonds": int(values["Bonds"]),
                 "frac_bound": round(values["v_frac_bound"], 3),
                 "steps/s": round(values["S/CPU"], 1),
-                "left [min]": round(values["CPULeft"] / 60, 1),
+                # remaining steps of the phase at the current speed (LAMMPS's CPULeft covers only the
+                # current run command, i.e. one production segment)
+                "left [min]": round((total - values["Step"]) / values["S/CPU"] / 60, 1)
+                              if values["S/CPU"] > 0 else float("nan"),
             })
         rows.append(row)
     return pd.DataFrame(rows).set_index("replica")
