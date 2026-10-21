@@ -150,24 +150,37 @@ A Qt–Ft pair can bond only within R_bind = r_Qt + r_Ft, i.e. while the two sph
 requires R_bind ≤ pair cutoff, and the repulsion ends at contact). Binding is therefore a reaction at contact
 with a finite rate: the **Collins–Kimball** model (partially reactive surface). Particles diffuse with
 D = D_Qt + D_Ft relative to each other and react at the contact surface R = 40.5 nm with a surface
-reactivity κ. The overlap layer is how this surface is realised; its Boltzmann-weighted thickness is
-σ √(π/2) with σ² = k_BT / (2 k_QF) / (1 − α/2) (the overlap spread, see Overlap and force constants), so
+reactivity κ:
 
-- intrinsic (reaction-limited) rate κ = k_on · 4πR² · σ √(π/2)
+- intrinsic (reaction-limited) rate κ = (rate per pair) · (contact pairs) · V / (N_Qt N_Ft), with the rate per
+  pair p_bind / (bind_every Δt) ≈ k_on and the contact pairs = Qt–Ft pairs within R_bind at equilibrium; the
+  product (contact pairs) · V / (N_Qt N_Ft) is the volume of the overlap layer ("contact volume")
 - diffusion-limited (Smoluchowski) rate k_D = 4π D R
-- association rate constant k_a = k_D κ / (k_D + κ)
+- association rate constant (steady state) k_a = k_D κ / (k_D + κ)
 
-Defaults (k_QF = 4.3 zJ/nm², Δt = 500 ns, k_on = 1.86·10⁻⁶ ns⁻¹): σ √(π/2) = 1.10 nm,
-κ = 0.042 nm³/ns = 2.5·10⁷ M⁻¹ s⁻¹, k_D = 0.356 nm³/ns = 2.1·10⁸ M⁻¹ s⁻¹, **k_a = 2.3·10⁷ M⁻¹ s⁻¹**
-(1 nm³/ns = 6.02·10⁸ M⁻¹ s⁻¹); κ/k_D = 0.12, so binding is mostly reaction-limited. Check against a run
-(4000 Qt / 10 000 Ft, 2000 nm box, k_QF = 1.245, k_on = 10⁻⁶ ns⁻¹): predicted k_a gives 162 bonds/ms at the start,
-measured 153–158 bonds/ms over the first 1–5 ms.
+`binding_rate(run_dir)` counts the contact pairs in the first production frame of every replica (end of the
+equilibration: equilibrium distribution, no bonds yet) and measures k_a as the initial slope of the bond count.
+Defaults (4000 Qt / 10 000 Ft, 2000 nm box, k_QF = 4.3 zJ/nm², Δt = 500 ns, k_on = 1.86·10⁻⁶ ns⁻¹, 3 replicas,
+2026-10-21): **measured k_a = (1.76 ± 0.05)·10⁷ M⁻¹ s⁻¹, predicted (1.75 ± 0.10)·10⁷ M⁻¹ s⁻¹**; κ = 1.9·10⁷,
+k_D = 2.1·10⁸ M⁻¹ s⁻¹ (1 nm³/ns = 6.02·10⁸ M⁻¹ s⁻¹); κ/k_D ≈ 0.09, so binding is mostly reaction-limited.
+Former constants (k_QF = 1.245, k_on = 10⁻⁶ ns⁻¹): measured 1.91·10⁷, predicted 1.91·10⁷. The measured early
+rate starts at κ (equilibrium contact density) and settles to k_a within ≈ R²/D = 2.3 ms; with κ/k_D ≈ 0.09 the
+two differ by < 10 %.
+
+Continuum estimate of the contact volume: 4πR² σ √(π/2) with σ² = k_BT / (2 k_QF) / (1 − α/2) (Boltzmann-weighted
+overlap layer, `collins_kimball(p)`). It holds only while the relative step per time step is small against σ:
+at the former constants (σ ≈ 1.3 nm) it is within 10 % of the counted volume, at the defaults (σ ≈ 0.7 nm, relative
+step √(2DΔt) ≈ 0.84 nm per axis) pairs jump through the thin layer within one step, the counted volume is
+≈ 25 % smaller (17 100 nm³, replicas 15 800–17 800, instead of 22 600 nm³) and the continuum k_a ≈ 2.3·10⁷ M⁻¹ s⁻¹ is ≈ 29 % too high.
+It is listed in `binding_rate.csv` for comparison only. The rule that only mutually closest candidates bond
+(`fix bond/create`) removes ≈ 2–3 % of the contact pairs (≥ 97 % are mutual) and is not corrected for.
 
 Consequences:
 - k_on is not a physical constant: κ depends on k_QF and Δt through σ. **The physical quantity to report is
   k_a (or κ) in M⁻¹ s⁻¹**, measured from the run as the initial bond formation rate per Qt–Ft pair
   concentration, k_a = (dN_bonds/dt)|₀ · V / (N_Qt N_Ft) (`binding_rate(run_dir)`: fit through the origin
-  over the frames up to 10 % bound, mean ± SD over replicas, next to the prediction; figure `binding_rate`),
+  over the frames up to 10 % bound, mean ± SD over replicas, next to the prediction from the counted contact
+  pairs; figure `binding_rate`),
   and compared with experiment. The force constants and
   Δt are fixed (α ≈ 0.7 at 500 ns); changing them requires recalibrating k_on to the same k_a.
 - k_a is a rate per Qt–Ft *particle* pair; with up to 60 Ft per Qt, a per-site rate would divide by the

@@ -14,9 +14,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.spatial import cKDTree
 
 from .params import EXECUTION_SETTINGS, N_A, NM3_TO_L, Params, data_path
-from .read import load_thermo
+from .read import load_thermo, read_bonds, read_dump
 from .structure import percolation
 
 SKIP_COLUMNS = {"Step", "time_ms", "S/CPU", "CPULeft"}
@@ -169,51 +170,94 @@ def load_stats(run_dir: str | Path) -> dict:
 
 # ------------------------------------------------------------------ binding rate (Collins-Kimball)
 def collins_kimball(p: Params) -> dict:
-    """Association rate of the contact reaction [nm^3/ns]: binding happens in the overlap layer at
-    contact R = r_Qt + r_Ft (Boltzmann-weighted thickness sigma sqrt(pi/2), sigma^2 = kT/(2 k_QF)/(1 - alpha/2)).
-    kappa = k_on 4 pi R^2 sigma sqrt(pi/2) (reaction-limited), k_D = 4 pi (D_Qt + D_Ft) R (diffusion-limited),
-    k_a = k_D kappa / (k_D + kappa)."""
+    """Continuum estimate of the contact reaction [nm^3/ns]: binding happens in the overlap layer at
+    contact R = r_Qt + r_Ft, Boltzmann-weighted thickness sigma sqrt(pi/2), sigma^2 = kT/(2 k_QF)/(1 - alpha/2).
+    kappa = k_on 4 pi R^2 sigma sqrt(pi/2), k_D = 4 pi (D_Qt + D_Ft) R, k_a = k_D kappa / (k_D + kappa).
+    Valid only while the relative step per time step is small against sigma; binding_rate() counts the
+    contact pairs instead."""
     R = p.cut_qf
     alpha = p.alpha(p.k_qf, p.gamma_qt, p.gamma_ft)
     layer = math.sqrt(p.kT / (2 * p.k_qf) / (1 - alpha / 2)) * math.sqrt(math.pi / 2)
-    kappa = p.k_on * 4 * math.pi * R**2 * layer
+    volume = 4 * math.pi * R**2 * layer
+    kappa = p.k_on * volume
     k_d = 4 * math.pi * (p.D_qt + p.D_ft) * R
-    return {"layer_nm": layer, "kappa": kappa, "k_D": k_d, "k_a": k_d * kappa / (k_d + kappa)}
+    return {"layer_nm": layer, "volume": volume, "kappa": kappa, "k_D": k_d, "k_a": k_d * kappa / (k_d + kappa)}
+
+
+def contact_pairs(atoms: pd.DataFrame, bonds: np.ndarray, p: Params) -> int:
+    """Number of Qt-Ft pairs closer than R_bind that are not bonded (binding candidates) in one frame."""
+    box = np.array(p.box)
+    pos = atoms[["x", "y", "z"]].to_numpy(dtype=float)
+    if p.periodic:
+        pos = np.mod(pos, box)
+    types, ids = atoms["type"].to_numpy(), atoms["id"].to_numpy()
+    qt, ft = types == 1, types == 2
+    boxsize = box if p.periodic else None
+    near = cKDTree(pos[qt], boxsize=boxsize).query_ball_tree(cKDTree(pos[ft], boxsize=boxsize), p.r_bind)
+    qt_ids, ft_ids = ids[qt], ids[ft]
+    pairs = {(int(qt_ids[i]), int(ft_ids[j])) for i, js in enumerate(near) for j in js}
+    bonded = {(int(a), int(b)) for a, b in bonds} | {(int(b), int(a)) for a, b in bonds}
+    return len(pairs - bonded)
 
 
 def binding_rate(run_dir: str | Path, max_frac_bound: float = 0.1, save: bool = True) -> dict:
-    """Association rate constant k_a measured from the start of every finished replica, with the
-    Collins-Kimball prediction.
+    """Association rate constant k_a of every finished replica, measured and predicted.
 
-    k_a = (dN_bonds/dt)|_0 * V / (N_Qt N_Ft): the slope of the bond count (fit through the origin) over the
-    production frames up to a fraction bound of `max_frac_bound` (at least the first 3 frames), where almost
-    all particles are still free. Returns {"per_replica", "summary", "window_ms"}; the summary (measured
-    mean and SD, theory k_a, kappa, k_D) in nm^3/ns and 1/(M s) is saved to <run>/analysis/binding_rate.csv.
+    Measured: k_a = (dN_bonds/dt)|_0 * V / (N_Qt N_Ft), the slope of the bond count (fit through the
+    origin) over the production frames up to a fraction bound of `max_frac_bound` (at least the first
+    3 frames), where almost all particles are still free.
+    Predicted (Collins-Kimball with the counted contact pairs): kappa = rate per pair * pairs * V /
+    (N_Qt N_Ft), with pairs = Qt-Ft pairs within R_bind in the first production frame (equilibrium contact
+    density: end of the equilibration, no bonds yet) and rate per pair = p_bind / (bind_every dt);
+    k_a = k_D kappa / (k_D + kappa), k_D = 4 pi D R (steady state). The measured early rate starts at kappa
+    and approaches k_a within ~R^2/D (2.3 ms at the defaults), so it can lie slightly above k_a.
+    The continuum estimate (collins_kimball) is listed for comparison.
+
+    Returns {"per_replica", "summary", "window_ms"}. Summary rows (value, unit, 1/(M s)): k_a measured
+    (+ SD), k_a predicted (counted contact pairs, + SD), kappa, k_D, k_a continuum estimate, contact volume
+    counted and continuum [nm^3]; saved to <run>/analysis/binding_rate.csv.
     """
     run_dir = Path(run_dir).expanduser()
     p = Params.load(run_dir / "params.json")
     series = replica_series(run_dir)
     if not series:
         raise ValueError(f"no finished replicas in {run_dir}")
-    pairs_per_volume = p.n_qt * p.n_ft / math.prod(p.box)
-    rows = {}
+    per_volume = math.prod(p.box) / (p.n_qt * p.n_ft)                  # V / (N_Qt N_Ft)
+    rate_per_pair = p.p_bind / (p.bind_every * p.timestep)
+    continuum = collins_kimball(p)
+    k_d = continuum["k_D"]
+    rows = []
     for name, df in series.items():
         early = df[df["frac_bound"] <= max_frac_bound]
         if len(early) < 3:
             early = df.iloc[:3]
+        if (early["time_ms"] > 0).sum() < 2:
+            raise ValueError(f"{run_dir / name}: fewer than 2 production frames, cannot fit the binding rate")
         t, b = early["time_ms"].to_numpy() * 1e6, early["Bonds"].to_numpy()          # ns, bonds
         slope = (t * b).sum() / (t * t).sum()                                         # bonds/ns, N(0) = 0
-        rows[name] = {"window_ms": t[-1] * 1e-6, "frames": len(t), "k_a [nm^3/ns]": slope / pairs_per_volume}
-    per_rep = pd.DataFrame(rows).T.rename_axis("replica")
-    per_rep["k_a [1/(M s)]"] = per_rep["k_a [nm^3/ns]"] * TO_PER_M_S
 
-    k = per_rep["k_a [nm^3/ns]"]
-    theory = collins_kimball(p)
-    values = {"k_a measured (mean)": k.mean(), "k_a measured (SD)": k.std(ddof=1) if len(k) > 1 else float("nan"),
-              "k_a theory": theory["k_a"], "kappa theory (reaction-limited)": theory["kappa"],
-              "k_D theory (diffusion-limited)": theory["k_D"]}
-    summary = pd.DataFrame({"nm^3/ns": values}).rename_axis("quantity")
-    summary["1/(M s)"] = summary["nm^3/ns"] * TO_PER_M_S
+        step, atoms = next(read_dump(run_dir / name / "traj.dump"))
+        bond_step, bonds = next(read_bonds(run_dir / name / "bonds.dump"))
+        if step != 0 or bond_step != 0:
+            raise ValueError(f"{run_dir / name}: the dumps do not start at production step 0")
+        pairs = contact_pairs(atoms, bonds, p)
+        kappa = rate_per_pair * pairs * per_volume
+        rows.append({"replica": name, "window_ms": t[-1] * 1e-6, "frames": len(t), "contact pairs": pairs,
+                     "k_a measured": slope * per_volume,
+                     "kappa": kappa, "k_a predicted": k_d * kappa / (k_d + kappa)})
+    per_rep = pd.DataFrame(rows).set_index("replica")
+
+    def sd(col):
+        return per_rep[col].std(ddof=1) if len(per_rep) > 1 else float("nan")
+
+    rates = {"k_a measured": per_rep["k_a measured"].mean(), "k_a measured SD": sd("k_a measured"),
+             "k_a predicted": per_rep["k_a predicted"].mean(), "k_a predicted SD": sd("k_a predicted"),
+             "kappa": per_rep["kappa"].mean(), "k_D": k_d, "k_a continuum estimate": continuum["k_a"]}
+    summary = pd.DataFrame({"value": rates, "unit": "nm^3/ns"})
+    summary["1/(M s)"] = summary["value"] * TO_PER_M_S
+    volumes = pd.DataFrame({"value": {"contact volume counted": per_rep["contact pairs"].mean() * per_volume,
+                                      "contact volume continuum": continuum["volume"]}, "unit": "nm^3"})
+    summary = pd.concat([summary, volumes]).rename_axis("quantity")
     result = {"per_replica": per_rep, "summary": summary, "window_ms": float(per_rep["window_ms"].max())}
     if save:
         out = run_dir / "analysis"

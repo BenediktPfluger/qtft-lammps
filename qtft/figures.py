@@ -414,17 +414,22 @@ def fig_overlap(run: RunData, out_dir: Path | None = None):
     return fig
 
 
-def _sci(x: float) -> str:
-    """1.91e7 -> '1.91·10⁷'."""
+def _sci(x: float, sd: float = float("nan")) -> str:
+    """1.91e7 -> '1.91·10⁷'; with an SD: '(1.91 ± 0.05)·10⁷'."""
     exponent = math.floor(math.log10(abs(x))) if x else 0
-    return f"{x / 10**exponent:.3g}·10" + str(exponent).translate(str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"))
+    power = "·10" + str(exponent).translate(str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"))
+    if sd == sd:                                                        # not NaN
+        return f"({x / 10**exponent:.2f} ± {sd / 10**exponent:.2f}){power}"
+    return f"{x / 10**exponent:.3g}{power}"
 
 
-def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: float = 0.1):
+def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: float = 0.1,
+                     rate: dict | None = None):
     """Start of the bond count (mean +- SD over replicas) with the fitted initial rate (solid) and the
-    Collins-Kimball prediction (dashed); k_a in 1/(M s) in the legend (89 mm)."""
-    rate = binding_rate(run.run_dir, max_frac_bound=max_frac_bound, save=False)
-    s = rate["summary"]["nm^3/ns"]
+    Collins-Kimball prediction from the counted contact pairs (dashed); k_a in 1/(M s) in the legend
+    (89 mm). `rate`: a result of binding_rate() (computed here if not given)."""
+    rate = rate or binding_rate(run.run_dir, max_frac_bound=max_frac_bound, save=False)
+    s = rate["summary"]["value"]
     pairs_per_volume = run.p.n_qt * run.p.n_ft / math.prod(run.p.box)
     window = rate["window_ms"]
     t_all = run.stats["time_ms"]
@@ -434,12 +439,13 @@ def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: 
         ax = fig.add_subplot()
         t = t_all[show]
         band(ax, t, run.stats["mean"]["Bonds"][show], run.stats["sd"]["Bonds"][show], run.color, "simulation")
-        sd = s["k_a measured (SD)"] * TO_PER_M_S
-        ax.plot(t, s["k_a measured (mean)"] * pairs_per_volume * t * 1e6, color="k", lw=0.8,
-                label=f"fit: k_a = {_sci(s['k_a measured (mean)'] * TO_PER_M_S)}"
-                      + (f" ± {_sci(sd)}" if sd == sd else "") + " M⁻¹ s⁻¹")
-        ax.plot(t, s["k_a theory"] * pairs_per_volume * t * 1e6, color="0.4", lw=0.8, ls="--",
-                label=f"Collins–Kimball: {_sci(s['k_a theory'] * TO_PER_M_S)} M⁻¹ s⁻¹")
+        def label(name, key):
+            return f"{name}: {_sci(s[key] * TO_PER_M_S, s[f'{key} SD'] * TO_PER_M_S)} M⁻¹ s⁻¹"
+
+        ax.plot(t, s["k_a measured"] * pairs_per_volume * t * 1e6, color="k", lw=0.8,
+                label=label("fit k_a", "k_a measured"))
+        ax.plot(t, s["k_a predicted"] * pairs_per_volume * t * 1e6, color="0.4", lw=0.8, ls="--",
+                label=label("Collins–Kimball", "k_a predicted"))
         ax.axvline(window, color="0.6", lw=0.5, ls=":")
         ax.set_xlim(0, t[-1])
         ax.set_ylim(bottom=0)
@@ -582,10 +588,10 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
 
     figs = out / "figures"
     for f in (fig_overview(run, figs, traces=traces), fig_kinetics([run], figs, traces=traces),
-              fig_large_count([run], figs, traces=traces), fig_overlap(run, figs), fig_binding_rate(run, figs),
+              fig_large_count([run], figs, traces=traces), fig_overlap(run, figs),
+              fig_binding_rate(run, figs, rate=binding_rate(run_dir)),          # also analysis/binding_rate.csv
               *fig_journal(run, figs)):
         plt.close(f)
-    binding_rate(run_dir)                                   # analysis/binding_rate.csv
 
     table = final_table(run)
     table.to_csv(out / "final_table.csv")

@@ -4,8 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from qtft import Params, build_run, start
-from qtft.ensemble import binding_rate, cached_stats, common_grid, compare, ensemble_stats, half_time, load_stats, update_index
+from qtft import Params, build_run, read_dump, start
+from qtft.ensemble import (binding_rate, cached_stats, common_grid, compare, contact_pairs, ensemble_stats,
+                           half_time, load_stats, update_index)
 
 
 def test_common_grid_identical_and_overlap():
@@ -56,17 +57,38 @@ def test_ensemble_of_tiny_runs(tmp_path):
     index = pd.read_csv(tmp_path / "index.csv")
     assert set(index["status"]) == {"done:3"}
 
-    # association rate: positive, per replica, in both units; theory k_a between kappa and k_D
+    # association rate: measured per replica; prediction from the counted contact pairs at t = 0
     rate = binding_rate(runs[0], save=False)
-    k = rate["per_replica"]["k_a [nm^3/ns]"]
-    assert len(k) == 3 and (k > 0).all()
-    assert rate["per_replica"]["k_a [1/(M s)]"].iloc[0] == pytest.approx(k.iloc[0] * 6.02214076e8)
-    s = rate["summary"]["nm^3/ns"]
-    assert s["k_a theory"] < min(s["kappa theory (reaction-limited)"], s["k_D theory (diffusion-limited)"])
-    assert s["k_a measured (mean)"] == pytest.approx(k.mean())
+    per_rep, summary = rate["per_replica"], rate["summary"]
+    assert len(per_rep) == 3 and (per_rep["k_a measured"] > 0).all()
+    assert per_rep["frames"].dtype.kind == "i" and per_rep["contact pairs"].dtype.kind == "i"
+    v = summary["value"]
+    assert v["k_a measured"] == pytest.approx(per_rep["k_a measured"].mean())
+    assert v["k_a predicted"] < min(v["kappa"], v["k_D"])
+    assert summary.loc["k_a measured", "1/(M s)"] == pytest.approx(v["k_a measured"] * 6.02214076e8)
+    assert summary.loc["contact volume counted", "unit"] == "nm^3"
+
+    # contact pairs at t = 0 against a brute-force count with the minimum image
+    p = Params.load(runs[0] / "params.json")
+    step, atoms = next(read_dump(runs[0] / "rep_01" / "traj.dump"))
+    pos, types, box = atoms[["x", "y", "z"]].to_numpy(), atoms["type"].to_numpy(), np.array(p.box)
+    d = pos[types == 1][:, None, :] - pos[types == 2][None, :, :]
+    d -= box * np.round(d / box)
+    assert contact_pairs(atoms, np.empty((0, 2), int), p) == (np.linalg.norm(d, axis=2) < p.r_bind).sum()
+    assert per_rep.loc["rep_01", "contact pairs"] == contact_pairs(atoms, np.empty((0, 2), int), p)
 
     # the saved stats are reused only while they cover exactly the finished replicas
     assert cached_stats(runs[0])["replicas"] == ["rep_01", "rep_02", "rep_03"]
     (runs[0] / "rep_03" / "status").write_text("failed\n")
     assert cached_stats(runs[0])["replicas"] == ["rep_01", "rep_02"]
     assert load_stats(runs[0])["replicas"] == ["rep_01", "rep_02"]          # and saved again
+
+
+@pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
+def test_binding_rate_needs_frames(tmp_path):
+    p = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, prod_steps=500, output_every=500,
+               traj_every=500, data_dir=str(tmp_path), run_name="short")
+    run = build_run(p)
+    start(run, wait=True)
+    with pytest.raises(ValueError, match="fewer than 2 production frames"):
+        binding_rate(run, save=False)
