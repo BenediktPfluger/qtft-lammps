@@ -46,8 +46,7 @@ exist. The subfolder follows from `n_replicas`; the `group` parameter overrides 
 ## Run folder `<single|ensemble>/<run name>/`
 
 The generated run name lists the main parameters and ends in the boundary
-(`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_25ms_periodic`, `…_reflect`, `…_harmonic`); runs built before
-2026-10-21 have no boundary suffix and are periodic.
+(`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_25ms_periodic`, `…_reflect`, `…_harmonic`).
 
 | File | Content | Created by |
 |---|---|---|
