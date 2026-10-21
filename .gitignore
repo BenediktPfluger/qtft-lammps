@@ -23,3 +23,6 @@ runs/
 # editors / OS
 .vscode/
 .DS_Store
+
+# Claude Code project instructions (local only)
+CLAUDE.md
