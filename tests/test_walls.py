@@ -14,7 +14,7 @@ from qtft.tuning import constants_for_alpha
 def test_wall_params():
     periodic = Params()
     assert periodic.periodic and "reachable volume Qt" not in periodic.derived()
-    assert not periodic.auto_name().endswith(("_reflect", "_harmonic"))
+    assert periodic.auto_name().endswith("ms_periodic")
     h = Params(box_length=[400.0, 500.0, 600.0], boundary="harmonic")
     d = h.derived()
     assert d["alpha wall Qt"] == pytest.approx(0.70, abs=0.01) and d["alpha wall Ft"] == pytest.approx(0.70, abs=0.01)

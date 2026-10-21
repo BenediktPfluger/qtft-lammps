@@ -263,7 +263,7 @@ class Params:
         return (f"{self.n_qt}Qt_{self.n_ft}Ft_L{box_label(self.box_length)}"
                 f"_kQQ{self.k_qq:g}_kFF{self.k_ff:g}_kQF{self.k_qf:g}_K{self.bond_k:g}"
                 f"_kon{self.k_on:g}_dt{self.timestep:g}ns_{self.prod_steps * self.timestep * 1e-6:g}ms"
-                + ("" if self.periodic else f"_{self.boundary}"))
+                f"_{self.boundary}")
 
     @property
     def name(self) -> str:
