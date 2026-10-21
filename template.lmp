@@ -156,13 +156,54 @@ fix             hist_qt Qt ave/histo {{output_every}} 1 {{output_every}} -0.5 {{
 fix             hist_ft Ft ave/histo {{output_every}} 1 {{output_every}} -0.5 {{hist_ft_max}} {{hist_ft_bins}} c_nb &
                 file coord_ft.hist mode vector
 
-# ---------------------------------------------------------------- 11. production (binding on)
-# a Qt-Ft pair closer than R_bind bonds with probability p = 1 - exp(-k_on dt) per attempt;
-# each atom bonds at most once per attempt (with its closest eligible partner)
-fix             bind all bond/create {{bind_every}} 1 2 {{r_bind}} 1 &
-                iparam {{maxbond_qt}} 1 jparam {{maxbond_ft}} 2 prob {{p_bind}} {{seed_bind}}
+# ---------------------------------------------------------------- 11. production: calcium-controlled binding
+# calcium [uM] over the production time t [s]: baseline (rest) -> influx (peak) -> exponential
+# pump-out back to rest; calmodulin loading f = Ca^n / (K^n + Ca^n)
+variable        t_s equal step*{{dt_s}}
+variable        ca equal "(v_t_s < {{t_on}})*{{ca_rest}} + (v_t_s >= {{t_on}})*(v_t_s < {{t_off}})*{{ca_peak}} &
+                + (v_t_s >= {{t_off}})*({{ca_rest}} + ({{ca_start}} - {{ca_rest}})*exp(-(v_t_s - {{t_off}})*(v_t_s >= {{t_off}})/{{ca_tau}}))"
+variable        f equal "v_ca^{{ca_hill}}/({{ca_K}}^{{ca_hill}} + v_ca^{{ca_hill}})"
+# binding rate per Qt-Ft pair and unbinding rate per bond [1/s], probabilities per attempt
+variable        k_on_s equal "{{k_on_per_s}}*v_f"
+variable        k_off_s equal "v_f*{{k_off_ca}} + (1 - v_f)*{{k_off_free}}"
+variable        p_on equal "1 - exp(-v_k_on_s*{{dt_s}}*{{bind_every}})"
+variable        p_off equal "1 - exp(-v_k_off_s*{{dt_s}}*{{break_every}})"
 
-run             {{prod_steps}}
+# broken bonds, summed over the segments (the counter of fix bond/break restarts with every segment)
+variable        nb_prev equal 0
+variable        n_broken equal v_nb_prev+f_unbind[2]
+thermo_style    custom step pe evdwl ebond c_pvir bonds &
+                v_n_qt_bound v_n_ft_bound v_frac_bound v_n_clusters v_mean_size v_largest v_n_large &
+                v_f_mono v_f_small v_f_medium v_f_large v_f_vlarge &
+                v_deg_qt_mean v_deg_ft_mean v_deg_qt_max v_deg_ft_max v_bond_mean v_bond_max &
+                v_ca v_f v_k_on_s v_k_off_s v_n_broken spcpu cpuremain
+# every segment start warns about bonds created across the periodic boundary ("Inconsistent image
+# flags", harmless: the analysis uses the minimum image); limit the number of printed warnings
+thermo_modify   line yaml norm no flush yes warn 20
+
+# the production runs in segments of {{segment_steps}} steps; every segment re-creates the binding and
+# unbinding fixes with the probabilities at its start and a new seed:
+# - fix bond/create: a Qt-Ft pair closer than R_bind bonds with probability p_on per attempt; each atom
+#   bonds at most once per attempt (with its closest eligible partner)
+# - fix bond/break with Rmax = 0: every bond is a candidate and breaks with probability p_off, BUT only
+#   the longest bond of each atom (and only if it is also the partner's longest) can break, so bonds of
+#   highly connected atoms break less often (see docs/decisions.md; to be replaced by a custom fix)
+variable        seg loop {{n_segments}}
+variable        seed_on equal ({{seed_bind}} + v_seg) % 900000000 + 1
+variable        seed_off equal ({{seed_break}} + v_seg) % 900000000 + 1
+label           segment
+fix             bind all bond/create {{bind_every}} 1 2 {{r_bind}} 1 &
+                iparam {{maxbond_qt}} 1 jparam {{maxbond_ft}} 2 &
+                prob $(v_p_on:%.12g) $(v_seed_on:%.0f)
+fix             unbind all bond/break {{break_every}} 1 0.0 &
+                prob $(v_p_off:%.12g) $(v_seed_off:%.0f)
+if "${seg} < {{n_segments}}" then "run {{segment_steps}} post no" else "run {{segment_steps}}"
+variable        nb_prev equal $(v_n_broken:%.0f)
+unfix           bind
+unfix           unbind
+next            seg
+jump            SELF segment
+variable        n_broken equal ${nb_prev}           # the fix is gone; keep the final count
 
 # ---------------------------------------------------------------- 12. final state
 write_data      final.data pair ij

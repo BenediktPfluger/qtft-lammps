@@ -5,6 +5,7 @@ import pytest
 
 from qtft import Params, build_run, progress, summary
 from qtft.run import summary_lines
+from conftest import influx
 
 KEYS = "keywords: ['Step', 'Bonds', 'v_frac_bound', 'S/CPU', 'CPULeft']\n"
 
@@ -20,7 +21,7 @@ def _touch(path, text, t):
 
 
 def test_summary_counts_and_estimate(tmp_path):
-    run = build_run(Params(n_replicas=4, max_parallel=2, equil_steps=1000, prod_steps=9000,
+    run = build_run(Params(n_replicas=4, max_parallel=2, equil_steps=1000, **influx(9000, segment=1000),
                            data_dir=str(tmp_path), run_name="r"))
     now = time.time()
     r1, r2, r3, _ = sorted(run.glob("rep_*"))

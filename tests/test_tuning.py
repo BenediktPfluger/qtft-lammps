@@ -4,6 +4,7 @@ import pytest
 
 from qtft import Params, start, sweep_runs
 from qtft.tuning import alpha_sweep, constants_for_alpha, predicted_overlap, sweep_table
+from conftest import influx
 
 
 def test_constants_reach_target_alpha():
@@ -22,7 +23,7 @@ def test_predicted_overlap():
 
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_sweep_end_to_end(tmp_path):
-    base = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, prod_steps=2000,
+    base = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(2000),
                   output_every=500, traj_every=500, n_replicas=1, data_dir=str(tmp_path))
     sweep = alpha_sweep(base, {500.0: [0.3, 0.9], 250.0: [0.9]})
     runs = sweep_runs(sweep)

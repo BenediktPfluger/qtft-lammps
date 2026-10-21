@@ -9,6 +9,8 @@ import pytest
 
 from qtft import Params, build_run, read_bonds, read_dump, start
 
+from conftest import influx
+
 pytestmark = pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 ovito = pytest.importorskip("ovito")
 
@@ -20,7 +22,7 @@ matplotlib.use("Agg")
 @pytest.fixture(scope="module")
 def runs(tmp_path_factory):
     data = tmp_path_factory.mktemp("data")
-    common = dict(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, prod_steps=3000,
+    common = dict(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(3000),
                   output_every=500, traj_every=500, n_replicas=2, data_dir=str(data))
     dirs = [build_run(Params(**common, k_on=k, run_name=f"kon{k:g}")) for k in (2e-4, 4e-4)]
     for d in dirs:
@@ -108,7 +110,8 @@ def test_report_and_comparison(runs, tmp_path):
     for name in ("final_table.csv", "final_table.tex", "bonds_timeseries.csv", "structure_timeseries.csv",
                  "clusters_final.csv", "overlap_final.csv", "binding_rate.csv"):
         assert (out / name).exists(), name
-    for name in ("overview", "kinetics", "large_agglomerates", "overlap", "binding_rate", "journal/panel_g"):
+    for name in ("calcium", "overview", "kinetics", "large_agglomerates", "overlap", "binding_rate",
+                 "journal/panel_g"):
         for ext in ("pdf", "svg", "png"):
             assert (out / "figures" / f"{name}.{ext}").exists(), f"{name}.{ext}"
     assert len(list((out / "figures" / "panels").glob("*.pdf"))) == 12

@@ -1,0 +1,112 @@
+"""Calcium-controlled binding and unbinding: baseline -> influx -> exponential pump-out."""
+
+import json
+import shutil
+
+import numpy as np
+import pytest
+
+import pandas as pd
+
+from qtft import Params, build_run, load_thermo, read_bonds, start
+from qtft.ensemble import deagglomeration
+
+
+def test_phases_and_calcium_formula():
+    p = Params(t_baseline_s=10.0, t_influx_s=30.0, t_pumpout_s=90.0, ca_tau_s=20.0)
+    assert p.phase_steps == (20_000_000, 60_000_000, 180_000_000) and p.prod_steps == 260_000_000
+    ca = p.calcium([0.0, 9.99, 10.0, 39.99, 40.0, 60.0])
+    assert ca == pytest.approx([0.1, 0.1, 1.0, 1.0, 1.0, 0.1 + 0.9 * np.exp(-1.0)])
+    f = p.loading([0.5, 1.0])
+    assert f[0] == pytest.approx(0.5) and f[1] == pytest.approx(1 / (1 + 0.5 ** 3))
+    assert p.k_off_per_s(1.0) == p.k_off_ca_per_s and p.k_off_per_s(0.0) == p.k_off_free_per_s
+    no_influx = Params(t_baseline_s=1.0, t_influx_s=0.0, t_pumpout_s=1.0)
+    assert no_influx.ca_start_uM == no_influx.ca_rest_uM                      # pump-out stays at rest
+    assert "_ca10-30-90s_periodic" in p.auto_name()
+
+
+def test_deagglomeration_half_time():
+    p = Params(t_baseline_s=1e-3, t_influx_s=2e-3, t_pumpout_s=3e-3)            # pump-out starts at 3 ms
+    t = np.linspace(0, 6, 61)
+    bonds = np.where(t < 3, 100 * t / 3, 100 * np.exp(-(t - 3) / 1.0))           # half-time ln 2 ms
+    df = pd.DataFrame({"time_ms": t, "Bonds": bonds, "largest": bonds / 2})
+    out = deagglomeration(df, p)
+    assert out["bonds_peak"] == pytest.approx(100) and out["t_bonds_peak_ms"] == pytest.approx(3.0)
+    assert out["t_half_unbind_bonds_ms"] == pytest.approx(np.log(2), abs=0.01)
+    assert out["t_half_unbind_largest_ms"] == pytest.approx(np.log(2), abs=0.01)
+    assert np.isnan(deagglomeration(df, Params(t_baseline_s=1e-3, t_influx_s=2e-3, t_pumpout_s=0.0))
+                    ["t_half_unbind_bonds_ms"])
+
+
+def test_calcium_checks():
+    errors = lambda p: [m for lvl, m in p.check() if lvl == "ERROR"]
+    assert errors(Params(t_influx_s=-1.0))
+    assert errors(Params(t_baseline_s=0.0, t_influx_s=0.0, t_pumpout_s=0.0))
+    assert errors(Params(ca_K_uM=0.0))
+    assert any("whole number of segments" in m for m in errors(Params(t_influx_s=30.0001)))
+    assert any("multiple of output_every" in m for m in errors(Params(rate_update_every=1500)))
+    assert any("p_break" in m for m in errors(Params(k_off_free_per_s=1e5)))
+    assert not errors(Params())
+
+
+def test_old_record_loads_as_influx(tmp_path):
+    record = {"params": {"n_qt": 400, "timestep": 500.0, "prod_steps": 100_000, "k_on": 1e-6}}
+    path = tmp_path / "params.json"
+    path.write_text(json.dumps(record))
+    p = Params.load(path)
+    assert (p.t_baseline_s, p.t_pumpout_s) == (0.0, 0.0) and p.prod_steps == 100_000
+
+
+def test_input_has_segment_loop(tmp_path):
+    p = Params(data_dir=str(tmp_path), run_name="ca")
+    text = (build_run(p) / "rep_01" / "in.lammps").read_text()
+    assert "variable        seg loop 13000" in text and "jump            SELF segment" in text
+    assert "fix             unbind all bond/break 10 1 0.0" in text
+    assert "v_ca v_f v_k_on_s v_k_off_s v_n_broken" in text
+    seeds = json.loads((tmp_path / "single" / "ca" / "params.json").read_text())["seeds"][0]
+    assert "seed_break" in seeds
+
+
+@pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
+def test_compressed_protocol_run(tmp_path):
+    # milliseconds instead of seconds and fast rates, so that bonds form and break within the test
+    p = Params(n_qt=150, n_ft=600, box_length=500.0, equil_steps=200, output_every=500, traj_every=1000,
+               t_baseline_s=2e-3, t_influx_s=4e-3, t_pumpout_s=6e-3, ca_tau_s=2e-3, rate_update_every=1000,
+               k_on=2e-3, k_off_ca_per_s=1.0, k_off_free_per_s=2000.0, data_dir=str(tmp_path), run_name="ca")
+    run = build_run(p)
+    rep = run / "rep_01"
+    # after the run: rebuild the special lists from the bonds; the energy must not change
+    text = (rep / "in.lammps").read_text().replace(
+        'print           "QTFT_DONE"',
+        'variable e1 equal pe\nprint "PE_BEFORE ${e1}"\nspecial_bonds lj 1.0e-50 1.0 1.0\nrun 0\n'
+        'variable e2 equal pe\nprint "PE_AFTER ${e2}"\nprint "QTFT_DONE"')
+    (rep / "in.lammps").write_text(text)
+    start(run, wait=True)
+    assert (rep / "status").read_text().strip() == "done"
+
+    df = load_thermo(rep)
+    assert df["Step"].is_unique and df["Step"].is_monotonic_increasing and df["Step"].iloc[-1] == p.prod_steps
+    t = df["time_ms"].to_numpy() * 1e-3
+    assert np.allclose(df["ca"], p.calcium(t)) and np.allclose(df["f"], p.loading(p.calcium(t)))
+    assert np.allclose(df["k_off_s"], p.k_off_per_s(df["f"]))
+    influx_end = df["time_ms"] <= 6.0
+    assert df.loc[influx_end, "Bonds"].iloc[-1] > 3 * df.loc[df["time_ms"] <= 2.0, "Bonds"].iloc[-1]   # influx binds
+    assert df["Bonds"].iloc[-1] < df["Bonds"].max()                                                    # pump-out unbinds
+    assert df["n_broken"].is_monotonic_increasing and df["n_broken"].iloc[-1] > 0
+
+    log = (rep / "log.lammps").read_text()
+    before = float(log.split("\nPE_BEFORE ")[1].split()[0])
+    after = float(log.split("\nPE_AFTER ")[1].split()[0])
+    assert after == pytest.approx(before, rel=1e-12)
+    dumped = {s: len(b) for s, b in read_bonds(rep / "bonds.dump")}
+    thermo = dict(zip(df["Step"], df["Bonds"]))
+    assert all(thermo[s] == n for s, n in dumped.items() if s in thermo)
+
+    import matplotlib
+    matplotlib.use("Agg")
+    from qtft import make_report
+    out = make_report(run, every=2, structure_analysis=False)
+    for name in ("calcium", "binding_rate"):
+        assert (out / "figures" / f"{name}.pdf").exists(), name
+    final = pd.read_csv(out / "final_state.csv", index_col=0)
+    assert {"bonds_peak", "t_half_unbind_bonds_ms"} <= set(final.index)

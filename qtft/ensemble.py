@@ -70,6 +70,27 @@ def half_time(t: np.ndarray, y: np.ndarray, level: float) -> float:
     return float(t[i - 1] + (level - y[i - 1]) * (t[i] - t[i - 1]) / (y[i] - y[i - 1]))
 
 
+def deagglomeration(df: pd.DataFrame, p: Params) -> dict:
+    """Peaks of bonds and of the largest cluster, and the deagglomeration half-times: time after the end
+    of the influx (start of the pump-out) until bonds / the largest cluster fall to half of their value
+    at that moment (NaN without influx or pump-out, or if never reached) [ms]."""
+    t = df["time_ms"].to_numpy()
+    out = {}
+    for key, col in (("bonds", "Bonds"), ("largest", "largest")):
+        y = df[col].to_numpy()
+        out[f"{key}_peak"] = float(y.max())
+        out[f"t_{key}_peak_ms"] = float(t[y.argmax()])
+        t_off = p.t_off_s * 1e3
+        half = float("nan")
+        if p.t_influx_s > 0 and p.t_pumpout_s > 0:
+            after = t >= t_off
+            y0 = np.interp(t_off, t, y)
+            if y0 > 0:
+                half = half_time(t[after], -y[after], -0.5 * y0) - t_off            # first fall below y0 / 2
+        out[f"t_half_unbind_{key}_ms"] = half
+    return out
+
+
 # ------------------------------------------------------------------ ensemble statistics
 def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
     """Mean/SD time series, per-replica traces and final-state scalars of a run.
@@ -77,10 +98,13 @@ def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
     Percolation = a cluster spans the box along at least one axis (structure.percolation, from the
     trajectory, cached per replica): `percolated` in the last frame (the mean over replicas is the
     fraction of percolated replicas) and `t_percolation_ms`, the first frame with a spanning cluster.
+    Calcium protocol (deagglomeration): peaks of bonds and largest cluster and the half-times after the
+    end of the influx. "final" values are those at the end of the whole protocol.
 
     Saved to <run>/analysis/: ensemble_stats.json, ensemble_timeseries.csv, final_state.csv.
     """
     run_dir = Path(run_dir).expanduser()
+    p = Params.load(run_dir / "params.json")
     series = replica_series(run_dir)
     if not series:
         raise ValueError(f"no finished replicas in {run_dir}")
@@ -106,6 +130,7 @@ def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
             "t_half_ft_ms": half_time(tt, df["frac_bound_ft"].to_numpy(), 0.5),
             "percolated": float(spanning["axes"].iloc[-1] != "") if len(spanning) else float("nan"),
             "t_percolation_ms": float(spanned.iloc[0]) if len(spanned) else float("nan"),
+            **deagglomeration(df, p),
             **{f"final_{c}": float(df[c].iloc[-1]) for c in columns},
         })
     per_rep = pd.DataFrame(per_rep).set_index("replica")
@@ -170,16 +195,17 @@ def load_stats(run_dir: str | Path) -> dict:
 
 # ------------------------------------------------------------------ binding rate (Collins-Kimball)
 def collins_kimball(p: Params) -> dict:
-    """Continuum estimate of the contact reaction [nm^3/ns]: binding happens in the overlap layer at
-    contact R = r_Qt + r_Ft, Boltzmann-weighted thickness sigma sqrt(pi/2), sigma^2 = kT/(2 k_QF)/(1 - alpha/2).
-    kappa = k_on 4 pi R^2 sigma sqrt(pi/2), k_D = 4 pi (D_Qt + D_Ft) R, k_a = k_D kappa / (k_D + kappa).
+    """Continuum estimate of the contact reaction during the influx [nm^3/ns]: binding happens in the
+    overlap layer at contact R = r_Qt + r_Ft, Boltzmann-weighted thickness sigma sqrt(pi/2),
+    sigma^2 = kT/(2 k_QF)/(1 - alpha/2). kappa = k_on f_peak 4 pi R^2 sigma sqrt(pi/2) (f_peak: calmodulin
+    loading at peak calcium), k_D = 4 pi (D_Qt + D_Ft) R, k_a = k_D kappa / (k_D + kappa).
     Valid only while the relative step per time step is small against sigma; binding_rate() counts the
     contact pairs instead."""
     R = p.cut_qf
     alpha = p.alpha(p.k_qf, p.gamma_qt, p.gamma_ft)
     layer = math.sqrt(p.kT / (2 * p.k_qf) / (1 - alpha / 2)) * math.sqrt(math.pi / 2)
     volume = 4 * math.pi * R**2 * layer
-    kappa = p.k_on * volume
+    kappa = p.k_on * float(p.loading(p.ca_peak_uM)) * volume
     k_d = 4 * math.pi * (p.D_qt + p.D_ft) * R
     return {"layer_nm": layer, "volume": volume, "kappa": kappa, "k_D": k_d, "k_a": k_d * kappa / (k_d + kappa)}
 
@@ -201,14 +227,16 @@ def contact_pairs(atoms: pd.DataFrame, bonds: np.ndarray, p: Params) -> int:
 
 
 def binding_rate(run_dir: str | Path, max_frac_bound: float = 0.1, save: bool = True) -> dict:
-    """Association rate constant k_a of every finished replica, measured and predicted.
+    """Association rate constant k_a during the calcium influx of every finished replica, measured and
+    predicted (needs an influx phase).
 
-    Measured: k_a = (dN_bonds/dt)|_0 * V / (N_Qt N_Ft), the slope of the bond count (fit through the
-    origin) over the production frames up to a fraction bound of `max_frac_bound` (at least the first
-    3 frames), where almost all particles are still free.
+    Measured: k_a = (dN_bonds/dt) at the influx start * V / (N_Qt N_Ft), the slope of the bond count (fit
+    through the value at the influx start) over the influx frames up to an increase of the fraction bound
+    by `max_frac_bound` (at least the first 3 frames), where almost all particles are still free.
     Predicted (Collins-Kimball with the counted contact pairs): kappa = rate per pair * pairs * V /
-    (N_Qt N_Ft), with pairs = Qt-Ft pairs within R_bind in the first production frame (equilibrium contact
-    density: end of the equilibration, no bonds yet) and rate per pair = p_bind / (bind_every dt);
+    (N_Qt N_Ft), with pairs = unbonded Qt-Ft pairs within R_bind in the traj.dump frame at the influx start
+    (contact density before the influx: after the equilibration and the baseline, where binding is weak)
+    and rate per pair = p_on / (bind_every dt) at peak calcium;
     k_a = k_D kappa / (k_D + kappa), k_D = 4 pi D R (steady state). The measured early rate starts at kappa
     and approaches k_a within ~R^2/D (2.3 ms at the defaults), so it can lie slightly above k_a.
     The continuum estimate (collins_kimball) is listed for comparison.
@@ -219,27 +247,34 @@ def binding_rate(run_dir: str | Path, max_frac_bound: float = 0.1, save: bool = 
     """
     run_dir = Path(run_dir).expanduser()
     p = Params.load(run_dir / "params.json")
+    if p.t_influx_s <= 0:
+        raise ValueError(f"{run_dir}: no influx phase, the binding rate is measured during the influx")
     series = replica_series(run_dir)
     if not series:
         raise ValueError(f"no finished replicas in {run_dir}")
     per_volume = math.prod(p.box) / (p.n_qt * p.n_ft)                  # V / (N_Qt N_Ft)
-    rate_per_pair = p.p_bind / (p.bind_every * p.timestep)
+    on_step, off_step = p.phase_steps[0], p.phase_steps[0] + p.phase_steps[1]
+    p_on = 1.0 - math.exp(-p.k_on * float(p.loading(p.ca_peak_uM)) * p.timestep * p.bind_every)
+    rate_per_pair = p_on / (p.bind_every * p.timestep)
     continuum = collins_kimball(p)
     k_d = continuum["k_D"]
     rows = []
     for name, df in series.items():
-        early = df[df["frac_bound"] <= max_frac_bound]
+        influx = df[(df["Step"] >= on_step) & (df["Step"] <= off_step)].reset_index(drop=True)
+        if len(influx) < 3 or influx["Step"].iloc[0] != on_step:
+            raise ValueError(f"{run_dir / name}: fewer than 3 frames in the influx, cannot fit the binding rate")
+        early = influx[influx["frac_bound"] - influx["frac_bound"].iloc[0] <= max_frac_bound]
         if len(early) < 3:
-            early = df.iloc[:3]
-        if (early["time_ms"] > 0).sum() < 2:
-            raise ValueError(f"{run_dir / name}: fewer than 2 production frames, cannot fit the binding rate")
-        t, b = early["time_ms"].to_numpy() * 1e6, early["Bonds"].to_numpy()          # ns, bonds
-        slope = (t * b).sum() / (t * t).sum()                                         # bonds/ns, N(0) = 0
+            early = influx.iloc[:3]
+        t = (early["Step"].to_numpy() - on_step) * p.timestep                            # ns since influx start
+        b = early["Bonds"].to_numpy() - early["Bonds"].iloc[0]
+        slope = (t * b).sum() / (t * t).sum()                                            # bonds/ns
 
-        step, atoms = next(read_dump(run_dir / name / "traj.dump"))
-        bond_step, bonds = next(read_bonds(run_dir / name / "bonds.dump"))
-        if step != 0 or bond_step != 0:
-            raise ValueError(f"{run_dir / name}: the dumps do not start at production step 0")
+        step, atoms = next(read_dump(run_dir / name / "traj.dump", start=on_step))
+        bond_step, bonds = next(read_bonds(run_dir / name / "bonds.dump", start=on_step))
+        if step != on_step or bond_step != on_step:
+            raise ValueError(f"{run_dir / name}: no traj.dump frame at the influx start (step {on_step}); "
+                             "the baseline must be a multiple of traj_every")
         pairs = contact_pairs(atoms, bonds, p)
         kappa = rate_per_pair * pairs * per_volume
         rows.append({"replica": name, "window_ms": t[-1] * 1e-6, "frames": len(t), "contact pairs": pairs,
@@ -268,7 +303,8 @@ def binding_rate(run_dir: str | Path, max_frac_bound: float = 0.1, save: bool = 
 
 # ------------------------------------------------------------------ index of all runs
 INDEX_PARAMS = ("n_qt", "n_ft", "box_length", "boundary", "k_qq", "k_ff", "k_qf", "bond_k", "k_on",
-                "timestep", "prod_steps", "n_replicas")
+                "k_off_ca_per_s", "k_off_free_per_s", "timestep", "t_baseline_s", "t_influx_s", "t_pumpout_s",
+                "n_replicas")
 
 
 def update_index(data_dir: str | Path = "runs") -> pd.DataFrame:

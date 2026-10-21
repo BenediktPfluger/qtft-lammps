@@ -87,7 +87,8 @@ def benchmark(p: Params, procs=None, cores: int | None = None, steps: int = 2000
                 continue
             parallel = cores // n
             q = dataclasses.replace(
-                p, **overrides, equil_steps=200, prod_steps=steps,
+                p, **overrides, equil_steps=200, t_baseline_s=0.0, t_influx_s=steps * p.timestep * 1e-9,
+                t_pumpout_s=0.0, rate_update_every=steps,                         # one segment
                 output_every=min(p.output_every, steps), traj_every=min(p.output_every, steps),
                 n_replicas=parallel, mpi_procs=n, max_parallel=parallel, group="benchmark",
                 run_name=f"{name}/{_slug(label)}_np{n}")

@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .params import Params
 from .read import last_thermo
 from .sweep import is_sweep, sweep_runs
 
@@ -152,7 +153,7 @@ def progress(run_dir: str | Path) -> pd.DataFrame:
             row["phase"] = "starting"
         elif last is not None:
             phase, values = last
-            total = params["equil_steps"] if phase == "equilibration" else params["prod_steps"]
+            total = params["equil_steps"] if phase == "equilibration" else Params.from_dict(params).prod_steps
             row.update({
                 "phase": phase,
                 "step": int(values["Step"]),
@@ -192,7 +193,7 @@ def _fraction(params: dict, rep: Path) -> float:
         return 0.0
     phase, values = last
     done = values["Step"] + (params["equil_steps"] if phase == "production" else 0)
-    return done / (params["equil_steps"] + params["prod_steps"])
+    return done / (params["equil_steps"] + Params.from_dict(params).prod_steps)
 
 
 def _hms(seconds: float) -> str:

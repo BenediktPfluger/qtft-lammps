@@ -51,14 +51,15 @@ def predicted_overlap(p: Params) -> pd.Series:
 
 def alpha_sweep(p: Params, alphas: dict[float, list], name: str = "sweep", overwrite: bool = False) -> Path:
     """Build one run per time step and target alpha from the base parameters `p` (not started),
-    e.g. alphas = {500.0: [0.3, 0.7, 0.9], 250.0: [0.9]}. Equilibration and production steps are
-    scaled with the time step, so every run covers the same simulated time as `p`.
+    e.g. alphas = {500.0: [0.3, 0.7, 0.9], 250.0: [0.9]}. The equilibration and the segment length
+    (rate_update_every) are scaled with the time step; the calcium phases are given in seconds, so every
+    run covers the same simulated time as `p`.
     Runs go to <data_dir>/tuning/<name>/alpha<a>_dt<dt>ns/; start them with start(sweep_dir).
     """
     overrides, labels = [], []
     for dt, values in alphas.items():
         steps = {"timestep": dt, "equil_steps": round(p.equil_steps * p.timestep / dt),
-                 "prod_steps": round(p.prod_steps * p.timestep / dt)}
+                 "rate_update_every": round(p.rate_update_every * p.timestep / dt)}
         for a in values:
             overrides.append({**steps, **constants_for_alpha(dataclasses.replace(p, timestep=dt), a)})
             labels.append(f"alpha{a:g}_dt{dt:g}ns")

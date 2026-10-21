@@ -9,6 +9,7 @@ import pytest
 
 from qtft import Params, build_sweep, progress, start, summary, sweep_results, sweep_runs, update_index
 from qtft.run import summary_lines
+from conftest import influx
 
 
 def test_build_sweep_grid(tmp_path):
@@ -65,7 +66,7 @@ def test_summary_and_progress_of_sweep(tmp_path):
 
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_sweep_end_to_end(tmp_path):
-    p = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, prod_steps=2000,
+    p = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(2000),
                output_every=500, traj_every=500, n_replicas=2, max_parallel=2, data_dir=str(tmp_path))
     sweep = build_sweep(p, {"k_on": [1e-4, 2e-4]}, "kon")
     start(sweep, wait=True)

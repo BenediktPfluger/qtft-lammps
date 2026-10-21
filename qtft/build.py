@@ -16,7 +16,7 @@ from .params import REPO_DIR, Params
 
 TEMPLATE = REPO_DIR / "template.lmp"
 PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
-SEED_NAMES = ("seed_place_qt", "seed_place_ft", "seed_bd_qt", "seed_bd_ft", "seed_bind")
+SEED_NAMES = ("seed_place_qt", "seed_place_ft", "seed_bd_qt", "seed_bd_ft", "seed_bind", "seed_break")
 
 
 def replica_seeds(master_seed: int, n_replicas: int) -> list[dict]:
@@ -61,14 +61,19 @@ def template_values(p: Params, replica: int, seeds: dict) -> dict:
         "output_every": p.output_every,
         "traj_every": p.traj_every,
         "equil_steps": p.equil_steps,
-        "prod_steps": p.prod_steps,
+        "dt_s": p.timestep * 1e-9,
+        "t_on": p.t_on_s, "t_off": p.t_off_s,
+        "ca_rest": p.ca_rest_uM, "ca_peak": p.ca_peak_uM, "ca_start": p.ca_start_uM, "ca_tau": p.ca_tau_s,
+        "ca_K": p.ca_K_uM, "ca_hill": p.ca_hill,
+        "k_on_per_s": p.k_on * 1e9, "k_off_ca": p.k_off_ca_per_s, "k_off_free": p.k_off_free_per_s,
+        "break_every": p.break_every,
+        "n_segments": p.prod_steps // p.rate_update_every, "segment_steps": p.rate_update_every,
         "rdf_bins": p.rdf_bins, "rdf_cutoff": p.rdf_cut,
         "hist_qt_max": p.maxbond_qt + 0.5, "hist_qt_bins": p.maxbond_qt + 1,
         "hist_ft_max": p.maxbond_ft + 0.5, "hist_ft_bins": p.maxbond_ft + 1,
         "bind_every": p.bind_every,
         "r_bind": p.r_bind,
         "maxbond_qt": p.maxbond_qt, "maxbond_ft": p.maxbond_ft,
-        "p_bind": p.p_bind,
         **seeds,
     }
 

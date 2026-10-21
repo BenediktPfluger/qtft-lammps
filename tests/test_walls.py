@@ -9,12 +9,13 @@ import pytest
 
 from qtft import Params, build_run, read_dump, start
 from qtft.tuning import constants_for_alpha
+from conftest import influx
 
 
 def test_wall_params():
     periodic = Params()
     assert periodic.periodic and "reachable volume Qt" not in periodic.derived()
-    assert periodic.auto_name().endswith("ms_periodic")
+    assert periodic.auto_name().endswith("_ca10-30-90s_periodic")
     h = Params(box_length=[400.0, 500.0, 600.0], boundary="harmonic")
     d = h.derived()
     assert d["alpha wall Qt"] == pytest.approx(0.70, abs=0.01) and d["alpha wall Ft"] == pytest.approx(0.70, abs=0.01)
@@ -48,7 +49,7 @@ def test_wall_run(tmp_path, boundary):
     from qtft.structure import structure
 
     p = Params(n_qt=50, n_ft=200, box_length=[400.0, 500.0, 600.0], boundary=boundary, equil_steps=200,
-               prod_steps=1000, output_every=500, traj_every=500, k_on=1e-4, data_dir=str(tmp_path), run_name="w")
+               **influx(1000), output_every=500, traj_every=500, k_on=1e-4, data_dir=str(tmp_path), run_name="w")
     run = build_run(p)
     start(run, wait=True)
     rep = run / "rep_01"

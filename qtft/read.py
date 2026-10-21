@@ -17,7 +17,8 @@ TYPE_IDS = {"Qt": 1, "Ft": 2}   # type labels in traj.dump -> numeric atom types
 
 
 def read_thermo(log_path: str | Path) -> list[pd.DataFrame]:
-    """All YAML thermo blocks of a log.lammps, one DataFrame per `run` command."""
+    """All YAML thermo blocks of a log.lammps, one DataFrame per `run` command. Other lines inside a
+    block (LAMMPS warnings printed during the run) are skipped."""
     blocks, current = [], None
     for line in Path(log_path).read_text().splitlines():
         if line == "---":
@@ -26,7 +27,7 @@ def read_thermo(log_path: str | Path) -> list[pd.DataFrame]:
             doc = yaml.safe_load("\n".join(current))
             blocks.append(pd.DataFrame(doc["data"], columns=doc["keywords"]))
             current = None
-        elif current is not None:
+        elif current is not None and line.startswith(("keywords:", "data:", "  - [")):
             current.append(line)
     return blocks
 
@@ -50,13 +51,16 @@ def last_thermo(log_path: str | Path) -> tuple[str, dict] | None:
 
 
 def load_thermo(rep_dir: str | Path) -> pd.DataFrame:
-    """Production thermo data of a replica with a time column in ms and short column names."""
+    """Production thermo data of a replica with a time column in ms and short column names.
+    The production runs in segments (one thermo block each, see template.lmp); they are joined and the
+    step repeated at every segment start is dropped."""
     rep_dir = Path(rep_dir)
     p = Params.load(rep_dir.parent / "params.json")
     blocks = read_thermo(rep_dir / "log.lammps")
     if len(blocks) < 2:
         raise ValueError(f"no production data in {rep_dir / 'log.lammps'}")
-    df = blocks[1].rename(columns=lambda c: c.removeprefix("v_").removeprefix("c_"))
+    df = pd.concat(blocks[1:], ignore_index=True).drop_duplicates("Step", keep="first").reset_index(drop=True)
+    df = df.rename(columns=lambda c: c.removeprefix("v_").removeprefix("c_"))
     df.insert(1, "time_ms", df["Step"] * p.timestep * 1e-6)
     return df
 
@@ -91,8 +95,9 @@ def read_histo(path: str | Path) -> pd.DataFrame:
     return pd.DataFrame(data).T.rename_axis("Step")
 
 
-def read_dump(path: str | Path):
+def read_dump(path: str | Path, start: int = 0):
     """Iterate over frames of traj.dump: yields (step, DataFrame with the dumped columns).
+    Frames before step `start` are skipped without parsing them.
 
     Type labels (Qt, Ft) are converted to the numeric types 1, 2; older numeric dumps read the same.
     """
@@ -105,6 +110,10 @@ def read_dump(path: str | Path):
                 step = int(f.readline())
                 f.readline()
                 n = int(f.readline())
+                if step < start:
+                    for _ in islice(f, 5 + n):          # box bounds, column header, atom lines
+                        pass
+                    continue
                 for _ in range(4):
                     f.readline()
                 columns = f.readline().split()[2:]
@@ -132,8 +141,9 @@ def dump_steps(path: str | Path) -> list[int]:
     return steps
 
 
-def read_bonds(path: str | Path):
-    """Iterate over frames of bonds.dump: yields (step, int array of shape (n_bonds, 2))."""
+def read_bonds(path: str | Path, start: int = 0):
+    """Iterate over frames of bonds.dump: yields (step, int array of shape (n_bonds, 2)).
+    Frames before step `start` are skipped without parsing them."""
     with open(path) as f:
         while True:
             line = f.readline()
@@ -143,6 +153,10 @@ def read_bonds(path: str | Path):
                 step = int(f.readline())
                 f.readline()
                 n = int(f.readline())
+                if step < start:
+                    for _ in islice(f, 5 + n):          # box bounds, column header, bond lines
+                        pass
+                    continue
                 for _ in range(5):
                     f.readline()
                 rows = [f.readline().split()[1:3] for _ in range(n)]

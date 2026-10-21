@@ -425,20 +425,22 @@ def _sci(x: float, sd: float = float("nan")) -> str:
 
 def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: float = 0.1,
                      rate: dict | None = None):
-    """Start of the bond count (mean +- SD over replicas) with the fitted initial rate (solid) and the
-    Collins-Kimball prediction from the counted contact pairs (dashed); k_a in 1/(M s) in the legend
-    (89 mm). `rate`: a result of binding_rate() (computed here if not given)."""
+    """Bonds formed since the start of the calcium influx (mean +- SD over replicas) with the fitted
+    initial rate (solid) and the Collins-Kimball prediction from the counted contact pairs (dashed); k_a in
+    1/(M s) in the legend (89 mm). `rate`: a result of binding_rate() (computed here if not given)."""
     rate = rate or binding_rate(run.run_dir, max_frac_bound=max_frac_bound, save=False)
     s = rate["summary"]["value"]
     pairs_per_volume = run.p.n_qt * run.p.n_ft / math.prod(run.p.box)
     window = rate["window_ms"]
+    on_ms, off_ms = run.p.t_on_s * 1e3, run.p.t_off_s * 1e3
     t_all = run.stats["time_ms"]
-    show = t_all <= 2 * window
+    show = (t_all >= on_ms) & (t_all <= min(on_ms + 2 * window, off_ms))
+    bonds = run.stats["mean"]["Bonds"]
     with plt.rc_context(STYLE):
         fig = _figure(SINGLE, 60 * MM)
         ax = fig.add_subplot()
-        t = t_all[show]
-        band(ax, t, run.stats["mean"]["Bonds"][show], run.stats["sd"]["Bonds"][show], run.color, "simulation")
+        t = t_all[show] - on_ms
+        band(ax, t, bonds[show] - bonds[show][0], run.stats["sd"]["Bonds"][show], run.color, "simulation")
         def label(name, key):
             return f"{name}: {_sci(s[key] * TO_PER_M_S, s[f'{key} SD'] * TO_PER_M_S)} M⁻¹ s⁻¹"
 
@@ -449,11 +451,62 @@ def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: 
         ax.axvline(window, color="0.6", lw=0.5, ls=":")
         ax.set_xlim(0, t[-1])
         ax.set_ylim(bottom=0)
-        ax.set_xlabel("time (ms)")
-        ax.set_ylabel("bonds")
+        ax.set_xlabel("time since influx start (ms)")
+        ax.set_ylabel("bonds formed")
         ax.legend(loc="upper left")
         if out_dir:
             save(fig, out_dir / "binding_rate")
+    return fig
+
+
+PHASE_COLORS = {"baseline": "0.92", "influx": "#dbe9f6"}          # shading; the pump-out stays white
+
+
+def shade_phases(ax, p: Params, scale: float = 1e3) -> None:
+    """Shade the baseline and the influx of the calcium protocol (time axis in s * scale, default ms)."""
+    if p.t_baseline_s > 0:
+        ax.axvspan(0, p.t_on_s * scale, color=PHASE_COLORS["baseline"], lw=0, zorder=0)
+    if p.t_influx_s > 0:
+        ax.axvspan(p.t_on_s * scale, p.t_off_s * scale, color=PHASE_COLORS["influx"], lw=0, zorder=0)
+
+
+def fig_calcium(run: RunData, out_dir: Path | None = None, traces=False):
+    """Calcium protocol and its effect, time in s (183 mm): calcium and calmodulin loading f; binding
+    rate per pair and unbinding rate per bond; bonds and broken bonds; largest cluster and mean size
+    (mean +- SD over replicas). Grey: baseline, blue: influx, white: pump-out."""
+    t = run.stats["time_ms"] * 1e-3
+    mean, sd, tr = run.stats["mean"], run.stats["sd"], run.stats["traces"]
+    with plt.rc_context(STYLE):
+        fig = _figure(DOUBLE, 110 * MM)
+        (a, b), (c, d) = fig.subplots(2, 2, sharex=True)
+        a.plot(t, mean["ca"], color="k", label="Ca²⁺")
+        a.set_ylabel("calcium (µM)")
+        a2 = a.twinx()
+        a2.plot(t, mean["f"], color=LINE["Qt"], ls="--", label="loading f")
+        a2.set_ylim(0, 1.02)
+        a2.set_ylabel("calmodulin loading f")
+        a.legend(handles=a.get_lines() + a2.get_lines(), loc="upper right")
+        b.plot(t, mean["k_on_s"], color=LINE["Qt"], label="k_on per pair")
+        b.plot(t, mean["k_off_s"], color=LINE["Ft"], label="k_off per bond")
+        b.set_yscale("log")
+        b.set_ylabel("rate (1/s)")
+        b.legend(loc="lower right")
+        band(c, t, mean["Bonds"], sd["Bonds"], run.color, "bonds", traces=tr["Bonds"] if traces else None)
+        band(c, t, mean["n_broken"], sd["n_broken"], "0.5", "broken (cumulative)", ls="--")
+        c.set_ylabel("bonds")
+        c.legend(loc="upper left")
+        band(d, t, mean["largest"], sd["largest"], run.color, "largest cluster",
+             traces=tr["largest"] if traces else None)
+        band(d, t, mean["mean_size"], sd["mean_size"], "0.5", "mean size", ls="--")
+        d.set_ylabel("particles")
+        d.legend(loc="upper left")
+        for ax in (a, b, c, d):
+            shade_phases(ax, run.p, scale=1.0)
+            ax.set_xlim(0, t[-1])
+        for ax in (c, d):
+            ax.set_xlabel("time (s)")
+        if out_dir:
+            save(fig, out_dir / "calcium")
     return fig
 
 
@@ -462,7 +515,9 @@ SWEEP_LABELS = {
     "final_largest_frac": "largest cluster (fraction of particles, final)",
     "final_mean_size": "mean cluster size (final)", "t_half_bonds_ms": "half-time of bonds (ms)",
     "t_half_qt_ms": "half-time Qt bound (ms)", "t_half_ft_ms": "half-time Ft bound (ms)",
-    "t_percolation_ms": "percolation time (ms)",
+    "t_percolation_ms": "percolation time (ms)", "bonds_peak": "bonds (peak)",
+    "largest_peak": "largest cluster (peak)", "t_half_unbind_bonds_ms": "deagglomeration half-time, bonds (ms)",
+    "t_half_unbind_largest_ms": "deagglomeration half-time, largest cluster (ms)",
 }
 
 
@@ -587,10 +642,10 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     run = load_run(run_dir)
 
     figs = out / "figures"
-    for f in (fig_overview(run, figs, traces=traces), fig_kinetics([run], figs, traces=traces),
-              fig_large_count([run], figs, traces=traces), fig_overlap(run, figs),
-              fig_binding_rate(run, figs, rate=binding_rate(run_dir)),          # also analysis/binding_rate.csv
-              *fig_journal(run, figs)):
+    rate = [fig_binding_rate(run, figs, rate=binding_rate(run_dir))] if run.p.t_influx_s > 0 else []  # + csv
+    for f in (fig_calcium(run, figs, traces=traces), fig_overview(run, figs, traces=traces),
+              fig_kinetics([run], figs, traces=traces), fig_large_count([run], figs, traces=traces),
+              fig_overlap(run, figs), *rate, *fig_journal(run, figs)):
         plt.close(f)
 
     table = final_table(run)

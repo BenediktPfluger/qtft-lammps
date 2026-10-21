@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from qtft import Params, build_run, build_sweep, read_dump, start, sweep_runs
+from conftest import influx
 
 
 def test_box_property_and_derived():
@@ -40,7 +41,7 @@ def test_box_in_input_and_sweep_label(tmp_path):
 def test_rectangular_box_run(tmp_path):
     from qtft.overlap import overlap_frame
 
-    p = Params(n_qt=50, n_ft=200, box_length=[400.0, 500.0, 600.0], equil_steps=200, prod_steps=1000,
+    p = Params(n_qt=50, n_ft=200, box_length=[400.0, 500.0, 600.0], equil_steps=200, **influx(1000),
                output_every=500, traj_every=500, k_on=1e-4, data_dir=str(tmp_path), run_name="box")
     run = build_run(p)
     start(run, wait=True)
@@ -54,7 +55,8 @@ def test_rectangular_box_run(tmp_path):
     _, atoms = list(read_dump(rep / "traj.dump"))[-1]
     box = np.array(p.box)
     pos, types = atoms[["x", "y", "z"]].to_numpy(), atoms["type"].to_numpy()
-    assert (pos.min(axis=0) >= 0).all() and (pos.max(axis=0) <= box).all()
+    # atoms are wrapped back into the periodic box only when the neighbour list is rebuilt
+    assert (pos.min(axis=0) >= -p.neighbor_skin).all() and (pos.max(axis=0) <= box + p.neighbor_skin).all()
     r = np.where(types == 1, p.radius_qt, p.radius_ft)
     d = pos[:, None, :] - pos[None, :, :]
     d -= box * np.round(d / box)                                   # minimum image per axis

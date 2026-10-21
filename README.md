@@ -14,7 +14,9 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 | Dynamics | overdamped Brownian dynamics, `fix brownian`, γ = k_BT/D per species |
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j |
 | Bonds | `bond_style harmonic`, E = K (r − r₀)², r₀ = r_Qt + r_Ft |
-| Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on Δt) per step: a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ (see `docs/decisions.md`) |
+| Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on f Δt) per step: a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ (see `docs/decisions.md`) |
+| Unbinding | `fix bond/break`, probability 1 − exp(−k_off Δt) per attempt (limitation: only the longest bond per atom, see `docs/decisions.md`) |
+| Calcium control | every production follows a calcium protocol (baseline → influx → exponential pump-out, each phase optional); calmodulin loading f = Caⁿ/(K_Caⁿ + Caⁿ) sets k_on f and k_off = f k_off,Ca + (1 − f) k_off,free; computed inside LAMMPS, in segments |
 | Start | overlap-free random insertion, short equilibration without binding |
 
 ## Usage

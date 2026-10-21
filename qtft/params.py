@@ -2,6 +2,12 @@
 
 Units: length nm, time ns, energy zJ (= ag nm^2/ns^2), force pN, mass ag,
 diffusion coefficient nm^2/ns, friction coefficient ag/ns, temperature K.
+Exception: the calcium protocol is given in s, 1/s and uM (unit in the field name).
+
+Production is always calcium-controlled: baseline (resting calcium) -> influx (peak calcium) ->
+exponential pump-out; each phase may have duration 0. The calmodulin loading
+f = Ca^n / (K^n + Ca^n) sets the binding rate k_on f and the unbinding rate
+f k_off,Ca + (1 - f) k_off,free.
 """
 
 from __future__ import annotations
@@ -12,6 +18,8 @@ import numbers
 import os
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+
+import numpy as np
 
 K_B = 1.380649e-2        # Boltzmann constant in zJ/K
 N_A = 6.02214076e23      # Avogadro constant in 1/mol
@@ -58,16 +66,29 @@ class Params:
     bond_r0: float | None = None     # r0 [nm]; None -> r_Qt + r_Ft
 
     # --- binding, fix bond/create --------------------------------------------
-    k_on: float = 1.86e-6            # microscopic binding rate per pair [1/ns]
+    k_on: float = 1.86e-6            # binding rate per pair at full calmodulin loading (f = 1) [1/ns]
     bind_radius: float | None = None  # [nm]; None -> r_Qt + r_Ft
     bind_every: int = 1              # attempt bond creation every N steps
     maxbond_qt: int = 60             # max bonds per Qt
     maxbond_ft: int = 10             # max bonds per Ft
 
+    # --- calcium control (production) ----------------------------------------
+    t_baseline_s: float = 10.0       # baseline at resting calcium [s]
+    t_influx_s: float = 30.0         # influx: calcium at its peak [s]
+    t_pumpout_s: float = 90.0        # pump-out: calcium decays exponentially to rest [s]
+    ca_rest_uM: float = 0.1          # resting calcium [uM]
+    ca_peak_uM: float = 1.0          # calcium during the influx [uM]
+    ca_tau_s: float = 20.0           # pump-out time constant [s]
+    ca_K_uM: float = 0.5             # calcium at half calmodulin loading [uM]
+    ca_hill: float = 3.0             # Hill coefficient of the calmodulin loading
+    k_off_ca_per_s: float = 1e-3     # unbinding rate of a bond with Ca-loaded calmodulin [1/s]
+    k_off_free_per_s: float = 1.0    # unbinding rate of a bond with Ca-free calmodulin [1/s]
+    rate_update_every: int = 20_000  # segment length [steps]: k_on and k_off are updated every segment
+    break_every: int = 10            # unbinding attempts every N steps (fix bond/break)
+
     # --- run -----------------------------------------------------------------
     timestep: float = 500.0          # [ns]
     equil_steps: int = 5000          # equilibration, binding off
-    prod_steps: int = 50_000         # production, binding on
 
     # --- output and in-run analysis ------------------------------------------
     output_every: int = 1000         # thermo/analysis, bonds.dump, rdf, histograms [steps]
@@ -147,9 +168,58 @@ class Params:
     def gamma_ft(self) -> float:
         return self.kT / self.D_ft
 
+    # --------------------------------------------------- calcium control
+    @property
+    def phase_steps(self) -> tuple[int, int, int]:
+        """Steps of the baseline, influx and pump-out phases."""
+        return tuple(round(t * 1e9 / self.timestep) for t in (self.t_baseline_s, self.t_influx_s, self.t_pumpout_s))
+
+    @property
+    def prod_steps(self) -> int:
+        """Production steps: all three phases."""
+        return sum(self.phase_steps)
+
+    @property
+    def t_on_s(self) -> float:
+        """Start of the influx [s]."""
+        return self.t_baseline_s
+
+    @property
+    def t_off_s(self) -> float:
+        """Start of the pump-out [s]."""
+        return self.t_baseline_s + self.t_influx_s
+
+    @property
+    def ca_start_uM(self) -> float:
+        """Calcium at the start of the pump-out: the peak, or rest without an influx."""
+        return self.ca_peak_uM if self.t_influx_s > 0 else self.ca_rest_uM
+
+    def calcium(self, t_s):
+        """Calcium [uM] at production time t [s] (scalar or array); the same formula as in template.lmp."""
+        t = np.asarray(t_s, dtype=float)
+        decay = self.ca_rest_uM + (self.ca_start_uM - self.ca_rest_uM) * np.exp(
+            -np.maximum(t - self.t_off_s, 0.0) / self.ca_tau_s)
+        return np.where(t < self.t_on_s, self.ca_rest_uM, np.where(t < self.t_off_s, self.ca_peak_uM, decay))
+
+    def loading(self, ca_uM):
+        """Calmodulin loading f = Ca^n / (K^n + Ca^n)."""
+        ca = np.asarray(ca_uM, dtype=float) ** self.ca_hill
+        return ca / (self.ca_K_uM ** self.ca_hill + ca)
+
+    def k_off_per_s(self, f):
+        """Unbinding rate per bond [1/s] at loading f."""
+        return f * self.k_off_ca_per_s + (1 - f) * self.k_off_free_per_s
+
     @property
     def p_bind(self) -> float:
+        """Binding probability per attempt at full loading (f = 1), the upper bound."""
         return 1.0 - math.exp(-self.k_on * self.timestep * self.bind_every)
+
+    @property
+    def p_break_max(self) -> float:
+        """Largest unbinding probability per attempt."""
+        k = max(self.k_off_ca_per_s, self.k_off_free_per_s) * 1e-9
+        return 1.0 - math.exp(-k * self.timestep * self.break_every)
 
     @property
     def comm_cut(self) -> float:
@@ -184,13 +254,23 @@ class Params:
         if not self.periodic:
             walls |= {"reachable volume Qt": self.reachable_fraction(self.radius_qt),
                       "reachable volume Ft": self.reachable_fraction(self.radius_ft)}
+        f_rest, f_peak = float(self.loading(self.ca_rest_uM)), float(self.loading(self.ca_peak_uM))
+        calcium = {
+            "production time [s]": self.t_baseline_s + self.t_influx_s + self.t_pumpout_s,
+            "phase steps (baseline/influx/pump-out)": self.phase_steps,
+            "segments (rate updates)": self.prod_steps // self.rate_update_every if self.rate_update_every else 0,
+            "loading f at rest / peak": (round(f_rest, 4), round(f_peak, 4)),
+            "k_on per pair at rest / peak [1/s]": (f"{self.k_on * 1e9 * f_rest:.3g}", f"{self.k_on * 1e9 * f_peak:.3g}"),
+            "k_off per bond at rest / peak [1/s]": (f"{self.k_off_per_s(f_rest):.3g}", f"{self.k_off_per_s(f_peak):.3g}"),
+            "p_bind per attempt (f = 1)": self.p_bind,
+            "p_break per attempt (max)": self.p_break_max,
+        }
         return {
             "kT [zJ]": self.kT,
             "gamma_Qt [ag/ns]": gq,
             "gamma_Ft [ag/ns]": gf,
             "r0 bond [nm]": self.r0,
             "R_bind [nm]": self.r_bind,
-            "p_bind per attempt": self.p_bind,
             "alpha Qt-Qt": self.alpha(self.k_qq, gq, gq),
             "alpha Ft-Ft": self.alpha(self.k_ff, gf, gf),
             "alpha Qt-Ft": self.alpha(self.k_qf, gq, gf),
@@ -202,7 +282,7 @@ class Params:
             "c_Ft [uM]": self.n_ft * to_uM,
             "phi_Qt": self.n_qt * sphere(self.radius_qt) / vol,
             "phi_Ft": self.n_ft * sphere(self.radius_ft) / vol,
-            "production time [ms]": self.prod_steps * self.timestep * 1e-6,
+            **calcium,
             "comm cutoff [nm]": self.comm_cut,
             "size classes (small/medium/large upper bound)": self.size_bounds(),
         }
@@ -215,6 +295,12 @@ class Params:
             return [("ERROR", "box_length must be one number (cube) or three numbers [Lx, Ly, Lz]")]
         if min(self.box) <= 0:
             return [("ERROR", "box edges must be positive")]
+        if min(self.t_baseline_s, self.t_influx_s, self.t_pumpout_s) < 0 or self.prod_steps <= 0:
+            return [("ERROR", "phase durations must be >= 0 and add up to more than one step")]
+        if min(self.ca_rest_uM, self.ca_peak_uM, self.ca_K_uM, self.ca_tau_s, self.ca_hill) <= 0:
+            return [("ERROR", "ca_rest_uM, ca_peak_uM, ca_K_uM, ca_tau_s and ca_hill must be positive")]
+        if min(self.k_off_ca_per_s, self.k_off_free_per_s) < 0 or self.break_every < 1:
+            return [("ERROR", "k_off values must be >= 0 and break_every >= 1")]
         if self.boundary not in ("periodic", "reflect", "harmonic"):
             return [("ERROR", f"boundary '{self.boundary}' unknown: use 'periodic', 'reflect' or 'harmonic'")]
         if not self.periodic and min(self.box) <= 2 * max(self.radius_qt, self.radius_ft):
@@ -233,6 +319,10 @@ class Params:
                 out.append(("WARNING", f"{name} = {a:.2f} > 1: steps overshoot, consider smaller dt or k"))
         if self.p_bind > 0.1:
             out.append(("WARNING", f"p_bind = {self.p_bind:.3f} > 0.1: per-step probability starts to saturate"))
+        if self.p_break_max >= 0.1:
+            out.append(("ERROR", f"p_break = {self.p_break_max:.3f} >= 0.1 per attempt: reduce break_every or k_off"))
+        elif self.p_break_max >= 0.01:
+            out.append(("WARNING", f"p_break = {self.p_break_max:.3f} >= 0.01 per attempt: unbinding starts to saturate"))
         if d["phi_Qt"] / self.reachable_fraction(self.radius_qt) \
                 + d["phi_Ft"] / self.reachable_fraction(self.radius_ft) > 0.3:
             out.append(("WARNING", "total volume fraction > 0.3: overlap-free insertion may fail"))
@@ -242,8 +332,15 @@ class Params:
             why = ("the RDF sees periodic images of the same particles" if self.periodic else
                    "many particles are near a wall, where the RDF (normalised for an infinite system) is biased low")
             out.append(("WARNING", f"shortest box edge {min(self.box):g} nm < 2 x rdf cutoff ({self.rdf_cut:g} nm): {why}"))
-        if self.prod_steps % self.output_every:
-            out.append(("WARNING", "prod_steps should be a multiple of output_every"))
+        if self.rate_update_every < 1 or self.rate_update_every % self.output_every:
+            out.append(("ERROR", "rate_update_every must be a positive multiple of output_every"))
+        elif self.prod_steps % self.rate_update_every:
+            out.append(("ERROR", f"the production ({self.prod_steps} steps) must be a whole number of segments "
+                                 f"(rate_update_every = {self.rate_update_every})"))
+        elif any(n % self.rate_update_every for n in self.phase_steps[:2]):
+            out.append(("WARNING", "a phase boundary falls inside a segment: rates change at the next segment"))
+        if self.t_baseline_s > 0 and self.t_influx_s > 0 and self.phase_steps[0] % self.traj_every:
+            out.append(("WARNING", "the influx start is not a traj_every step: binding_rate needs a frame there"))
         if self.traj_every % self.output_every:
             out.append(("ERROR", "traj_every must be a multiple of output_every"))
         if self.maxbond_qt < 1 or self.maxbond_ft < 1:
@@ -268,8 +365,8 @@ class Params:
     def auto_name(self) -> str:
         return (f"{self.n_qt}Qt_{self.n_ft}Ft_L{box_label(self.box_length)}"
                 f"_kQQ{self.k_qq:g}_kFF{self.k_ff:g}_kQF{self.k_qf:g}_K{self.bond_k:g}"
-                f"_kon{self.k_on:g}_dt{self.timestep:g}ns_{self.prod_steps * self.timestep * 1e-6:g}ms"
-                f"_{self.boundary}")
+                f"_kon{self.k_on:g}_dt{self.timestep:g}ns"
+                f"_ca{self.t_baseline_s:g}-{self.t_influx_s:g}-{self.t_pumpout_s:g}s_{self.boundary}")
 
     @property
     def name(self) -> str:
@@ -290,6 +387,10 @@ class Params:
     @classmethod
     def from_dict(cls, data: dict) -> "Params":
         known = {f.name for f in fields(cls)}
+        if "prod_steps" in data and "t_influx_s" not in data:
+            # record from before the calcium control: its production as one influx phase
+            t = data["prod_steps"] * data.get("timestep", cls.timestep) * 1e-9
+            data = {**data, "t_baseline_s": 0.0, "t_influx_s": t, "t_pumpout_s": 0.0}
         return cls(**{k: v for k, v in data.items() if k in known})
 
     @classmethod

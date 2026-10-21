@@ -25,7 +25,8 @@ from .build import build_run, git_info
 from .ensemble import ensemble_stats
 from .params import EXECUTION_SETTINGS, Params, box_label, data_path
 RESULTS = ["final_frac_bound", "final_Bonds", "final_largest_frac", "final_mean_size",
-           "t_half_bonds_ms", "t_half_qt_ms", "t_half_ft_ms", "t_percolation_ms"]
+           "t_half_bonds_ms", "t_half_qt_ms", "t_half_ft_ms", "t_percolation_ms",
+           "bonds_peak", "largest_peak", "t_half_unbind_bonds_ms", "t_half_unbind_largest_ms"]
 
 
 def _value_label(value) -> str:

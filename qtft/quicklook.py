@@ -44,7 +44,8 @@ def _overlap(rep: Path, p: Params, every: int) -> pd.DataFrame:
 def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10):
     """Thermo time series, potential energy, pressure and (with `overlap`) the mean overlap depth
     of each pair family from every `overlap_every`-th trajectory frame, all replicas overlaid.
-    With harmonic walls the mean wall depth of Qt and Ft is drawn dashed in the Qt–Qt and Ft–Ft panels."""
+    With harmonic walls the mean wall depth of Qt and Ft is drawn dashed in the Qt–Qt and Ft–Ft panels.
+    Dotted vertical lines: start and end of the calcium influx."""
     run_dir = Path(run_dir).expanduser()
     p = Params.load(run_dir / "params.json")
     fig, axes = plt.subplots(3, 4, figsize=(14, 8.5), sharex=True)
@@ -79,5 +80,9 @@ def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10
     legend_ax.axis("off")
     if handles:
         legend_ax.legend(handles, labels, frameon=False, fontsize=8, loc="center")
+    end_ms = p.prod_steps * p.timestep * 1e-6
+    for t in {p.t_on_s * 1e3, p.t_off_s * 1e3} - {0.0, end_ms}:                    # phase boundaries
+        for ax in [*thermo_axes, *overlap_axes]:
+            ax.axvline(t, color="0.6", lw=0.6, ls=":")
     fig.tight_layout()
     return fig

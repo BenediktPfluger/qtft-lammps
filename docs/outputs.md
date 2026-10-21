@@ -46,8 +46,8 @@ exist. The subfolder follows from `n_replicas`; the `group` parameter overrides 
 
 ## Run folder `<single|ensemble>/<run name>/`
 
-The generated run name lists the main parameters and ends in the boundary
-(`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_25ms_periodic`, `…_reflect`, `…_harmonic`).
+The generated run name lists the main parameters, the calcium protocol (baseline–influx–pump-out durations in s)
+and the boundary (`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_ca10-30-90s_periodic`, `…_reflect`, `…_harmonic`).
 
 | File | Content | Created by |
 |---|---|---|
@@ -89,8 +89,10 @@ Notes:
 
 ### Thermo table in `log.lammps`
 
-Written every `output_every` steps, once for the equilibration run and once for the production run
-(two YAML blocks; the step counter restarts at 0 for production). Read with `qtft.load_thermo(rep_dir)`.
+Written every `output_every` steps: one YAML block for the equilibration and one per production segment
+(`rate_update_every` steps; the step counter restarts at 0 for production, and every segment repeats the last step
+of the previous one). Read with `qtft.load_thermo(rep_dir)`, which joins the production blocks and drops the
+repeated steps.
 
 | Column | Meaning |
 |---|---|
@@ -103,6 +105,9 @@ Written every `output_every` steps, once for the equilibration run and once for 
 | `v_n_clusters` | number of clusters including free particles |
 | `v_mean_size`, `v_largest` | mean and largest cluster size (particles) |
 | `v_n_large` | number of clusters with ≥ `large_cluster_min` particles |
+| `v_ca`, `v_f` | calcium (µM) and calmodulin loading f (production only) |
+| `v_k_on_s`, `v_k_off_s` | binding rate per Qt–Ft pair in contact and unbinding rate per bond (1/s; production only) |
+| `v_n_broken` | bonds broken since the start of the production (production only) |
 | `v_f_mono` … `v_f_vlarge` | fraction of particles in monomers / small / medium / large / very large clusters |
 | `v_deg_qt_mean`, `v_deg_ft_mean`, `v_deg_qt_max`, `v_deg_ft_max` | mean (over bound particles) and maximum bonds per Qt / Ft |
 | `v_bond_mean`, `v_bond_max` | mean and maximum bond length (nm) |
@@ -135,17 +140,17 @@ regenerated from the replica files at any time.
 |---|---|---|
 | `ensemble_stats.json` | Mean, SD (sample SD, ddof = 1) and per-replica traces of all logged quantities on a common time grid; half-times, percolation (`percolated`: a cluster spans the box in the last frame, `t_percolation_ms`: first frame with a spanning cluster), final values per replica | Python: `ensemble_stats()` |
 | `ensemble_timeseries.csv` | The same time series as a table (`<quantity>_mean`, `<quantity>_sd`) | Python: `ensemble_stats()` |
-| `final_state.csv` | Final values per quantity: mean, SD, number of replicas (row `percolated`: mean = fraction of percolated replicas) | Python: `ensemble_stats()` |
+| `final_state.csv` | Final values per quantity (at the end of the calcium protocol): mean, SD, number of replicas (row `percolated`: mean = fraction of percolated replicas); rows `bonds_peak`, `t_bonds_peak_ms`, `largest_peak`, `t_largest_peak_ms`, `t_half_unbind_bonds_ms`, `t_half_unbind_largest_ms` (deagglomeration half-times after the end of the influx) | Python: `ensemble_stats()` |
 | `structure_timeseries.csv` | Per analysed frame, mean/SD over replicas: Rg, Rg/Rg_ideal, inter- and intra-cluster nearest-neighbour distances, Qt fraction per cluster | Python + OVITO: `structure_ensemble()` |
 | `structure_per_replica.csv` | The same per replica | Python + OVITO: `structure_ensemble()` |
 | `clusters_final.csv` | Every cluster of the last frame of every replica: size, Qt/Ft count, bonds, Rg, ideal Rg (solid sphere of the cluster's particle volumes at packing 0.64), centre | Python + OVITO: `structure_ensemble()` |
 | `overlap_timeseries.csv` | Interpenetration statistics per pair family and frame (mean over replicas); with walls also the rows `Qt-wall` / `Ft-wall` (spheres beyond a box face) | Python: `overlap_ensemble()` |
 | `overlap_final.csv` | The same, pooled over the last frames | Python: `overlap_ensemble()` |
-| `binding_rate.csv` | Columns `value, unit, 1/(M s)`. Rows: `k_a measured` (+ `SD`) from the start of the bond curve (frames up to 10 % bound, mean and SD over replicas); `k_a predicted` (+ `SD`), Collins–Kimball with the Qt–Ft contact pairs counted in the first production frame; `kappa`, `k_D`; `k_a continuum estimate` (analytical, too high when the step is comparable to the overlap layer); `contact volume counted` and `contact volume continuum` in nm³ | Python: `binding_rate()`, also `make_report()` |
+| `binding_rate.csv` | Columns `value, unit, 1/(M s)`. Rows: `k_a measured` (+ `SD`) from the start of the bond curve in the calcium influx (frames up to 10 % more bound, mean and SD over replicas); `k_a predicted` (+ `SD`), Collins–Kimball with the Qt–Ft contact pairs counted in the frame at the influx start; `kappa`, `k_D`; `k_a continuum estimate` (analytical, too high when the step is comparable to the overlap layer); `contact volume counted` and `contact volume continuum` in nm³ | Python: `binding_rate()`, also `make_report()` |
 | `final_table.csv`, `final_table.tex` | Final-state table (bonds, clusters, sizes, fraction bound, half-time, Rg, Qt fraction) as CSV and LaTeX | Python: `make_report()` |
 | `bonds_timeseries.csv` | Bond count over time: step, time (µs, ms), mean, SD | Python: `make_report()` |
 | `report.json` | Settings used for the report | Python: `make_report()` |
-| `figures/` | All figures as PDF + SVG + PNG: `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (start of the bond curve with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs); `figures/panels/` single panels of the overview; `figures/journal/` panels g–j | Python: `make_report()` |
+| `figures/` | All figures as PDF + SVG + PNG: `calcium` (calcium and loading f, rates, bonds and broken bonds, largest cluster and mean size; phases shaded), `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx); `figures/panels/` single panels of the overview; `figures/journal/` panels g–j | Python: `make_report()` |
 
 Comparisons of several runs (`compare_report(runs, out_dir)`) are written to the chosen `out_dir`:
 `comparison`, `kinetics`, `large_agglomerates` (PDF/SVG/PNG), `panels/`, and

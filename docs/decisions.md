@@ -18,18 +18,21 @@ conventions. Read this first when continuing the work.
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j; k_QQ = 7.5, k_FF = 3.0, k_QF = 4.3 zJ/nm² | soft excluded volume allows the large timestep; LAMMPS k includes the ½; set for α ≈ 0.7 at Δt = 500 ns (least overlap with margin to α = 1, see Overlap and force constants; former handover values 3.32 / 2.0 / 1.245); all three pairs set explicitly (default geometric mixing would give a wrong Qt–Ft cutoff) |
 | Bond | `bond_style harmonic`, E = K (r − r₀)², K = 4.3 zJ/nm², r₀ = 40.5 nm | set for α ≈ 0.7 like the repulsion (former handover value 1.66); K = k_QF, so a pair inside contact has the same energy before and after bonding (no jump at bond formation) |
 | Bonded pairs | `special_bonds lj 1.0e-50 1.0 1.0` | directly bonded pairs: repulsion off (the bond keeps the distance); pairs 2–3 bonds apart (e.g. two Qt on one Ft) keep the repulsion; 1e-50 instead of 0 keeps bonded pairs in the neighbour list so they appear in the RDF (`fix bond/create` still refuses duplicate bonds) |
-| Binding | `fix bond/create` every step, Qt–Ft only, R_bind = 40.5 nm, prob p = 1 − exp(−k_on Δt), k_on = 1.86·10⁻⁶ ns⁻¹ (10⁻⁶ × √(4.3/1.245): same kinetics as with the former k_QF, see Overlap and force constants; to be calibrated against experiment); max 60 bonds per Qt, 10 per Ft; loops allowed | contact reaction of the Collins–Kimball type (partially reactive surface at contact, see Binding model); difference to ReaDDy accepted: each atom bonds at most once per step, and only with a partner that also has it as its closest eligible partner |
+| Binding | `fix bond/create`, Qt–Ft only, R_bind = 40.5 nm, prob p_on = 1 − exp(−k_on f Δt) per step with the calmodulin loading f(t) (see Calcium control); k_on = 1.86·10⁻⁶ ns⁻¹ is the rate at full loading (f = 1) (10⁻⁶ × √(4.3/1.245): same kinetics as with the former k_QF, see Overlap and force constants; to be calibrated against experiment); max 60 bonds per Qt, 10 per Ft; loops allowed | contact reaction of the Collins–Kimball type (partially reactive surface at contact, see Binding model); difference to ReaDDy accepted: each atom bonds at most once per step, and only with a partner that also has it as its closest eligible partner |
 | Bond bookkeeping | `extra/bond/per/atom 60`, `extra/special/per/atom 1000` (LAMMPS reserves 2001 slots); `comm_modify cutoff` = max(2.5 r₀, RDF cutoff) + skin = 141.5 nm (skin 20) | bond/create keeps 1-2/1-3/1-4 neighbour lists and needs partners 2 bonds away as ghosts; actual need measured with `benchmark.special_need` |
 | Start | overlap-free random insertion (`create_atoms random … overlap`): Qt with 55 nm, then Ft with 40.5 nm; 5000 steps (2.5 ms) equilibration without binding | dilute system (φ ≈ 6 %), so the insertion is already close to an equilibrium fluid; only the contact pairs (overlap, needed for binding) are missing at the start: repulsion energy and pressure reach their plateau within ≈ 1000 steps (test 2026-10-20, 4000 Qt / 10 000 Ft, 20 000 steps), 5000 steps give a 5× margin at 0.5 % of a 10⁶-step production; the Ft–Ft start bias (≥ 40.5 instead of 26 nm) is erased (RMS displacement in 2.5 ms: Qt ≈ 55 nm, Ft ≈ 87 nm) |
-| Bond breaking | not implemented yet | planned for later (`fix bond/break` is length-based; rate-based breaking needs another approach) |
-| Seeds | per replica 5 independent seeds from `numpy.random.SeedSequence(master_seed)`, range 1…900 000 000 | the LAMMPS Marsaglia generator rejects larger seeds; runs are reproducible |
+| Unbinding | `fix bond/break` every `break_every` = 10 steps with Rmax = 0 (every bond is a candidate), prob p_off = 1 − exp(−k_off(t) · break_every · Δt), k_off(t) = f k_off,Ca + (1 − f) k_off,free (see Calcium control) | the only built-in rate-based option; **limitation**: only the longest bond of an atom can break (see Calcium control), to be replaced by a custom fix |
+| Calcium control | every production follows a calcium protocol: baseline (Ca_rest) → influx (Ca_peak) → exponential pump-out (τ); durations `t_baseline_s`, `t_influx_s`, `t_pumpout_s` (each may be 0, e.g. 0/30/0 = agglomeration at constant rates); the production runs in segments of `rate_update_every` steps that re-create the binding and unbinding fixes with the rates at the segment start | the agglomeration–deagglomeration cycle of the experiment (calcium influx, then pumping); all in one LAMMPS input, calcium computed inside LAMMPS from the step |
+| Seeds | per replica 6 independent seeds (placement Qt/Ft, Brownian Qt/Ft, binding, unbinding; binding and unbinding add the segment number) from `numpy.random.SeedSequence(master_seed)`, range 1…900 000 000 | the LAMMPS Marsaglia generator rejects larger seeds; runs are reproducible |
 
 ReaDDy is not used for validation; the LAMMPS model stands on its own.
 
 ## Reference parameters
 
 Only the time step has a reference value: **Δt = 500 ns** (the `Params` default). Particle numbers, box size
-and run length are chosen per run in the control notebook; there is no reference system.
+and the calcium protocol (and with it the run length) are chosen per run in the control notebook; there is no
+reference system. The `Params` default protocol is the experimental cycle 10 s baseline / 30 s influx / 90 s
+pump-out (2.6·10⁸ steps); tests use small systems and short protocols.
 
 ## What is computed where
 
@@ -80,7 +83,8 @@ and run length are chosen per run in the control notebook; there is no reference
 | 3 | ensemble statistics, run index, run comparison | merged |
 | 4 | structure (OVITO) and overlap analysis, figures, tables | merged |
 | 5 | FIB-SEM export, this document | merged |
-| later | bond breaking and phase schedules, parameter sweeps, HPC cluster runs | open |
+| 6 | parameter sweeps, walls, Collins–Kimball binding rate, calcium-controlled binding and unbinding | merged |
+| later | custom bond-breaking fix (`bond/break/random`), restart files for long runs, HPC cluster runs | open |
 
 Open items: size `extra_special` from a long production run (`special_need`); compare the real run speed
 with the benchmark projection.
@@ -158,8 +162,11 @@ reactivity κ:
 - diffusion-limited (Smoluchowski) rate k_D = 4π D R
 - association rate constant (steady state) k_a = k_D κ / (k_D + κ)
 
-`binding_rate(run_dir)` counts the contact pairs in the first production frame of every replica (end of the
-equilibration: equilibrium distribution, no bonds yet) and measures k_a as the initial slope of the bond count.
+`binding_rate(run_dir)` measures during the calcium influx: it counts the contact pairs in the `traj.dump` frame at
+the influx start (unbonded pairs; equilibrium distribution, since binding is weak before) and measures k_a as the
+initial slope of the bond count from there; the rate per pair is that at peak calcium, k_on f_peak. The numbers
+below were measured before the calcium control with a constant k_on (an influx-only protocol with f = 1); with
+the defaults (f_peak = 0.89) the same k_on gives an 11 % smaller κ.
 Defaults (4000 Qt / 10 000 Ft, 2000 nm box, k_QF = 4.3 zJ/nm², Δt = 500 ns, k_on = 1.86·10⁻⁶ ns⁻¹, 3 replicas,
 2026-10-21): **measured k_a = (1.76 ± 0.05)·10⁷ M⁻¹ s⁻¹, predicted (1.75 ± 0.10)·10⁷ M⁻¹ s⁻¹**; κ = 1.9·10⁷,
 k_D = 2.1·10⁸ M⁻¹ s⁻¹ (1 nm³/ns = 6.02·10⁸ M⁻¹ s⁻¹); κ/k_D ≈ 0.09, so binding is mostly reaction-limited.
@@ -191,4 +198,62 @@ Consequences:
   cutoff, which would make κ nearly independent of k_QF) was tested on 2026-10-21 and not adopted: the
   contact reaction is a standard model, the constants stay fixed, and the shell would only shift the
   calibration (its neighbour-list cost was 1–2 %).
+
+## Calcium control
+
+The binding of Qt and Ft is mediated by calmodulin–RS20, which binds only with Ca²⁺. In the experiment, a calcium
+influx triggers agglomeration and the cell then pumps the calcium out again (≈ 30 s high calcium, ≈ 90 s
+deagglomeration). Every production follows such a protocol, computed inside LAMMPS from the step (`template.lmp`,
+section 11):
+
+    Ca(t) = Ca_rest                                              baseline   (0 ≤ t < t_baseline)
+          = Ca_peak                                              influx     (until t_baseline + t_influx)
+          = Ca_rest + (Ca_start − Ca_rest) · exp(−t'/τ)            pump-out   (t' from its start; Ca_start = Ca_peak,
+                                                                             or Ca_rest without an influx)
+    f(t)  = Caⁿ / (K_Caⁿ + Caⁿ)                                  calmodulin loading (Hill)
+    k_on(t)  = k_on · f                                          binding rate per Qt–Ft pair in contact
+    k_off(t) = f · k_off,Ca + (1 − f) · k_off,free               unbinding rate per bond
+
+f is the fraction of calmodulin with calcium bound, i.e. able to hold RS20 (mean field: every bond sees the
+average loading; calcium binding to calmodulin takes milliseconds, so f follows Ca(t) instantly).
+
+| Parameter | Default | Source |
+|---|---|---|
+| `ca_rest_uM`, `ca_peak_uM` | 0.1, 1.0 µM | typical resting level and global calcium signal in cells |
+| `ca_tau_s` | 20 s | calcium clearance (seconds to tens of seconds); calibrate against the 90 s deagglomeration |
+| `ca_K_uM`, `ca_hill` | 0.5 µM, 3 | target peptides raise the calcium affinity of calmodulin; cooperative loading of 4 sites |
+| `k_on` | 1.86·10⁻⁶ ns⁻¹ (at f = 1) | k_a at full loading ≈ 2·10⁷ M⁻¹ s⁻¹, typical for calmodulin–peptide association |
+| `k_off_ca_per_s`, `k_off_free_per_s` | 10⁻³, 1 s⁻¹ | calmodulin–RS20 with Ca²⁺ binds with nM affinity; without Ca²⁺ it releases the peptide within ~1 s |
+
+These are order-of-magnitude literature estimates, to be checked and calibrated. With them f(rest) = 0.008, so the
+baseline binds weakly (k_on < 1 % of its maximum) and the few bonds live ~1 s; f(peak) = 0.89, so binding runs
+near its maximum, but the 11 % unloaded calmodulin dominates unbinding even at the peak: k_off(peak) = 0.11 s⁻¹
+(bond lifetime ≈ 9 s), not 10⁻³ s⁻¹.
+
+**Segments.** `fix bond/create` and `fix bond/break` take a fixed probability, so the production runs in segments of
+`rate_update_every` steps (default 20 000 = 10 ms): each segment re-creates both fixes with the probabilities at its
+start and a new seed (seed + segment number). A phase boundary inside a segment takes effect at the next segment
+(warning in `check()`). The segment starts write "Inconsistent image flags" (bonds across the periodic boundary,
+harmless; the analysis uses the minimum image) and "Using fix bond/create … with fix bond/break may not work as
+expected"; the number of printed warnings is limited to 20. Checked: after a full protocol the special lists are
+consistent (energy unchanged after rebuilding them), the bond count in the thermo output equals `bonds.dump`, and
+no bond is duplicated.
+
+**Limitation of `fix bond/break` (to be replaced).** Every `break_every` steps each atom picks its *longest* bond as
+its only candidate, and a bond breaks (with probability p_off) only if it is the longest bond of both atoms. With
+Rmax = 0 every bond is a candidate, but bonds of highly connected atoms break less often. Measured 2026-10-21
+(150 Qt / 600 Ft, 964 bonds, unbinding only): per-bond rate 0.37 / 0.27 / 0.17 / 0.12 / 0.09 × k_off for Qt with
+1–2 / 3–4 / 5–6 / 7–9 / ≥ 10 bonds (0.14 for all bonds; by Ft bonds 0.17 for 1, 0.07 for ≥ 4). Consequences:
+the effective k_off is much smaller than set, cluster cores (well-connected Qt) dissolve too slowly, so
+deagglomeration peels clusters from the outside, and stretched bonds break preferentially (no calibration with a
+single factor can remove this). The planned replacement is a custom LAMMPS fix `bond/break/random` (a plugin; a
+copy of `fix bond/break` that tests every bond independently with a probability that may be a variable).
+`fix bond/react` was tested and is unsuitable: its templates must match the exact number of bonds of both atoms
+of the breaking bond (edge atoms are not modified), so every combination of Qt and Ft bond counts would need its
+own template (up to 60 × 10).
+
+**Analysis.** `ensemble_stats` adds per replica the peaks of the bond count and the largest cluster and the
+deagglomeration half-times (`t_half_unbind_bonds_ms`, `t_half_unbind_largest_ms`: time after the end of the influx
+until the value has fallen to half of its value at that moment); "final" values are those at the end of the whole
+protocol. `fig_calcium` shows calcium, loading, rates, bonds and cluster sizes with the phases shaded.
 
