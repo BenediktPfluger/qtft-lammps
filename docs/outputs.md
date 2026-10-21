@@ -45,6 +45,9 @@ exist. The subfolder follows from `n_replicas`; the `group` parameter overrides 
 
 ## Run folder `<single|ensemble>/<run name>/`
 
+The generated run name lists the main parameters (`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_25ms`); runs with walls
+end in `_reflect` or `_harmonic`, periodic runs have no suffix.
+
 | File | Content | Created by |
 |---|---|---|
 | `params.json` | **The record of the run**: all parameters, derived values (k_BT, γ, α, p, …), check results, seeds of every replica, git commit, creation time | Python: `build_run()` (control notebook, section 2) |
@@ -67,7 +70,7 @@ exist. The subfolder follows from `n_replicas`; the `group` parameter overrides 
 | File | Content | Created by |
 |---|---|---|
 | `log.lammps` | Full log: copy of all input commands, setup information, timing summaries and the **thermo table every `output_every` steps** in YAML format (see below). Main source of all time series | LAMMPS (automatic; name set by `-log log.lammps`) |
-| `traj.dump` | Trajectory, one frame every `traj_every` steps. Columns: `id type x y z ix iy iz radius cluster nbonds` (`type` = type label `Qt` or `Ft`, shown as named types in OVITO; runs before the type labels have `1`/`2`; `ix iy iz` = periodic image flags; `cluster` = bond-connected cluster ID; `nbonds` = bonds of the particle). **Open in OVITO** | LAMMPS (`template.lmp`): `dump traj … custom` with `typelabel` (names from `labelmap`) |
+| `traj.dump` | Trajectory, one frame every `traj_every` steps. Columns: `id type x y z ix iy iz radius cluster nbonds` (`type` = type label `Qt` or `Ft`, shown as named types in OVITO; runs before the type labels have `1`/`2`; `ix iy iz` = periodic image flags, always 0 with walls, where BOX BOUNDS reads `ff ff ff`; `cluster` = bond-connected cluster ID; `nbonds` = bonds of the particle). **Open in OVITO** | LAMMPS (`template.lmp`): `dump traj … custom` with `typelabel` (names from `labelmap`) |
 | `bonds.dump` | List of all bonds (`atom1 atom2`, atom IDs) every `output_every` steps | LAMMPS (`template.lmp`): `compute property/local` + `dump bonds … local` |
 | `rdf.dat` | Qt–Ft radial distribution function every `output_every` steps: per bin r, g(r) and coordination number (default 200 bins up to 121.5 nm); snapshots, not time averages | LAMMPS (`template.lmp`): `compute rdf` + `fix ave/time` |
 | `coord_qt.hist` | Histogram of bonds per Qt (0 … `maxbond_qt`) every `output_every` steps | LAMMPS (`template.lmp`): `fix ave/histo` on `compute nbond/atom` |
@@ -112,9 +115,9 @@ Only after `fibsem_export_run(run_dir)` (analysis notebook, section 5).
 
 | File | Content | Created by |
 |---|---|---|
-| `sim_encapsulin_centroids_clustered.csv` | One row per encapsulin: `label, z_nm, y_nm, x_nm, z_vox, y_vox, x_vox, radius_nm, volume_nm3, cluster, is_clustered` (clusters unwrapped across the periodic box, shifted to the origin) | Python + OVITO: `fibsem_export()` |
-| `sim_metadata.json` | Counts, cluster-size histogram, box and applied offset, frame description, bond check, all parameters | Python: `fibsem_export()` |
-| `check_xy.png` | x–y scatter of the encapsulins coloured by cluster, with the periodic box outline | Python: `fibsem_export()` |
+| `sim_encapsulin_centroids_clustered.csv` | One row per encapsulin: `label, z_nm, y_nm, x_nm, z_vox, y_vox, x_vox, radius_nm, volume_nm3, cluster, is_clustered` (periodic box: clusters unwrapped across the box, shifted to the origin; walls: positions in the box frame, not shifted, walls at 0 and the box size) | Python + OVITO: `fibsem_export()` |
+| `sim_metadata.json` | Counts, cluster-size histogram, box and applied offset, frame description, bond check, all parameters; `boundary` (`periodic`/`reflect`/`harmonic`), `wall_stiffness` (harmonic: k of Qt and Ft in zJ/nm², otherwise null), `wall_leaks` (walls: encapsulin spheres sticking out of the box and the largest depth, otherwise null) | Python: `fibsem_export()` |
+| `check_xy.png` | x–y scatter of the encapsulins coloured by cluster, with the periodic box or the walls as dashed outline | Python: `fibsem_export()` |
 
 ## Analysis folder `<run name>/analysis/`
 
@@ -129,7 +132,7 @@ regenerated from the replica files at any time.
 | `structure_timeseries.csv` | Per analysed frame, mean/SD over replicas: Rg, Rg/Rg_ideal, inter- and intra-cluster nearest-neighbour distances, Qt fraction per cluster | Python + OVITO: `structure_ensemble()` |
 | `structure_per_replica.csv` | The same per replica | Python + OVITO: `structure_ensemble()` |
 | `clusters_final.csv` | Every cluster of the last frame of every replica: size, Qt/Ft count, bonds, Rg, ideal Rg, centre | Python + OVITO: `structure_ensemble()` |
-| `overlap_timeseries.csv` | Interpenetration statistics per pair family and frame (mean over replicas) | Python: `overlap_ensemble()` |
+| `overlap_timeseries.csv` | Interpenetration statistics per pair family and frame (mean over replicas); with walls also the rows `Qt-wall` / `Ft-wall` (spheres beyond a box face) | Python: `overlap_ensemble()` |
 | `overlap_final.csv` | The same, pooled over the last frames | Python: `overlap_ensemble()` |
 | `final_table.csv`, `final_table.tex` | Final-state table (bonds, clusters, sizes, fraction bound, half-time, Rg, Qt fraction) as CSV and LaTeX | Python: `make_report()` |
 | `bonds_timeseries.csv` | Bond count over time: step, time (µs, ms), mean, SD | Python: `make_report()` |

@@ -31,9 +31,11 @@ def _gammas(p: Params) -> dict:
 
 
 def constants_for_alpha(p: Params, alpha: float) -> dict:
-    """k_qq, k_ff, k_qf and bond_k that give every family the per-step overshoot `alpha`."""
+    """k_qq, k_ff, k_qf, bond_k and the wall constants that give every family the per-step
+    overshoot `alpha` (the wall constants only act with boundary="harmonic")."""
     k = {fam: alpha / (2 * p.timestep * (1 / gi + 1 / gj)) for fam, (gi, gj) in _gammas(p).items()}
-    return {"k_qq": k["Qt-Qt"], "k_ff": k["Ft-Ft"], "k_qf": k["Qt-Ft"], "bond_k": k["Qt-Ft"]}
+    return {"k_qq": k["Qt-Qt"], "k_ff": k["Ft-Ft"], "k_qf": k["Qt-Ft"], "bond_k": k["Qt-Ft"],
+            "wall_k_qt": alpha * p.gamma_qt / (2 * p.timestep), "wall_k_ft": alpha * p.gamma_ft / (2 * p.timestep)}
 
 
 def predicted_overlap(p: Params) -> pd.Series:

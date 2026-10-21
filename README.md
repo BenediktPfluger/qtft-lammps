@@ -10,7 +10,7 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 | Component | LAMMPS implementation |
 |---|---|
 | Units | `units nano` (nm, ns, energy in zJ, force in pN) |
-| Box | periodic (`boundary p p p`); cubic (`box_length=2000.0`) or rectangular (`box_length=[2000.0, 3000.0, 4000.0]`) |
+| Box | cubic (`box_length=2000.0`) or rectangular (`box_length=[2000.0, 3000.0, 4000.0]`); periodic (`boundary="periodic"`, default) or with walls on all faces: reflecting (`"reflect"`, `fix wall/reflect`) or soft (`"harmonic"`, `fix wall/harmonic`) |
 | Dynamics | overdamped Brownian dynamics, `fix brownian`, γ = k_BT/D per species |
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j |
 | Bonds | `bond_style harmonic`, E = K (r − r₀)², r₀ = r_Qt + r_Ft |
@@ -44,10 +44,10 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `qtft/read.py` | readers for `log.lammps` (YAML thermo), dumps, `rdf.dat`, histograms |
 | `qtft/quicklook.py` | quick overview plot of a run: thermo time series, potential energy, virial pressure, mean overlap per pair family |
 | `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, `index.csv` of all runs, comparison of runs |
-| `qtft/structure.py` | cluster geometry with OVITO (clusters from bonds, unwrapped across the periodic box): Rg, compactness, centres, nearest-neighbour distances, composition |
-| `qtft/overlap.py` | interpenetration diagnostics per pair family |
+| `qtft/structure.py` | cluster geometry with OVITO (clusters from bonds, unwrapped across the periodic box; not needed with walls): Rg, compactness, centres, nearest-neighbour distances, composition |
+| `qtft/overlap.py` | interpenetration diagnostics per pair family (with walls also particle–wall) |
 | `qtft/figures.py` | Nature-style figures (overview, kinetics, large agglomerates, overlap, journal panels g–j, comparison), final-state table (CSV + LaTeX), `make_report` |
-| `qtft/fibsem.py` | export of the final frame in the FIB-SEM segmentation schema (encapsulins, clusters from bonds, unwrapped) |
+| `qtft/fibsem.py` | export of the final frame in the FIB-SEM segmentation schema (encapsulins, clusters from bonds; periodic box unwrapped, walls in the box frame) |
 | `qtft/sweep.py` | parameter sweeps: one run per combination of listed values (grid), same seeds for all variants, results table per variant |
 | `qtft/tuning.py` | force-constant sweep: constants for a target α, predicted vs measured overlap per pair family, binding kinetics |
 | `qtft/benchmark.py` | performance measurement (MPI processes per replica, replicas in parallel) and sizing of `extra_special` |

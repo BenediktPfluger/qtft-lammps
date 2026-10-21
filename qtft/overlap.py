@@ -3,6 +3,10 @@
 A pair at distance d overlaps by max(r_i + r_j - d, 0). Bonded and non-bonded pairs are treated
 alike. "mean depth all pairs" averages over *all* pairs of a family (also the many pairs far apart)
 and is given in % of the contact distance; use it to rank parameter sets.
+
+With walls (boundary "reflect" or "harmonic") the box is not periodic, and the rows "Qt-wall" and
+"Ft-wall" give how far particle spheres stick out of the box (depth = r_i - distance of the centre
+to the nearest face); they are always 0 for reflecting walls.
 """
 
 from __future__ import annotations
@@ -17,18 +21,22 @@ from .params import Params
 from .read import read_dump
 
 FAMILIES = {"Qt-Qt": (1, 1), "Ft-Ft": (2, 2), "Qt-Ft": (1, 2)}
+WALL_FAMILIES = {"Qt-wall": 1, "Ft-wall": 2}
 
 
 def overlap_frame(atoms: pd.DataFrame, p: Params) -> pd.DataFrame:
     """Overlap statistics of one frame (atoms from read_dump), one row per pair family."""
     box = np.array(p.box)
-    pos = np.mod(atoms[["x", "y", "z"]].to_numpy(dtype=float), box)
+    pos = atoms[["x", "y", "z"]].to_numpy(dtype=float)
     types = atoms["type"].to_numpy()
     radius = np.where(types == 1, p.radius_qt, p.radius_ft)
-    tree = cKDTree(pos, boxsize=box)
+    if p.periodic:
+        pos = np.mod(pos, box)
+    tree = cKDTree(pos, boxsize=box if p.periodic else None)
     pairs = tree.query_pairs(2 * max(p.radius_qt, p.radius_ft), output_type="ndarray")
     delta = pos[pairs[:, 1]] - pos[pairs[:, 0]]
-    delta -= box * np.round(delta / box)
+    if p.periodic:
+        delta -= box * np.round(delta / box)
     dist = np.linalg.norm(delta, axis=1)
     contact = radius[pairs[:, 0]] + radius[pairs[:, 1]]
     depth = np.maximum(contact - dist, 0.0)
@@ -52,6 +60,21 @@ def overlap_frame(atoms: pd.DataFrame, p: Params) -> pd.DataFrame:
             "p95 depth [nm]": np.percentile(over, 95) if len(over) else 0.0,
             "max depth [nm]": over.max() if len(over) else 0.0,
         })
+    if not p.periodic:
+        wall_depth = radius - np.minimum(pos, box - pos).min(axis=1)       # r_i - distance to nearest face
+        for family, t in WALL_FAMILIES.items():
+            dep = np.maximum(wall_depth[types == t], 0.0)
+            over, r = dep[dep > 0], (p.radius_qt if t == 1 else p.radius_ft)
+            rows.append({
+                "family": family,
+                "closest [nm]": (r - wall_depth[types == t]).min() if n[t] else np.nan,
+                "n overlapping": len(over),
+                "frac overlapping": len(over) / n[t] if n[t] else np.nan,
+                "mean depth overlapping [nm]": over.mean() if len(over) else 0.0,
+                "mean depth all pairs [% contact]": 100 * dep.sum() / n[t] / r if n[t] else np.nan,
+                "p95 depth [nm]": np.percentile(over, 95) if len(over) else 0.0,
+                "max depth [nm]": over.max() if len(over) else 0.0,
+            })
     return pd.DataFrame(rows)
 
 
@@ -85,7 +108,8 @@ def overlap_ensemble(run_dir: str | Path, every: int = 10, last_frames: int = 5,
     timeseries = all_frames.groupby(["family", "Step"])[numeric].mean().drop(columns="Step").reset_index()
     last_steps = sorted(all_frames["Step"].unique())[-last_frames:]
     final = (all_frames[all_frames["Step"].isin(last_steps)]
-             .groupby("family")[numeric[2:]].mean().reindex(FAMILIES))
+             .groupby("family")[numeric[2:]].mean()
+             .reindex([f for f in (*FAMILIES, *WALL_FAMILIES) if f in set(all_frames["family"])]))
     result = {"timeseries": timeseries, "final": final, "per_frame": all_frames}
     if save:
         out = run_dir / "analysis"

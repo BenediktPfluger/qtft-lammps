@@ -1,6 +1,7 @@
 """Cluster geometry with OVITO: radius of gyration, compactness, cluster centres, nearest-neighbour
-distances, composition. Clusters are the connected components of the bond graph; OVITO unwraps
-each cluster across the periodic boundaries before measuring it.
+distances, composition. Clusters are the connected components of the bond graph; in a periodic box
+OVITO unwraps each cluster across the boundaries before measuring it (with walls the box is not
+periodic and positions are used as they are).
 
 Frames are read from traj.dump (positions) and bonds.dump (bond list of the same step).
 """
@@ -25,7 +26,8 @@ def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True, last_onl
     the last one if `last`; only the last one if `last_only`), with bonds from bonds.dump and
     bond-based cluster analysis applied.
 
-    Afterwards `data.particles.positions` are unwrapped per cluster, `data.particles['Cluster']`
+    Afterwards `data.particles.positions` are unwrapped per cluster (periodic box; with walls they
+    are unchanged), `data.particles['Cluster']`
     is the cluster index (largest first) and `data.tables['clusters']` holds size, centre of mass
     and radius of gyration of every cluster.
     """
@@ -54,9 +56,10 @@ def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True, last_onl
         box = np.diag(data.cell[...][:3, :3])
         new = data.particles_.create_bonds(count=len(pairs))
         new.create_property("Topology", data=pairs)
-        # minimum-image shift of every bond (bond vector = x_b - x_a + box * shift)
-        new.create_property("Periodic Image",
-                            data=-np.round((pos[pairs[:, 1]] - pos[pairs[:, 0]]) / box).astype(np.int32))
+        # minimum-image shift of every bond (bond vector = x_b - x_a + box * shift); none without
+        # periodicity (walls: OVITO reads the ff flags of BOX BOUNDS)
+        shift = -np.round((pos[pairs[:, 1]] - pos[pairs[:, 0]]) / box).astype(np.int32)
+        new.create_property("Periodic Image", data=shift * np.asarray(data.cell.pbc, dtype=np.int32))
         # equal weights for centre of mass and Rg; OVITO would otherwise take per-type masses from
         # the type names (it reads "Ft" as fluorine)
         data.particles_.create_property("Mass", data=np.ones(len(ids)))
@@ -95,9 +98,10 @@ def cluster_table(data, p: Params) -> pd.DataFrame:
     })
 
 
-def frame_metrics(data, table: pd.DataFrame, box) -> dict:
+def frame_metrics(data, table: pd.DataFrame, box, periodic: bool = True) -> dict:
     """Per-frame structure metrics (handover definitions: Rg on clusters >= 3, spatial and
-    composition metrics on clusters >= 2)."""
+    composition metrics on clusters >= 2). `periodic=False` (walls): plain distances between
+    cluster centres."""
     big3 = table[table["size"] >= 3]
     big2 = table[table["size"] >= 2]
     out = {
@@ -109,8 +113,10 @@ def frame_metrics(data, table: pd.DataFrame, box) -> dict:
     }
     if len(big2) >= 2:
         box = np.array(box)                                             # (Lx, Ly, Lz)
-        centres = np.mod(big2[["com_x", "com_y", "com_z"]].to_numpy(), box)
-        dist, _ = cKDTree(centres, boxsize=box).query(centres, k=2)
+        centres = big2[["com_x", "com_y", "com_z"]].to_numpy()
+        if periodic:
+            centres = np.mod(centres, box)
+        dist, _ = cKDTree(centres, boxsize=box if periodic else None).query(centres, k=2)
         out["inter_nn_mean"], out["inter_nn_sd"] = dist[:, 1].mean(), dist[:, 1].std()
     if len(big3):
         cl = np.asarray(data.particles["Cluster"]) - 1
@@ -134,7 +140,7 @@ def structure(rep_dir: str | Path, every: int = 10) -> tuple[pd.DataFrame, pd.Da
     for step, data in load_frames(rep_dir, every=every):
         table = cluster_table(data, p)
         rows.append({"Step": step, "time_ms": step * p.timestep * 1e-6,
-                     **frame_metrics(data, table, p.box)})
+                     **frame_metrics(data, table, p.box, p.periodic)})
     return pd.DataFrame(rows), table
 
 

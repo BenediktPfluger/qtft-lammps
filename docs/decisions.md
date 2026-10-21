@@ -9,6 +9,7 @@ conventions. Read this first when continuing the work.
 |---|---|---|
 | Units | `units nano`: nm, ns, energy zJ (= ag nm²/ns²), force pN, mass ag, pressure 1 unit = 1 MPa | parameters appear as physical values without a conversion layer; k_BT(310 K) = 4.28 zJ |
 | Boundaries | periodic box (`boundary p p p`), cubic or rectangular: `box_length` is one edge (cube) or `[Lx, Ly, Lz]` | no walls, no lost atoms; clusters crossing the box edge are unwrapped in the analysis (OVITO); one field for both shapes keeps old records and run names valid (run name `L2000` or `L2000x3000x4000`); concentrations use the true volume Lx·Ly·Lz; warning if the shortest edge is below twice the RDF cutoff; in elongated boxes large networks span the shortest edge first, so that edge limits the largest structures to trust |
+| Walls | alternative to the periodic box: `boundary = "periodic"` (default), `"reflect"` or `"harmonic"`, walls on all six faces of the same box (`boundary f f f`); **reflect**: `fix wall/reflect` per species at r_i from each face (a centre that crosses the plane is mirrored back, so the sphere surface touches the face; exact no-flux boundary, no parameters); **harmonic**: `fix wall/harmonic` per species at each face with cutoff r_i, E = k (r_i − d)² for centre–face distance d < r_i, `wall_k_qt` = 15.0, `wall_k_ft` = 6.0 zJ/nm² (wall α = 2kΔt/γᵢ ≈ 0.70 like the pair constants; predicted mean depth ≈ 0.4 / 0.6 nm), wall energy and virial included in `pe` and `c_pvir` (`fix_modify energy yes virial yes`); insertion inside the box shrunk by r_i (`region ins_qt/ins_ft`); run name gets `_reflect` / `_harmonic` (periodic names unchanged) | first step towards confined compartments; reflect is the textbook reflecting boundary for diffusion, harmonic is the same physics as `fix wall/region … harmonic`, which curved shapes (sphere, cylinder, nucleus) will need; concentrations stay defined on the full box Lx·Ly·Lz, the volume a centre can reach (∏(L − 2r_i)/∏L) is listed in the derived values; the LAMMPS RDF is normalised for a homogeneous system and is biased low for particles near a wall; the analysis uses no minimum image (overlap, cluster centres) and OVITO does not unwrap (the dump has `ff` flags) |
 | Atom types | 2 types: 1 = Qt (r = 27.5 nm), 2 = Ft (r = 13.0 nm), named by `labelmap` (`traj.dump` writes the names Qt/Ft, `final.data` stores the labels); "bound" = at least one bond | the four ReaDDy reactions collapse to one Qt–Ft rule; no re-typing needed (also later for bond breaking); the names make OVITO show Qt/Ft, the readers convert them back to 1/2. No bound-state types (QtC/FtC): colour by `nbonds` in OVITO instead |
 | Dynamics | overdamped Brownian dynamics, `fix brownian` (Euler–Maruyama), Gaussian noise, one fix per species, γ = k_BT/D | particle timescales (µs steps) are ~10⁵ × the momentum relaxation time m/γ, so inertia is irrelevant; velocity Verlet + Langevin would need ~10⁶ × more steps |
 | Thermostat | none besides `fix brownian` (friction + noise satisfy fluctuation–dissipation) | `fix brownian` is the only integrator; never add `fix nve/langevin/nvt` |
@@ -37,10 +38,10 @@ and run length are chosen per run in the control notebook; there is no reference
 | bonds, free/bound counts, fraction bound, number of clusters, mean/largest size, clusters ≥ 5, size-category fractions, mean/max coordination, bond lengths, energies, virial pressure | LAMMPS during the run (`compute nbond/atom`, `fragment/atom`, `chunk/atom`, …), YAML thermo in `log.lammps` |
 | Qt–Ft RDF, coordination histograms | LAMMPS (`rdf.dat`, `coord_*.hist`) |
 | mean ± SD over replicas, half-times, percolation | `qtft/ensemble.py` |
-| Rg, compactness, cluster centres, nearest-neighbour distances, composition (need unwrapping across the periodic box) | OVITO Python module, `qtft/structure.py` |
+| Rg, compactness, cluster centres, nearest-neighbour distances, composition (need unwrapping across the periodic box; none with walls) | OVITO Python module, `qtft/structure.py` |
 | overlap diagnostics | `qtft/overlap.py` (from `traj.dump`) |
 | figures, tables | `qtft/figures.py` (Nature style as in the handover) |
-| FIB-SEM export | `qtft/fibsem.py` |
+| FIB-SEM export (periodic: clusters unwrapped and shifted to the origin; walls: positions in the box frame, walls at 0 and L) | `qtft/fibsem.py` |
 
 `ke`, `temp` and `etotal` are meaningless in overdamped dynamics and are not logged.
 
@@ -132,6 +133,11 @@ Findings:
   scales as 1/√k_qf (α 0.3 → 1.2: k_qf × 4, binding rate ÷ 2.1; Δt 250 ns: k_qf × 6, ÷ 2.4), independent of
   Δt. Stiffer constants therefore need a k_on raised by √(k_qf,new / k_qf,old) to keep the same kinetics;
   k_on has to be calibrated against experiment after the constants are fixed.
+
+With harmonic walls the same estimate holds for the wall with α = 2 k Δt / γᵢ (only the particle moves):
+`constants_for_alpha` also returns `wall_k_qt` and `wall_k_ft`, and `overlap_frame` adds the rows `Qt-wall` and
+`Ft-wall` (how far spheres stick out of the box; always 0 for reflecting walls). Test 2026-10-21 (50 Qt / 200 Ft,
+400 × 500 × 600 nm, 0.5 ms): largest wall depth 0.37 nm, reflect 0.
 
 Decision (2026-10-20): α ≈ 0.7 at Δt = 500 ns, rounded: k_qq = 7.5, k_ff = 3.0, k_qf = bond_k = 4.3 zJ/nm²
 (α 0.70 / 0.70 / 0.70 / 0.70; predicted overlap 0.53 / 0.84 / 0.70 nm), k_on = 1.86·10⁻⁶ ns⁻¹. Most of the

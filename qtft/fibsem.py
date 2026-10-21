@@ -10,6 +10,11 @@ shifted so that the lower corner of the bounding box of all encapsulin spheres i
 Caveat: this breaks periodicity *between* clusters (they may overlap, the bounding volume may
 exceed the box), which biases neighbourhood metrics across clusters (RDF, <M(R)>); per-cluster
 statistics are unaffected.
+
+Walls (boundary "reflect" or "harmonic"): positions are exported in the box frame as they are (no
+unwrapping, no shift; the origin is the lower box corner, i.e. the walls are at 0 and L). There is no
+periodicity to break, but the walls are real edges: particles are depleted next to them. With harmonic
+walls a sphere can stick out of the box by a fraction of a nm (counted in `wall_leaks`).
 """
 
 from __future__ import annotations
@@ -63,7 +68,10 @@ def fibsem_export(rep_dir: str | Path, voxel_nm: float = 4.0, plot: bool = True)
     if len(qt) != p.n_qt or len(np.unique(ids[qt])) != len(qt):
         raise RuntimeError(f"expected {p.n_qt} unique encapsulins, found {len(qt)}")
     xyz = pos[qt]
-    lower = (xyz - p.radius_qt).min(axis=0)                              # bounding box of the spheres
+    if p.periodic:
+        lower = (xyz - p.radius_qt).min(axis=0)                          # bounding box of the spheres
+    else:
+        lower = np.zeros(3)                                              # box frame: walls at 0 and L
     xyz = xyz - lower
     renumber = {c: i for i, c in enumerate(np.unique(cluster[qt]), start=1)}
     volume = 4 / 3 * math.pi * p.radius_qt**3
@@ -80,7 +88,21 @@ def fibsem_export(rep_dir: str | Path, voxel_nm: float = 4.0, plot: bool = True)
     qt_per_cluster = table.groupby("cluster").size()
     multi = sorted({c for c, s in zip(cluster[qt], size_of[qt]) if s > 1})
     box = list(p.box)
-    upper = (xyz + p.radius_qt).max(axis=0)
+    upper = (xyz + p.radius_qt).max(axis=0) if p.periodic else np.array(box)
+    if p.periodic:
+        description = ("periodic box: clusters unwrapped across the boundaries (bond graph), then "
+                       "shifted so that the lower corner of the bounding box of all encapsulin "
+                       "spheres is at the origin; periodicity between clusters is broken "
+                       "(clusters may overlap, the bounding volume may exceed the box)")
+        leaks = None
+    else:
+        wall = {"reflect": "reflecting walls (fix wall/reflect)", "harmonic": "soft harmonic walls (fix wall/harmonic)"}
+        description = (f"box with {wall[p.boundary]} on all faces: positions in the box frame, not "
+                       "shifted (walls at 0 and the box size); no periodicity, particles are depleted "
+                       "next to the walls")
+        depth = p.radius_qt - np.minimum(xyz, np.array(box) - xyz).min(axis=1)   # sphere beyond a face
+        leaks = {"n_encapsulins_beyond_wall": int((depth > 0).sum()),
+                 "max_depth_nm": float(max(depth.max(), 0.0)) if len(depth) else 0.0}
     meta = {
         "source_trajectory": str(rep_dir / "traj.dump"),
         "final_step": int(step), "final_time_us": step * p.timestep * 1e-3,
@@ -94,15 +116,14 @@ def fibsem_export(rep_dir: str | Path, voxel_nm: float = 4.0, plot: bool = True)
         "cluster_size_histogram_encapsulins": {int(k): int(v) for k, v in
                                                qt_per_cluster.value_counts().sort_index().items()},
         "qt_radius_nm": p.radius_qt, "qt_volume_nm3": volume,
-        "boundary": "periodic", "wall_stiffness": None,
+        "boundary": p.boundary,
+        "wall_stiffness": ({"Qt": p.wall_k_qt, "Ft": p.wall_k_ft, "unit": "zJ/nm^2", "energy": "k (r - d)^2"}
+                           if p.boundary == "harmonic" else None),
         "box_size_xyz_nm": box, "box_size_zyx_nm": box[::-1],
-        "offset_applied_xyz_nm": (-lower).tolist(),
+        "offset_applied_xyz_nm": (0.0 - lower).tolist(),       # 0.0 - x avoids -0.0
         "bounds_zyx_nm": {"min": [0.0, 0.0, 0.0], "max": upper[::-1].tolist()},
-        "frame_description": ("periodic box: clusters unwrapped across the boundaries (bond graph), then "
-                              "shifted so that the lower corner of the bounding box of all encapsulin "
-                              "spheres is at the origin; periodicity between clusters is broken "
-                              "(clusters may overlap, the bounding volume may exceed the box)"),
-        "wall_leaks": None,
+        "frame_description": description,
+        "wall_leaks": leaks,
         "voxel_size_nm": voxel_nm,
         "topology_mapping": "by particle ID (traj.dump id <-> bonds.dump atom IDs)",
         "bond_check": bond_check,
@@ -114,12 +135,13 @@ def fibsem_export(rep_dir: str | Path, voxel_nm: float = 4.0, plot: bool = True)
     table.to_csv(out / "sim_encapsulin_centroids_clustered.csv", index=False)
     (out / "sim_metadata.json").write_text(json.dumps(meta, indent=2))
     if plot:
-        _check_plot(table, lower, p.box, out)
+        _check_plot(table, lower, p.box, out, p.periodic)
     return out
 
 
-def _check_plot(table: pd.DataFrame, lower: np.ndarray, box, out: Path) -> None:
-    """x-y scatter of the encapsulins coloured by cluster (free ones grey), with the original box."""
+def _check_plot(table: pd.DataFrame, lower: np.ndarray, box, out: Path, periodic: bool = True) -> None:
+    """x-y scatter of the encapsulins coloured by cluster (free ones grey), with the original box
+    (periodic) or the walls."""
     fig, ax = plt.subplots(figsize=(5, 5), layout="constrained")
     free = ~table["is_clustered"]
     ax.scatter(table.loc[free, "x_nm"], table.loc[free, "y_nm"], s=2, c="0.75", lw=0, label="free")
@@ -129,7 +151,7 @@ def _check_plot(table: pd.DataFrame, lower: np.ndarray, box, out: Path) -> None:
     ax.set_aspect("equal")
     ax.set_xlabel("x (nm)")
     ax.set_ylabel("y (nm)")
-    ax.set_title("encapsulins by cluster (dashed: periodic box)", fontsize=8)
+    ax.set_title(f"encapsulins by cluster (dashed: {'periodic box' if periodic else 'walls'})", fontsize=8)
     fig.savefig(out / "check_xy.png", dpi=200)
     plt.close(fig)
 

@@ -30,7 +30,10 @@ class Params:
     # --- system --------------------------------------------------------------
     n_qt: int = 400                  # number of Qt encapsulins
     n_ft: int = 1600                 # number of Ft ferritins
-    box_length: float | list[float] = 928.3   # periodic box [nm]: one edge (cube) or [Lx, Ly, Lz]
+    box_length: float | list[float] = 928.3   # box [nm]: one edge (cube) or [Lx, Ly, Lz]
+    boundary: str = "periodic"       # "periodic", "reflect" (fix wall/reflect) or "harmonic" (fix wall/harmonic)
+    wall_k_qt: float = 15.0          # harmonic wall E = k (r_Qt - d)^2, d = centre-wall distance [zJ/nm^2]
+    wall_k_ft: float = 6.0           # same for Ft [zJ/nm^2]
 
     # --- particles -----------------------------------------------------------
     radius_qt: float = 27.5          # effective Qt radius [nm]
@@ -93,6 +96,16 @@ class Params:
         return tuple(float(v) for v in self.box_length)
 
     @property
+    def periodic(self) -> bool:
+        return self.boundary == "periodic"
+
+    def reachable_fraction(self, radius: float) -> float:
+        """Fraction of the box volume a particle centre can reach (1 for a periodic box)."""
+        if self.periodic:
+            return 1.0
+        return math.prod(max(L - 2 * radius, 0.0) / L for L in self.box)
+
+    @property
     def r0(self) -> float:
         return self.bond_r0 if self.bond_r0 is not None else self.radius_qt + self.radius_ft
 
@@ -144,6 +157,10 @@ class Params:
         """Per-step overshoot of a pair separation for force constant 2k (E = k x^2)."""
         return 2 * k * self.timestep * (1 / gamma_i + 1 / gamma_j)
 
+    def wall_alpha(self, k: float, gamma: float) -> float:
+        """Per-step overshoot against a fixed wall (E = k x^2, only the particle moves)."""
+        return 2 * k * self.timestep / gamma
+
     def size_bounds(self) -> tuple[int, int, int]:
         """Upper bounds of the 'small', 'medium' and 'large' cluster size classes."""
         n = self.n_qt + self.n_ft
@@ -154,6 +171,13 @@ class Params:
         to_uM = 1e6 / (vol * NM3_TO_L * N_A)
         sphere = lambda r: 4 / 3 * math.pi * r ** 3
         gq, gf = self.gamma_qt, self.gamma_ft
+        walls = {}
+        if self.boundary == "harmonic":
+            walls |= {"alpha wall Qt": self.wall_alpha(self.wall_k_qt, gq),
+                      "alpha wall Ft": self.wall_alpha(self.wall_k_ft, gf)}
+        if not self.periodic:
+            walls |= {"reachable volume Qt": self.reachable_fraction(self.radius_qt),
+                      "reachable volume Ft": self.reachable_fraction(self.radius_ft)}
         return {
             "kT [zJ]": self.kT,
             "gamma_Qt [ag/ns]": gq,
@@ -165,6 +189,7 @@ class Params:
             "alpha Ft-Ft": self.alpha(self.k_ff, gf, gf),
             "alpha Qt-Ft": self.alpha(self.k_qf, gq, gf),
             "alpha bond": self.alpha(self.bond_k, gq, gf),
+            **walls,
             "RMS step Qt [nm/axis]": math.sqrt(2 * self.D_qt * self.timestep),
             "RMS step Ft [nm/axis]": math.sqrt(2 * self.D_ft * self.timestep),
             "c_Qt [uM]": self.n_qt * to_uM,
@@ -184,11 +209,17 @@ class Params:
             return [("ERROR", "box_length must be one number (cube) or three numbers [Lx, Ly, Lz]")]
         if min(self.box) <= 0:
             return [("ERROR", "box edges must be positive")]
+        if self.boundary not in ("periodic", "reflect", "harmonic"):
+            return [("ERROR", f"boundary '{self.boundary}' unknown: use 'periodic', 'reflect' or 'harmonic'")]
+        if not self.periodic and min(self.box) <= 2 * max(self.radius_qt, self.radius_ft):
+            return [("ERROR", "with walls every box edge must exceed the largest particle diameter")]
         d = self.derived()
         if self.r_bind > self.cut_qf + 1e-9:
             out.append(("ERROR", f"R_bind {self.r_bind} nm exceeds the Qt-Ft pair cutoff {self.cut_qf} nm "
                                  "(fix bond/create requires R_bind <= pair cutoff)"))
-        for name in ("alpha Qt-Qt", "alpha Ft-Ft", "alpha Qt-Ft", "alpha bond"):
+        for name in ("alpha Qt-Qt", "alpha Ft-Ft", "alpha Qt-Ft", "alpha bond", "alpha wall Qt", "alpha wall Ft"):
+            if name not in d:
+                continue
             a = d[name]
             if a >= 2:
                 out.append(("ERROR", f"{name} = {a:.2f} >= 2: unstable, reduce dt or k"))
@@ -196,13 +227,15 @@ class Params:
                 out.append(("WARNING", f"{name} = {a:.2f} > 1: steps overshoot, consider smaller dt or k"))
         if self.p_bind > 0.1:
             out.append(("WARNING", f"p_bind = {self.p_bind:.3f} > 0.1: per-step probability starts to saturate"))
-        if d["phi_Qt"] + d["phi_Ft"] > 0.3:
+        if d["phi_Qt"] / self.reachable_fraction(self.radius_qt) \
+                + d["phi_Ft"] / self.reachable_fraction(self.radius_ft) > 0.3:
             out.append(("WARNING", "total volume fraction > 0.3: overlap-free insertion may fail"))
         if self.comm_cut < self.rdf_cut + self.neighbor_skin:
             out.append(("ERROR", "comm cutoff must be >= rdf cutoff + neighbor skin"))
         if min(self.box) < 2 * self.rdf_cut:
-            out.append(("WARNING", f"shortest box edge {min(self.box):g} nm < 2 x rdf cutoff ({self.rdf_cut:g} nm): "
-                                   "the RDF sees periodic images of the same particles"))
+            why = ("the RDF sees periodic images of the same particles" if self.periodic else
+                   "many particles are near a wall, where the RDF (normalised for an infinite system) is biased low")
+            out.append(("WARNING", f"shortest box edge {min(self.box):g} nm < 2 x rdf cutoff ({self.rdf_cut:g} nm): {why}"))
         if self.prod_steps % self.output_every:
             out.append(("WARNING", "prod_steps should be a multiple of output_every"))
         if self.traj_every % self.output_every:
@@ -229,7 +262,8 @@ class Params:
     def auto_name(self) -> str:
         return (f"{self.n_qt}Qt_{self.n_ft}Ft_L{box_label(self.box_length)}"
                 f"_kQQ{self.k_qq:g}_kFF{self.k_ff:g}_kQF{self.k_qf:g}_K{self.bond_k:g}"
-                f"_kon{self.k_on:g}_dt{self.timestep:g}ns_{self.prod_steps * self.timestep * 1e-6:g}ms")
+                f"_kon{self.k_on:g}_dt{self.timestep:g}ns_{self.prod_steps * self.timestep * 1e-6:g}ms"
+                + ("" if self.periodic else f"_{self.boundary}"))
 
     @property
     def name(self) -> str:

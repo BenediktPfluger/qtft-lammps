@@ -43,15 +43,18 @@ def _overlap(rep: Path, p: Params, every: int) -> pd.DataFrame:
 
 def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10):
     """Thermo time series, potential energy, pressure and (with `overlap`) the mean overlap depth
-    of each pair family from every `overlap_every`-th trajectory frame, all replicas overlaid."""
+    of each pair family from every `overlap_every`-th trajectory frame, all replicas overlaid.
+    With harmonic walls the mean wall depth of Qt and Ft is drawn dashed in the Qt–Qt and Ft–Ft panels."""
     run_dir = Path(run_dir).expanduser()
     p = Params.load(run_dir / "params.json")
     fig, axes = plt.subplots(3, 4, figsize=(14, 8.5), sharex=True)
     thermo_axes, overlap_axes, legend_ax = axes.flat[:8], axes.flat[8:11], axes.flat[11]
     for ax, (_, label, _) in zip(thermo_axes, PANELS):
         ax.set_ylabel(label)
+    walls = {"Qt-Qt": "Qt-wall", "Ft-Ft": "Ft-wall"} if p.boundary == "harmonic" else {}
     for ax, family in zip(overlap_axes, FAMILIES):
-        ax.set_ylabel(f"mean overlap {family.replace('-', '–')} (nm)")
+        wall = " (dashed: wall)" if family in walls else ""
+        ax.set_ylabel(f"mean overlap {family.replace('-', '–')}{wall} (nm)")
     for rep in sorted(run_dir.glob("rep_*")):
         if not (rep / "log.lammps").exists():
             continue
@@ -65,7 +68,10 @@ def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10
         for ax, family in zip(overlap_axes, FAMILIES):
             if len(ov):
                 sel = ov[ov["family"] == family]
-                ax.plot(sel["time_ms"], sel[OVERLAP], lw=1, label=rep.name)
+                line, = ax.plot(sel["time_ms"], sel[OVERLAP], lw=1, label=rep.name)
+                if family in walls:
+                    sel = ov[ov["family"] == walls[family]]
+                    ax.plot(sel["time_ms"], sel[OVERLAP], lw=1, ls="--", color=line.get_color())
     axes[1, 3].tick_params(labelbottom=True)       # the legend panel below it has no axis
     for ax in [*axes[-1, :3], axes[1, 3]]:
         ax.set_xlabel("time (ms)")

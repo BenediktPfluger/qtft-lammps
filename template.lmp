@@ -6,7 +6,7 @@
 # ---------------------------------------------------------------- 1. initialisation
 units           nano
 atom_style      bond
-boundary        p p p
+boundary        {{boundary_flags}}   # p p p = periodic box, f f f = walls ({{boundary}})
 
 # ---------------------------------------------------------------- 2. box
 # room for bonds and topological neighbours created later by fix bond/create
@@ -37,9 +37,13 @@ neigh_modify    every 1 delay 0 check yes
 comm_modify     cutoff {{comm_cutoff}}
 
 # ---------------------------------------------------------------- 5. atoms
-# overlap-free random insertion: Qt first, then Ft (the overlap distance applies to all existing atoms)
-create_atoms    1 random {{n_qt}} {{seed_place_qt}} NULL overlap {{cut_qq}} maxtry {{insert_maxtry}} units box
-create_atoms    2 random {{n_ft}} {{seed_place_ft}} NULL overlap {{cut_qf}} maxtry {{insert_maxtry}} units box
+# overlap-free random insertion: Qt first, then Ft (the overlap distance applies to all existing atoms);
+# periodic box: anywhere (NULL); walls: inside the box shrunk by the particle radius (ins_qt, ins_ft)
+if "{{boundary}} != periodic" then &
+  "region ins_qt block {{qt_lo}} {{qt_hi_x}} {{qt_lo}} {{qt_hi_y}} {{qt_lo}} {{qt_hi_z}} units box" &
+  "region ins_ft block {{ft_lo}} {{ft_hi_x}} {{ft_lo}} {{ft_hi_y}} {{ft_lo}} {{ft_hi_z}} units box"
+create_atoms    1 random {{n_qt}} {{seed_place_qt}} {{insert_region_qt}} overlap {{cut_qq}} maxtry {{insert_maxtry}} units box
+create_atoms    2 random {{n_ft}} {{seed_place_ft}} {{insert_region_ft}} overlap {{cut_qf}} maxtry {{insert_maxtry}} units box
 
 variable        n_expected equal {{n_qt}}+{{n_ft}}
 variable        n_created equal count(all)
@@ -56,6 +60,20 @@ group           Ft type 2
 timestep        {{timestep}}
 fix             bd_qt Qt brownian {{temperature}} {{seed_bd_qt}} rng gaussian gamma_t {{gamma_qt}}
 fix             bd_ft Ft brownian {{temperature}} {{seed_bd_ft}} rng gaussian gamma_t {{gamma_ft}}
+
+# walls on all six box faces (only with boundary f f f); they constrain positions or add forces,
+# they are not integrators
+# reflect: a centre that crosses the plane at r_i from the face is mirrored back (surface touches the face)
+if "{{boundary}} == reflect" then &
+  "fix wall_qt Qt wall/reflect xlo {{qt_lo}} xhi {{qt_hi_x}} ylo {{qt_lo}} yhi {{qt_hi_y}} zlo {{qt_lo}} zhi {{qt_hi_z}} units box" &
+  "fix wall_ft Ft wall/reflect xlo {{ft_lo}} xhi {{ft_hi_x}} ylo {{ft_lo}} yhi {{ft_hi_y}} zlo {{ft_lo}} zhi {{ft_hi_z}} units box"
+# harmonic: E = k (r_i - d)^2 for centre-face distance d < r_i (args: face position, k, sigma unused,
+# cutoff); wall energy and virial are included in pe and c_pvir
+if "{{boundary}} == harmonic" then &
+  "fix wall_qt Qt wall/harmonic xlo EDGE {{wall_k_qt}} 0.0 {{radius_qt}} xhi EDGE {{wall_k_qt}} 0.0 {{radius_qt}} ylo EDGE {{wall_k_qt}} 0.0 {{radius_qt}} yhi EDGE {{wall_k_qt}} 0.0 {{radius_qt}} zlo EDGE {{wall_k_qt}} 0.0 {{radius_qt}} zhi EDGE {{wall_k_qt}} 0.0 {{radius_qt}} units box" &
+  "fix wall_ft Ft wall/harmonic xlo EDGE {{wall_k_ft}} 0.0 {{radius_ft}} xhi EDGE {{wall_k_ft}} 0.0 {{radius_ft}} ylo EDGE {{wall_k_ft}} 0.0 {{radius_ft}} yhi EDGE {{wall_k_ft}} 0.0 {{radius_ft}} zlo EDGE {{wall_k_ft}} 0.0 {{radius_ft}} zhi EDGE {{wall_k_ft}} 0.0 {{radius_ft}} units box" &
+  "fix_modify wall_qt energy yes virial yes" &
+  "fix_modify wall_ft energy yes virial yes"
 
 # ---------------------------------------------------------------- 7. in-run analysis
 # bonds per atom and cluster (= bond-connected fragment, free particles are 1-particle clusters)
