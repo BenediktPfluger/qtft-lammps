@@ -228,7 +228,8 @@ def contact_pairs(atoms: pd.DataFrame, bonds: np.ndarray, p: Params) -> int:
 
 def binding_rate(run_dir: str | Path, max_frac_bound: float = 0.1, save: bool = True) -> dict:
     """Association rate constant k_a during the calcium influx of every finished replica, measured and
-    predicted (needs an influx phase).
+    predicted (needs an influx phase with a calcium step, ca_rise_s = 0: the fit assumes the peak rate from
+    the influx start on).
 
     Measured: k_a = (dN_bonds/dt) at the influx start * V / (N_Qt N_Ft), the slope of the bond count (fit
     through the value at the influx start) over the influx frames up to an increase of the fraction bound
@@ -249,6 +250,9 @@ def binding_rate(run_dir: str | Path, max_frac_bound: float = 0.1, save: bool = 
     p = Params.load(run_dir / "params.json")
     if p.t_influx_s <= 0:
         raise ValueError(f"{run_dir}: no influx phase, the binding rate is measured during the influx")
+    if p.ca_rise_s > 0:
+        raise ValueError(f"{run_dir}: calcium rises over ca_rise_s = {p.ca_rise_s:g} s; the binding rate is "
+                         "measured with a calcium step (ca_rise_s = 0)")
     series = replica_series(run_dir)
     if not series:
         raise ValueError(f"no finished replicas in {run_dir}")

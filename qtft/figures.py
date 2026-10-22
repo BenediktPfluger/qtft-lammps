@@ -642,7 +642,7 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     run = load_run(run_dir)
 
     figs = out / "figures"
-    rate = [fig_binding_rate(run, figs, rate=binding_rate(run_dir))] if run.p.t_influx_s > 0 else []  # + csv
+    rate = [fig_binding_rate(run, figs, rate=binding_rate(run_dir))] if run.p.t_influx_s > 0 and run.p.ca_rise_s == 0 else []  # + csv
     for f in (fig_calcium(run, figs, traces=traces), fig_overview(run, figs, traces=traces),
               fig_kinetics([run], figs, traces=traces), fig_large_count([run], figs, traces=traces),
               fig_overlap(run, figs), *rate, *fig_journal(run, figs)):

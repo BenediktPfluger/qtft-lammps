@@ -13,7 +13,7 @@ from qtft.ensemble import deagglomeration
 
 
 def test_phases_and_calcium_formula():
-    p = Params(t_baseline_s=10.0, t_influx_s=30.0, t_pumpout_s=90.0, ca_tau_s=20.0)
+    p = Params(t_baseline_s=10.0, t_influx_s=30.0, t_pumpout_s=90.0, ca_tau_s=20.0, ca_rise_s=0.0)
     assert p.phase_steps == (20_000_000, 60_000_000, 180_000_000) and p.prod_steps == 260_000_000
     ca = p.calcium([0.0, 9.99, 10.0, 39.99, 40.0, 60.0])
     assert ca == pytest.approx([0.1, 0.1, 1.0, 1.0, 1.0, 0.1 + 0.9 * np.exp(-1.0)])
@@ -23,6 +23,20 @@ def test_phases_and_calcium_formula():
     no_influx = Params(t_baseline_s=1.0, t_influx_s=0.0, t_pumpout_s=1.0)
     assert no_influx.ca_start_uM == no_influx.ca_rest_uM                      # pump-out stays at rest
     assert "_ca10-30-90s_periodic" in p.auto_name()
+
+
+def test_calcium_rise():
+    p = Params(t_baseline_s=10.0, t_influx_s=30.0, t_pumpout_s=90.0, ca_rise_s=5.0)
+    ca = p.calcium([9.99, 10.0, 15.0, 40.0, 60.0])
+    assert ca[0] == pytest.approx(0.1) and ca[1] == pytest.approx(0.1)            # continuous at t_on
+    assert (ca[2] - 0.1) / (1.0 - 0.1) == pytest.approx(0.99)                     # 99 % of the rise after 5 s
+    assert ca[3] == pytest.approx(p.ca_start_uM) and p.ca_start_uM == pytest.approx(1.0, abs=1e-9)
+    assert ca[4] == pytest.approx(0.1 + (p.ca_start_uM - 0.1) * np.exp(-1.0))
+    short = Params(t_baseline_s=1.0, t_influx_s=1.0, t_pumpout_s=1.0, ca_rise_s=5.0)
+    assert short.ca_start_uM == pytest.approx(1.0 - 0.9 * 0.01 ** (1 / 5))        # plateau not reached
+    d = p.derived()
+    assert d["k_act*I / k_dark [1/s]"] == pytest.approx((round(np.log(100) / 5 - 0.05, 4), 0.05))
+    assert d["effective c_max [uM]"] == pytest.approx(1.0517, abs=1e-4)
 
 
 def test_deagglomeration_half_time():
@@ -49,6 +63,9 @@ def test_calcium_checks():
     assert any("run end" in m for m in warnings(Params(traj_every=7000)))
     assert not any("run end" in m for m in warnings(Params(traj_every=200_000)))
     assert any("p_break" in m for m in errors(Params(k_off_free_per_s=1e5)))
+    assert errors(Params(ca_rise_s=-1.0)) and errors(Params(ca_rise_s=93.0))
+    assert any("plateau" in m for m in warnings(Params(t_influx_s=3.0)))
+    assert any("10 segments" in m for m in warnings(Params(ca_rise_s=0.2)))
     assert not errors(Params())
 
 
@@ -63,10 +80,12 @@ def test_input_has_segment_loop(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
-def test_compressed_protocol_run(tmp_path):
+@pytest.mark.parametrize("rise", [0.0, 2e-3])
+def test_compressed_protocol_run(tmp_path, rise):
     # milliseconds instead of seconds and fast rates, so that bonds form and break within the test
     p = Params(n_qt=150, n_ft=600, box_length=500.0, equil_steps=200, output_every=500, traj_every=1000,
-               t_baseline_s=2e-3, t_influx_s=4e-3, t_pumpout_s=6e-3, ca_tau_s=2e-3, rate_update_every=1000,
+               t_baseline_s=2e-3, t_influx_s=4e-3, t_pumpout_s=6e-3, ca_tau_s=2e-3, ca_rise_s=rise,
+               rate_update_every=1000,
                k_on=2e-3, k_off_ca_per_s=1.0, k_off_free_per_s=2000.0, data_dir=str(tmp_path), run_name="ca")
     run = build_run(p)
     rep = run / "rep_01"
@@ -101,7 +120,7 @@ def test_compressed_protocol_run(tmp_path):
     matplotlib.use("Agg")
     from qtft import make_report
     out = make_report(run, every=2, structure_analysis=False)
-    for name in ("calcium", "binding_rate"):
-        assert (out / "figures" / f"{name}.pdf").exists(), name
+    assert (out / "figures" / "calcium.pdf").exists()
+    assert (out / "figures" / "binding_rate.pdf").exists() == (rise == 0)      # only with a calcium step
     final = pd.read_csv(out / "final_state.csv", index_col=0)
     assert {"bonds_peak", "t_half_unbind_bonds_ms"} <= set(final.index)

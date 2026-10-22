@@ -22,7 +22,7 @@ conventions. Read this first when continuing the work.
 | Bond bookkeeping | `extra/bond/per/atom 60`, `extra/special/per/atom 1000` (LAMMPS reserves 2001 slots); `comm_modify cutoff` = max(2.5 r₀, RDF cutoff) + skin = 141.5 nm (skin 20) | bond/create keeps 1-2/1-3/1-4 neighbour lists and needs partners 2 bonds away as ghosts; actual need measured with `benchmark.special_need` |
 | Start | overlap-free random insertion (`create_atoms random … overlap`): Qt with 55 nm, then Ft with 40.5 nm; 5000 steps (2.5 ms) equilibration without binding | dilute system (φ ≈ 6 %), so the insertion is already close to an equilibrium fluid; only the contact pairs (overlap, needed for binding) are missing at the start: repulsion energy and pressure reach their plateau within ≈ 1000 steps (test 2026-10-20, 4000 Qt / 10 000 Ft, 20 000 steps), 5000 steps give a 5× margin at 0.5 % of a 10⁶-step production; the Ft–Ft start bias (≥ 40.5 instead of 26 nm) is erased (RMS displacement in 2.5 ms: Qt ≈ 55 nm, Ft ≈ 87 nm) |
 | Unbinding | `fix bond/break` every `break_every` = 10 steps with Rmax = 0 (every bond is a candidate), prob p_off = 1 − exp(−k_off(t) · break_every · Δt), k_off(t) = f k_off,Ca + (1 − f) k_off,free (see Calcium control) | the only built-in rate-based option; **limitation**: only the longest bond of an atom can break (see Calcium control), to be replaced by a custom fix |
-| Calcium control | every production follows a calcium protocol: baseline (Ca_rest) → influx (Ca_peak) → exponential pump-out (τ); durations `t_baseline_s`, `t_influx_s`, `t_pumpout_s` (each may be 0, e.g. 0/30/0 = agglomeration at constant rates); the production runs in segments of `rate_update_every` steps that re-create the binding and unbinding fixes with the rates at the segment start | the agglomeration–deagglomeration cycle of the experiment (calcium influx, then pumping); all in one LAMMPS input, calcium computed inside LAMMPS from the step |
+| Calcium control | every production follows a calcium protocol: baseline (Ca_rest) → influx (exponential rise to the plateau Ca_peak, 99 % after `ca_rise_s`; optoCRAC one-equation model) → exponential pump-out (τ); durations `t_baseline_s`, `t_influx_s`, `t_pumpout_s` (each may be 0, e.g. 0/30/0 = agglomeration at constant rates); the production runs in segments of `rate_update_every` steps that re-create the binding and unbinding fixes with the rates at the segment start | the agglomeration–deagglomeration cycle of the experiment (calcium influx, then pumping); all in one LAMMPS input, calcium computed inside LAMMPS from the step |
 | Seeds | per replica 6 independent seeds (placement Qt/Ft, Brownian Qt/Ft, binding, unbinding; binding and unbinding add the segment number) from `numpy.random.SeedSequence(master_seed)`, range 1…900 000 000 | the LAMMPS Marsaglia generator rejects larger seeds; runs are reproducible |
 
 ReaDDy is not used for validation; the LAMMPS model stands on its own.
@@ -221,9 +221,10 @@ deagglomeration). Every production follows such a protocol, computed inside LAMM
 section 11):
 
     Ca(t) = Ca_rest                                              baseline   (0 ≤ t < t_baseline)
-          = Ca_peak                                              influx     (until t_baseline + t_influx)
-          = Ca_rest + (Ca_start − Ca_rest) · exp(−t'/τ)            pump-out   (t' from its start; Ca_start = Ca_peak,
-                                                                             or Ca_rest without an influx)
+          = Ca_peak − (Ca_peak − Ca_rest) · exp(−λ_on t')        influx     (t' from its start, until t_baseline + t_influx;
+                                                                             λ_on = ln(100) / ca_rise_s; a step if ca_rise_s = 0)
+          = Ca_rest + (Ca_start − Ca_rest) · exp(−t'/τ)            pump-out   (t' from its start; Ca_start = Ca reached at
+                                                                             the end of the influx, or Ca_rest without one)
     f(t)  = Caⁿ / (K_Caⁿ + Caⁿ)                                  calmodulin loading (Hill)
     k_on(t)  = k_on · f                                          binding rate per Qt–Ft pair in contact
     k_off(t) = f · k_off,Ca + (1 − f) · k_off,free               unbinding rate per bond
@@ -231,10 +232,25 @@ section 11):
 f is the fraction of calmodulin with calcium bound, i.e. able to hold RS20 (mean field: every bond sees the
 average loading; calcium binding to calmodulin takes milliseconds, so f follows Ca(t) instantly).
 
+**Rise and decay: optoCRAC one-equation model.** Calcium enters through ORAI1 channels gated by optoCRAC (LOV2–STIM1),
+switched on by blue light (the influx phase = light on) and off by the thermal dark reversion of LOV2 (pump-out phase
+= light off). With A the fraction of active channels, dA/dt = k_act I (1 − A) − k_dark A, and c = c0 + (c_max − c0) A.
+For constant light this is exactly the formula above: the rise relaxes with λ_on = k_act I + k_dark to the plateau
+Ca_peak = c0 + (c_max − c0) k_act I / λ_on, the decay with k_dark = 1/τ. The parameters are the observables:
+plateau `ca_peak_uM`, rise time `ca_rise_s` (99 % of the rise; defines λ_on), decay `ca_tau_s`; `derived()` shows the
+model constants (defaults: τ_on = 1.09 s, k_act I = 0.87 s⁻¹, k_dark = 0.05 s⁻¹, effective c_max = 1.05 µM).
+`ca_rise_s` must stay below τ ln 100 (≈ 92 s), otherwise k_act < 0. The model assumes that Ca²⁺ clearance by the
+pumps (PMCA/SERCA, ≈ 1–3 s, not verified) is much faster than the channel kinetics, so that Ca follows A at once;
+the decay after light-off is the channels closing, not the pumping. With a rise of 5 s to 99 % (τ_on ≈ 1.1 s) this
+holds only for clearance faster than ≈ 0.5 s; otherwise the real rise is slower and S-shaped, and the two-equation
+gate + pump model (dc/dt = J A − k (c − c0)) would be needed. As a curve shape the formula is exact.
+`binding_rate` needs a calcium step (`ca_rise_s = 0`): its fit assumes the peak rate from the influx start on.
+
 | Parameter | Default | Source |
 |---|---|---|
-| `ca_rest_uM`, `ca_peak_uM` | 0.1, 1.0 µM | typical resting level and global calcium signal in cells |
-| `ca_tau_s` | 20 s | calcium clearance (seconds to tens of seconds); calibrate against the 90 s deagglomeration |
+| `ca_rest_uM`, `ca_peak_uM` | 0.1, 1.0 µM | typical resting level and global calcium signal in cells (plateau under light) |
+| `ca_rise_s` | 5 s | plateau (99 %) reached 5 s after light-on; to be fitted to a measured calcium trace |
+| `ca_tau_s` | 20 s | decay after light-off (LOV2 dark reversion, tens of seconds); calibrate against the 90 s deagglomeration |
 | `ca_K_uM`, `ca_hill` | 0.5 µM, 3 | target peptides raise the calcium affinity of calmodulin; cooperative loading of 4 sites |
 | `k_on` | 1.86·10⁻⁶ ns⁻¹ (at f = 1) | k_a at full loading ≈ 2·10⁷ M⁻¹ s⁻¹, typical for calmodulin–peptide association |
 | `k_off_ca_per_s`, `k_off_free_per_s` | 10⁻³, 1 s⁻¹ | calmodulin–RS20 with Ca²⁺ binds with nM affinity; without Ca²⁺ it releases the peptide within ~1 s |

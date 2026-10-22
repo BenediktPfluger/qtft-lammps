@@ -74,10 +74,11 @@ class Params:
 
     # --- calcium control (production) ----------------------------------------
     t_baseline_s: float = 10.0       # baseline at resting calcium [s]
-    t_influx_s: float = 30.0         # influx: calcium at its peak [s]
-    t_pumpout_s: float = 90.0        # pump-out: calcium decays exponentially to rest [s]
+    t_influx_s: float = 30.0         # influx (light on): calcium rises to its plateau [s]
+    t_pumpout_s: float = 90.0        # pump-out (light off): calcium decays exponentially to rest [s]
     ca_rest_uM: float = 0.1          # resting calcium [uM]
-    ca_peak_uM: float = 1.0          # calcium during the influx [uM]
+    ca_peak_uM: float = 1.0          # calcium plateau during the influx [uM]
+    ca_rise_s: float = 5.0           # time to 99 % of the rise after the influx start [s]; 0 = step
     ca_tau_s: float = 20.0           # pump-out time constant [s]
     ca_K_uM: float = 0.5             # calcium at half calmodulin loading [uM]
     ca_hill: float = 3.0             # Hill coefficient of the calmodulin loading
@@ -190,16 +191,28 @@ class Params:
         return self.t_baseline_s + self.t_influx_s
 
     @property
+    def ca_rate_on_per_s(self) -> float:
+        """Relaxation rate of the rise, lambda_on = ln(100) / ca_rise_s [1/s] (inf for a step)."""
+        return math.log(100) / self.ca_rise_s if self.ca_rise_s > 0 else math.inf
+
+    def _rise(self, dt_s):
+        """Calcium [uM] a time dt_s >= 0 after the influx start."""
+        if self.ca_rise_s <= 0:
+            return np.full_like(np.asarray(dt_s, dtype=float), self.ca_peak_uM)
+        return self.ca_peak_uM - (self.ca_peak_uM - self.ca_rest_uM) * np.exp(-self.ca_rate_on_per_s * dt_s)
+
+    @property
     def ca_start_uM(self) -> float:
-        """Calcium at the start of the pump-out: the peak, or rest without an influx."""
-        return self.ca_peak_uM if self.t_influx_s > 0 else self.ca_rest_uM
+        """Calcium at the start of the pump-out: reached at the end of the influx, rest without one."""
+        return float(self._rise(self.t_influx_s)) if self.t_influx_s > 0 else self.ca_rest_uM
 
     def calcium(self, t_s):
         """Calcium [uM] at production time t [s] (scalar or array); the same formula as in template.lmp."""
         t = np.asarray(t_s, dtype=float)
+        rise = self._rise(np.maximum(t - self.t_on_s, 0.0))
         decay = self.ca_rest_uM + (self.ca_start_uM - self.ca_rest_uM) * np.exp(
             -np.maximum(t - self.t_off_s, 0.0) / self.ca_tau_s)
-        return np.where(t < self.t_on_s, self.ca_rest_uM, np.where(t < self.t_off_s, self.ca_peak_uM, decay))
+        return np.where(t < self.t_on_s, self.ca_rest_uM, np.where(t < self.t_off_s, rise, decay))
 
     def loading(self, ca_uM):
         """Calmodulin loading f = Ca^n / (K^n + Ca^n)."""
@@ -259,12 +272,21 @@ class Params:
             "production time [s]": self.t_baseline_s + self.t_influx_s + self.t_pumpout_s,
             "phase steps (baseline/influx/pump-out)": self.phase_steps,
             "segments (rate updates)": self.prod_steps // self.rate_update_every if self.rate_update_every else 0,
+            "calcium at the pump-out start [uM]": round(self.ca_start_uM, 4),
             "loading f at rest / peak": (round(f_rest, 4), round(f_peak, 4)),
             "k_on per pair at rest / peak [1/s]": (f"{self.k_on * 1e9 * f_rest:.3g}", f"{self.k_on * 1e9 * f_peak:.3g}"),
             "k_off per bond at rest / peak [1/s]": (f"{self.k_off_per_s(f_rest):.3g}", f"{self.k_off_per_s(f_peak):.3g}"),
             "p_bind per attempt (f = 1)": self.p_bind,
             "p_break per attempt (max)": self.p_break_max,
         }
+        if self.ca_rise_s > 0:                    # optoCRAC one-equation model (docs/decisions.md)
+            lam, k_dark = self.ca_rate_on_per_s, 1 / self.ca_tau_s
+            calcium |= {
+                "tau rise / decay [s]": (round(1 / lam, 4), self.ca_tau_s),
+                "k_act*I / k_dark [1/s]": (round(lam - k_dark, 4), round(k_dark, 4)),
+                "effective c_max [uM]": round(self.ca_rest_uM + (self.ca_peak_uM - self.ca_rest_uM)
+                                              * lam / (lam - k_dark), 4) if lam > k_dark else float("nan"),
+            }
         return {
             "kT [zJ]": self.kT,
             "gamma_Qt [ag/ns]": gq,
@@ -299,6 +321,11 @@ class Params:
             return [("ERROR", "phase durations must be >= 0 and add up to more than one step")]
         if min(self.ca_rest_uM, self.ca_peak_uM, self.ca_K_uM, self.ca_tau_s, self.ca_hill) <= 0:
             return [("ERROR", "ca_rest_uM, ca_peak_uM, ca_K_uM, ca_tau_s and ca_hill must be positive")]
+        if self.ca_rise_s < 0:
+            return [("ERROR", "ca_rise_s must be >= 0 (0 = instantaneous rise)")]
+        if self.ca_rise_s >= self.ca_tau_s * math.log(100):
+            return [("ERROR", f"ca_rise_s must be < ca_tau_s * ln(100) = {self.ca_tau_s * math.log(100):.3g} s: "
+                              "the rise must be faster than the decay (k_act > 0)")]
         if min(self.k_off_ca_per_s, self.k_off_free_per_s) < 0 or self.break_every < 1:
             return [("ERROR", "k_off values must be >= 0 and break_every >= 1")]
         if self.boundary not in ("periodic", "reflect", "harmonic"):
@@ -339,6 +366,12 @@ class Params:
                                  f"(rate_update_every = {self.rate_update_every})"))
         elif any(n % self.rate_update_every for n in self.phase_steps[:2]):
             out.append(("WARNING", "a phase boundary falls inside a segment: rates change at the next segment"))
+        if 0 < self.t_influx_s < self.ca_rise_s:
+            out.append(("WARNING", f"the influx ({self.t_influx_s:g} s) is shorter than ca_rise_s "
+                                   f"({self.ca_rise_s:g} s): calcium does not reach its plateau"))
+        if self.ca_rise_s > 0 and 1 / self.ca_rate_on_per_s < 10 * self.rate_update_every * self.timestep * 1e-9:
+            out.append(("WARNING", "the calcium rise time constant is shorter than 10 segments: "
+                                   "the rate updates do not resolve the rise"))
         if self.t_baseline_s > 0 and self.t_influx_s > 0 and self.phase_steps[0] % self.traj_every:
             out.append(("WARNING", "the influx start is not a traj_every step: binding_rate needs a frame there"))
         if self.traj_every % self.output_every:

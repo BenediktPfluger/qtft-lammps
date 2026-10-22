@@ -157,10 +157,11 @@ fix             hist_ft Ft ave/histo {{traj_every}} 1 {{traj_every}} -0.5 {{hist
                 file coord_ft.hist mode vector
 
 # ---------------------------------------------------------------- 11. production: calcium-controlled binding
-# calcium [uM] over the production time t [s]: baseline (rest) -> influx (peak) -> exponential
-# pump-out back to rest; calmodulin loading f = Ca^n / (K^n + Ca^n)
+# calcium [uM] over the production time t [s]: baseline (rest) -> influx (exponential rise to the
+# plateau, or a step) -> exponential pump-out back to rest; calmodulin loading f = Ca^n / (K^n + Ca^n)
 variable        t_s equal step*{{dt_s}}
-variable        ca equal "(v_t_s < {{t_on}})*{{ca_rest}} + (v_t_s >= {{t_on}})*(v_t_s < {{t_off}})*{{ca_peak}} &
+variable        ca equal "(v_t_s < {{t_on}})*{{ca_rest}} &
+                + (v_t_s >= {{t_on}})*(v_t_s < {{t_off}})*({{ca_peak}} - {{ca_rise_amp}}*exp(-(v_t_s - {{t_on}})*(v_t_s >= {{t_on}})*{{ca_rate_on}})) &
                 + (v_t_s >= {{t_off}})*({{ca_rest}} + ({{ca_start}} - {{ca_rest}})*exp(-(v_t_s - {{t_off}})*(v_t_s >= {{t_off}})/{{ca_tau}}))"
 variable        f equal "v_ca^{{ca_hill}}/({{ca_K}}^{{ca_hill}} + v_ca^{{ca_hill}})"
 # binding rate per Qt-Ft pair and unbinding rate per bond [1/s], probabilities per attempt
