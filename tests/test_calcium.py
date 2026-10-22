@@ -45,6 +45,9 @@ def test_calcium_checks():
     assert errors(Params(ca_K_uM=0.0))
     assert any("whole number of segments" in m for m in errors(Params(t_influx_s=30.0001)))
     assert any("multiple of output_every" in m for m in errors(Params(rate_update_every=1500)))
+    warnings = lambda p: [m for lvl, m in p.check() if lvl == "WARNING"]
+    assert any("run end" in m for m in warnings(Params(traj_every=7000)))
+    assert not any("run end" in m for m in warnings(Params(traj_every=200_000)))
     assert any("p_break" in m for m in errors(Params(k_off_free_per_s=1e5)))
     assert not errors(Params())
 

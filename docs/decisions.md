@@ -89,6 +89,20 @@ pump-out (2.6·10⁸ steps); tests use small systems and short protocols.
 Open items: size `extra_special` from a long production run (`special_need`); compare the real run speed
 with the benchmark projection.
 
+## Output intervals
+
+- `output_every`: thermo table and in-run statistics in `log.lammps` (the time series). `traj_every` (a
+  multiple of it): `traj.dump`, `bonds.dump`, `rdf.dat`, `coord_*.hist`. The last four are only read at
+  `traj.dump` steps or at the final frame, so writing them at every thermo step would only cost disk space:
+  `bonds.dump` alone would be 50–130 GB per replica for a 130 s run of 37 000 particles at 1 ms.
+- `check()` warns if the run end or the influx start is not a `traj_every` step (no final frame, or no frame
+  for the contact pairs of `binding_rate`).
+- Recommended for the full protocol (10/30/90 s = 2.6·10⁸ steps): `output_every` = 2000 (1 ms; resolves the
+  initial binding slope for `binding_rate`, ≈ 30 MB of thermo), `traj_every` = 2·10⁵ (100 ms, ≈ 3.4 GB for
+  37 000 particles) or 10⁶ (0.5 s) for 240 000 particles, `rate_update_every` = 10⁵ (50 ms; Ca changes by
+  0.25 % per segment at τ = 20 s), `break_every` = 100 (p_break per attempt ≈ 5·10⁻⁵ at k_off,free = 1 s⁻¹).
+  The defaults (1000 / 1000 / 20 000 / 10) suit the short test runs.
+
 ## Performance (local machine)
 
 Benchmark 2026-10-20 on the local machine (Intel i7-10700K: 8 physical cores, 16 hardware threads, WSL2),

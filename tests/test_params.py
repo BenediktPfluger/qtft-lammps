@@ -17,7 +17,7 @@ def test_geometry_defaults():
     assert (p.cut_qq, p.cut_ff, p.cut_qf) == (55.0, 26.0, 40.5)
     assert p.r0 == 40.5 and p.r_bind == 40.5
     assert p.rdf_cut == pytest.approx(121.5)
-    assert p.comm_cut == pytest.approx(131.5)
+    assert p.comm_cut == pytest.approx(141.5)
 
 
 def test_binding_probability():

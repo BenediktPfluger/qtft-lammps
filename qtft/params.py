@@ -91,14 +91,14 @@ class Params:
     equil_steps: int = 5000          # equilibration, binding off
 
     # --- output and in-run analysis ------------------------------------------
-    output_every: int = 1000         # thermo/analysis, bonds.dump, rdf, histograms [steps]
-    traj_every: int = 1000           # traj.dump [steps]
+    output_every: int = 1000         # thermo/analysis in log.lammps [steps]
+    traj_every: int = 1000           # traj.dump, bonds.dump, rdf, histograms [steps]
     large_cluster_min: int = 5       # "large cluster" = at least this many particles
     rdf_bins: int = 200
     rdf_cutoff: float | None = None  # [nm]; None -> 3 (r_Qt + r_Ft)
 
     # --- technical -----------------------------------------------------------
-    neighbor_skin: float = 10.0      # neighbor list skin [nm]
+    neighbor_skin: float = 20.0      # neighbor list skin [nm]
     extra_special: int = 1000        # reserved 1-2/1-3/1-4 neighbors per atom
     comm_cutoff: float | None = None  # ghost cutoff [nm]; None -> automatic
     insert_maxtry: int = 1000        # insertion attempts per particle
@@ -343,6 +343,9 @@ class Params:
             out.append(("WARNING", "the influx start is not a traj_every step: binding_rate needs a frame there"))
         if self.traj_every % self.output_every:
             out.append(("ERROR", "traj_every must be a multiple of output_every"))
+        elif self.prod_steps % self.traj_every:
+            out.append(("WARNING", "the run end is not a traj_every step: the last frame, rdf and histograms "
+                                   "are not the final state"))
         if self.maxbond_qt < 1 or self.maxbond_ft < 1:
             out.append(("ERROR", "maxbond values must be >= 1"))
         return out

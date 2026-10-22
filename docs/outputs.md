@@ -72,18 +72,19 @@ and the boundary (`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_ca10-30-90s_periodic`,
 |---|---|---|
 | `log.lammps` | Full log: copy of all input commands, setup information, timing summaries and the **thermo table every `output_every` steps** in YAML format (see below). Main source of all time series | LAMMPS (automatic; name set by `-log log.lammps`) |
 | `traj.dump` | Trajectory, one frame every `traj_every` steps. Columns: `id type x y z ix iy iz radius cluster nbonds` (`type` = type label `Qt` or `Ft`, shown as named types in OVITO; runs before the type labels have `1`/`2`; `ix iy iz` = periodic image flags, always 0 with walls, where BOX BOUNDS reads `ff ff ff`; `cluster` = bond-connected cluster ID; `nbonds` = bonds of the particle). **Open in OVITO** | LAMMPS (`template.lmp`): `dump traj … custom` with `typelabel` (names from `labelmap`) |
-| `bonds.dump` | List of all bonds (`atom1 atom2`, atom IDs) every `output_every` steps | LAMMPS (`template.lmp`): `compute property/local` + `dump bonds … local` |
-| `rdf.dat` | Qt–Ft radial distribution function every `output_every` steps: per bin r, g(r) and coordination number (default 200 bins up to 121.5 nm); snapshots, not time averages | LAMMPS (`template.lmp`): `compute rdf` + `fix ave/time` |
-| `coord_qt.hist` | Histogram of bonds per Qt (0 … `maxbond_qt`) every `output_every` steps | LAMMPS (`template.lmp`): `fix ave/histo` on `compute nbond/atom` |
-| `coord_ft.hist` | Histogram of bonds per Ft (0 … `maxbond_ft`) every `output_every` steps | LAMMPS (`template.lmp`): `fix ave/histo` on `compute nbond/atom` |
+| `bonds.dump` | List of all bonds (`atom1 atom2`, atom IDs) every `traj_every` steps (the `traj.dump` steps) | LAMMPS (`template.lmp`): `compute property/local` + `dump bonds … local` |
+| `rdf.dat` | Qt–Ft radial distribution function every `traj_every` steps: per bin r, g(r) and coordination number (default 200 bins up to 121.5 nm); snapshots, not time averages | LAMMPS (`template.lmp`): `compute rdf` + `fix ave/time` |
+| `coord_qt.hist` | Histogram of bonds per Qt (0 … `maxbond_qt`) every `traj_every` steps | LAMMPS (`template.lmp`): `fix ave/histo` on `compute nbond/atom` |
+| `coord_ft.hist` | Histogram of bonds per Ft (0 … `maxbond_ft`) every `traj_every` steps | LAMMPS (`template.lmp`): `fix ave/histo` on `compute nbond/atom` |
 | `final.data` | Final state: box, positions, types with their labels (`Atom Type Labels`: 1 Qt, 2 Ft), **all bonds**, coefficients. Opens in OVITO with bonds; can be used to continue a run (`read_data`) | LAMMPS (`template.lmp`): `write_data` at the end |
 | `log.cite` | Literature references for the LAMMPS features used (only written by some LAMMPS versions) | LAMMPS (automatic) |
 
 Notes:
 
-- `rdf.dat` and the trajectory are redundant when `traj_every = output_every`: the RDF can be recomputed
-  from `traj.dump` (OVITO *Coordination analysis*, LAMMPS `rerun`, or Python). `rdf.dat` keeps the full
-  time resolution if the trajectory is written less often.
+- `bonds.dump`, `rdf.dat` and the histograms are written at the `traj.dump` steps, where the analysis reads
+  them (structure, percolation, FIB-SEM, contact pairs at the influx start; final RDF and histograms). Only
+  the thermo table in `log.lammps` has the finer `output_every` resolution. `rdf.dat` is a convenience: the
+  RDF can also be recomputed from `traj.dump` (OVITO *Coordination analysis*, LAMMPS `rerun`, or Python).
 - Windows Explorer may hide the `.dat` extension and show `rdf.dat` as "rdf" with a program icon. It is
   a plain text file.
 

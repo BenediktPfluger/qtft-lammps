@@ -5,7 +5,8 @@ import shutil
 import numpy as np
 import pytest
 
-from qtft import Params, build_run, load_thermo, read_bonds, read_dump, start
+from qtft import Params, build_run, load_thermo, read_bonds, read_dump, read_histo, read_rdf, start
+from qtft.read import dump_steps
 from conftest import influx
 
 pytestmark = pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
@@ -31,7 +32,7 @@ def _clusters_from_bonds(ids, bonds):
 def test_tiny_system(tmp_path):
     # same concentration as the default system, faster binding so that bonds form within the test
     p = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(3000),
-               output_every=500, traj_every=500, k_on=1e-4, data_dir=str(tmp_path), run_name="smoke")
+               output_every=500, traj_every=1000, k_on=1e-4, data_dir=str(tmp_path), run_name="smoke")
     run_dir = build_run(p)
     start(run_dir, wait=True)
     rep = run_dir / "rep_01"
@@ -41,6 +42,14 @@ def test_tiny_system(tmp_path):
 
     df = load_thermo(rep)
     assert df["Bonds"].iloc[-1] > 0
+    assert np.all(np.diff(df["Step"]) == p.output_every)
+    # bonds, rdf and histograms are written at exactly the traj.dump steps
+    frames = dump_steps(rep / "traj.dump")
+    assert frames == list(range(0, p.prod_steps + 1, p.traj_every))
+    assert [s for s, _ in read_bonds(rep / "bonds.dump")] == frames
+    assert list(read_rdf(rep / "rdf.dat")) == frames
+    for name in ("coord_qt.hist", "coord_ft.hist"):
+        assert read_histo(rep / name).index.tolist() == frames, name
     assert df["bond_max"].max() < 1.5 * p.r0                 # no runaway bonds
 
     step, atoms = list(read_dump(rep / "traj.dump"))[-1]

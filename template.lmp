@@ -146,14 +146,14 @@ dump            traj all custom {{traj_every}} traj.dump id typelabel x y z ix i
 dump_modify     traj sort id colname typelabel type colname v_rad radius colname c_frag cluster colname c_nb nbonds
 
 compute         bpairs all property/local batom1 batom2
-dump            bonds all local {{output_every}} bonds.dump index c_bpairs[1] c_bpairs[2]
+dump            bonds all local {{traj_every}} bonds.dump index c_bpairs[1] c_bpairs[2]
 dump_modify     bonds colname c_bpairs[1] atom1 colname c_bpairs[2] atom2
 
 compute         rdf all rdf {{rdf_bins}} 1 2 cutoff {{rdf_cutoff}}
-fix             rdf_out all ave/time {{output_every}} 1 {{output_every}} c_rdf[*] file rdf.dat mode vector
-fix             hist_qt Qt ave/histo {{output_every}} 1 {{output_every}} -0.5 {{hist_qt_max}} {{hist_qt_bins}} c_nb &
+fix             rdf_out all ave/time {{traj_every}} 1 {{traj_every}} c_rdf[*] file rdf.dat mode vector
+fix             hist_qt Qt ave/histo {{traj_every}} 1 {{traj_every}} -0.5 {{hist_qt_max}} {{hist_qt_bins}} c_nb &
                 file coord_qt.hist mode vector
-fix             hist_ft Ft ave/histo {{output_every}} 1 {{output_every}} -0.5 {{hist_ft_max}} {{hist_ft_bins}} c_nb &
+fix             hist_ft Ft ave/histo {{traj_every}} 1 {{traj_every}} -0.5 {{hist_ft_max}} {{hist_ft_bins}} c_nb &
                 file coord_ft.hist mode vector
 
 # ---------------------------------------------------------------- 11. production: calcium-controlled binding
