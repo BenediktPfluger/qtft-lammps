@@ -7,6 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from .figures import time_unit
 from .overlap import FAMILIES, overlap_frame
 from .params import Params
 from .read import load_thermo, read_dump
@@ -74,13 +75,16 @@ def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10
                     sel = ov[ov["family"] == walls[family]]
                     ax.plot(sel["time_ms"], sel[OVERLAP], lw=1, ls="--", color=line.get_color())
     axes[1, 3].tick_params(labelbottom=True)       # the legend panel below it has no axis
+    end_ms = p.prod_steps * p.timestep * 1e-6
+    unit, factor = time_unit(end_ms)                # data in ms; long runs show s (shared x axis)
+    if factor != 1.0:
+        axes[0, 0].xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v * factor:g}"))
     for ax in [*axes[-1, :3], axes[1, 3]]:
-        ax.set_xlabel("time (ms)")
+        ax.set_xlabel(f"time ({unit})")
     handles, labels = thermo_axes[0].get_legend_handles_labels()
     legend_ax.axis("off")
     if handles:
         legend_ax.legend(handles, labels, frameon=False, fontsize=8, loc="center")
-    end_ms = p.prod_steps * p.timestep * 1e-6
     for t in {p.t_on_s * 1e3, p.t_off_s * 1e3} - {0.0, end_ms}:                    # phase boundaries
         for ax in [*thermo_axes, *overlap_axes]:
             ax.axvline(t, color="0.6", lw=0.6, ls=":")

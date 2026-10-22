@@ -151,7 +151,7 @@ regenerated from the replica files at any time.
 | `final_table.csv`, `final_table.tex` | Final-state table (bonds, clusters, sizes, fraction bound, half-time, Rg, Qt fraction) as CSV and LaTeX | Python: `make_report()` |
 | `bonds_timeseries.csv` | Bond count over time: step, time (µs, ms), mean, SD | Python: `make_report()` |
 | `report.json` | Settings used for the report | Python: `make_report()` |
-| `figures/` | All figures as PDF + SVG + PNG: `calcium` (calcium and loading f, rates, bonds and broken bonds, largest cluster and mean size; phases shaded), `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx and a calcium step, `ca_rise_s = 0`); `figures/panels/` single panels of the overview; `figures/journal/` panels g–j | Python: `make_report()` |
+| `figures/` | All figures as PDF + SVG + PNG: `calcium` (calcium and loading f, rates, bonds and broken bonds, largest cluster and mean size; phases shaded), `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx and a calcium step, `ca_rise_s = 0`); `figures/panels/` single panels of the overview; `figures/journal/` panels g–j. Time axes in ms, in s for runs of ≥ 10 s (also in `quicklook`) | Python: `make_report()` |
 
 Comparisons of several runs (`compare_report(runs, out_dir)`) are written to the chosen `out_dir`:
 `comparison`, `kinetics`, `large_agglomerates` (PDF/SVG/PNG), `panels/`, and

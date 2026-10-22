@@ -108,11 +108,26 @@ def _structure(run: RunData, key: str):
     return st["time_ms_mean"].to_numpy(), st[f"{key}_mean"].to_numpy(), st[f"{key}_sd"].to_numpy()
 
 
-def _time_axis(ax, t_end: float):
+LONG_RUN_MS = 10_000.0          # time axes are labelled in s from this run length on, otherwise in ms
+
+
+def time_unit(t_end_ms: float) -> tuple[str, float]:
+    """Unit of a time axis that ends at t_end_ms, and the factor from ms: s for long runs, otherwise ms."""
+    return ("s", 1e-3) if t_end_ms >= LONG_RUN_MS else ("ms", 1.0)
+
+
+def _time_axis(ax, t_end: float, label: bool = True):
+    """x axis of a time series plotted in ms: limits, ticks and the unit (the data stays in ms; for
+    long runs the ticks show s)."""
     ax.set_xlim(0, t_end)
     if abs(t_end - 500) < 1e-6:
         ax.xaxis.set_major_locator(MultipleLocator(250))
         ax.xaxis.set_minor_locator(MultipleLocator(50))
+    unit, factor = time_unit(t_end)
+    if factor != 1.0:
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v * factor:g}"))
+    if label:
+        ax.set_xlabel(f"time ({unit})")
 
 
 def _thousands(ax, values) -> bool:
@@ -301,7 +316,6 @@ def _grid(panels, runs, nrows, ncols, width, height, titles=True, traces=False, 
         func(ax, runs, traces=traces)
         if is_time:
             _time_axis(ax, t_end)
-            ax.set_xlabel("time (ms)")
         if titles:
             ax.set_title(title, loc="left", fontweight="bold")
     for ax in axes.flat[len(panels):]:
@@ -320,7 +334,6 @@ def _single_panels(panels, runs, out_dir: Path, prefix: str, traces=False):
         func(ax, runs, traces=traces)
         if is_time:
             _time_axis(ax, t_end)
-            ax.set_xlabel("time (ms)")
         save(fig, out_dir / f"{prefix}_{_slug(title)}")
         plt.close(fig)
 
@@ -379,7 +392,6 @@ def fig_kinetics(runs: list[RunData], out_dir: Path | None = None, traces=False)
         if len(runs) > 1:
             axes[0].legend()
         _time_axis(axes[2], max(r.stats["time_ms"][-1] for r in runs))
-        axes[2].set_xlabel("time (ms)")
         if out_dir:
             save(fig, out_dir / "kinetics")
     return fig
@@ -393,7 +405,6 @@ def fig_large_count(runs: list[RunData], out_dir: Path | None = None, traces=Fal
         p_large_count(ax, runs, traces=traces)
         ax.set_ylabel(f"agglomerates ≥ {runs[0].p.large_cluster_min}")
         _time_axis(ax, max(r.stats["time_ms"][-1] for r in runs))
-        ax.set_xlabel("time (ms)")
         if len(runs) > 1:
             ax.legend()
         if out_dir:
@@ -408,7 +419,6 @@ def fig_overlap(run: RunData, out_dir: Path | None = None):
         ax = fig.add_subplot()
         p_overlap(ax, [run])
         _time_axis(ax, run.stats["time_ms"][-1])
-        ax.set_xlabel("time (ms)")
         if out_dir:
             save(fig, out_dir / "overlap")
     return fig
@@ -471,10 +481,10 @@ def shade_phases(ax, p: Params, scale: float = 1e3) -> None:
 
 
 def fig_calcium(run: RunData, out_dir: Path | None = None, traces=False):
-    """Calcium protocol and its effect, time in s (183 mm): calcium and calmodulin loading f; binding
+    """Calcium protocol and its effect (183 mm): calcium and calmodulin loading f; binding
     rate per pair and unbinding rate per bond; bonds and broken bonds; largest cluster and mean size
     (mean +- SD over replicas). Grey: baseline, blue: influx, white: pump-out."""
-    t = run.stats["time_ms"] * 1e-3
+    t = run.stats["time_ms"]
     mean, sd, tr = run.stats["mean"], run.stats["sd"], run.stats["traces"]
     with plt.rc_context(STYLE):
         fig = _figure(DOUBLE, 110 * MM)
@@ -501,10 +511,8 @@ def fig_calcium(run: RunData, out_dir: Path | None = None, traces=False):
         d.set_ylabel("particles")
         d.legend(loc="upper left")
         for ax in (a, b, c, d):
-            shade_phases(ax, run.p, scale=1.0)
-            ax.set_xlim(0, t[-1])
-        for ax in (c, d):
-            ax.set_xlabel("time (s)")
+            shade_phases(ax, run.p)
+            _time_axis(ax, t[-1], label=ax in (c, d))
         if out_dir:
             save(fig, out_dir / "calcium")
     return fig
@@ -567,7 +575,6 @@ def fig_journal(run: RunData, out_dir: Path | None = None) -> list:
                 ax.legend(fontsize=5, ncol=2 if func is p_counts else 1, loc="best",
                           handlelength=1.2, columnspacing=0.8, labelspacing=0.2)
             _time_axis(ax, run.stats["time_ms"][-1])
-            ax.set_xlabel("time (ms)")
             if out_dir:
                 save(fig, out_dir / "journal" / f"panel_{letter}")
             figs.append(fig)
