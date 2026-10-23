@@ -105,6 +105,8 @@ repeated steps.
 | `v_frac_bound` | fraction of all particles that are bound |
 | `v_n_clusters` | number of clusters including free particles |
 | `v_mean_size`, `v_largest` | mean and largest cluster size (particles) |
+| `v_mean_size_qt`, `v_mean_size_ft` | Qt (Ft) per cluster: number of Qt (Ft) / number of clusters that contain at least one Qt (Ft); a free particle is a cluster of 1 |
+| `v_largest_qt`, `v_largest_ft` | highest number of Qt (Ft) in one cluster (not necessarily the overall largest cluster) |
 | `v_n_large` | number of clusters with ≥ `large_cluster_min` particles |
 | `v_ca`, `v_f` | calcium (µM) and calmodulin loading f (production only) |
 | `v_k_on_s`, `v_k_off_s` | binding rate per Qt–Ft pair in contact and unbinding rate per bond (1/s; production only) |
@@ -148,13 +150,15 @@ regenerated from the replica files at any time.
 | `overlap_timeseries.csv` | Interpenetration statistics per pair family and frame (mean over replicas); with walls also the rows `Qt-wall` / `Ft-wall` (spheres beyond a box face) | Python: `overlap_ensemble()` |
 | `overlap_final.csv` | The same, pooled over the last frames | Python: `overlap_ensemble()` |
 | `binding_rate.csv` | Columns `value, unit, 1/(M s)`. Rows: `k_a measured` (+ `SD`) from the start of the bond curve in the calcium influx (frames up to 10 % more bound, mean and SD over replicas); `k_a predicted` (+ `SD`), Collins–Kimball with the Qt–Ft contact pairs counted in the frame at the influx start; `kappa`, `k_D`; `k_a continuum estimate` (analytical, too high when the step is comparable to the overlap layer); `contact volume counted` and `contact volume continuum` in nm³ | Python: `binding_rate()`, also `make_report()` (only with a calcium step, `ca_rise_s = 0`) |
+| `bond_rates.csv` | Columns `time_ms` (bin centre), `formed_per_s`, `broken_per_s` (bonds per second), `k_a_per_M_s` (apparent association rate constant, formed per second · V / (N_Qt N_Ft), 1/(M s)), each as `_mean` and `_sd` over replicas; one row per calcium segment (`rate_update_every`) or per `bin_s` | Python: `bond_rates()`, also `make_report()` (default bins) |
 | `final_table.csv`, `final_table.tex` | Final-state table (bonds, clusters, sizes, fraction bound, half-time, Rg, Qt fraction) as CSV and LaTeX | Python: `make_report()` |
 | `bonds_timeseries.csv` | Bond count over time: step, time (µs, ms), mean, SD | Python: `make_report()` |
 | `report.json` | Settings used for the report | Python: `make_report()` |
-| `figures/` | All figures as PDF + SVG + PNG: `calcium` (calcium and loading f, rates, bonds and broken bonds, largest cluster and mean size; phases shaded), `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx and a calcium step, `ca_rise_s = 0`); `figures/panels/` single panels of the overview; `figures/journal/` panels g–j. Time axes in ms, in s for runs of ≥ 10 s (also in `quicklook`) | Python: `make_report()` |
+| `figures/` | All figures as PDF + SVG + PNG: `calcium` (calcium and loading f, rates, bonds and broken bonds, fraction bound, largest cluster, mean cluster size), `bond_rates` (bonds formed and broken per second, apparent k_a on a log scale; any calcium protocol), `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx and a calcium step, `ca_rise_s = 0`); every figure with several panels (`calcium`, `bond_rates`, `overview`, `kinetics`) also has each panel alone (89 mm) in `figures/<figure>/<panel>.*`. Largest and mean cluster size are drawn for all particles, Qt only and Ft only (one run). Dotted vertical lines mark the start and end of the calcium influx in every time panel. Time axes in ms, in s for runs of ≥ 10 s (also in `quicklook`) | Python: `make_report()` |
 
 Comparisons of several runs (`compare_report(runs, out_dir)`) are written to the chosen `out_dir`:
-`comparison`, `kinetics`, `large_agglomerates` (PDF/SVG/PNG), `panels/`, and
+`comparison`, `kinetics`, `large_agglomerates` (PDF/SVG/PNG), the single panels in `comparison/` and `kinetics/`
+(cluster sizes for all particles only; phase lines only if all runs have the same phase times), and
 `comparison_table.csv` / `.tex`.
 
 ## Benchmark `runs/benchmark/`

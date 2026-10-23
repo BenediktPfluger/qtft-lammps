@@ -9,7 +9,7 @@ import pytest
 import pandas as pd
 
 from qtft import Params, build_run, load_thermo, read_bonds, start
-from qtft.ensemble import deagglomeration
+from qtft.ensemble import TO_PER_M_S, bond_rates, deagglomeration
 
 
 def test_phases_and_calcium_formula():
@@ -50,6 +50,27 @@ def test_deagglomeration_half_time():
     assert out["t_half_unbind_largest_ms"] == pytest.approx(np.log(2), abs=0.01)
     assert np.isnan(deagglomeration(df, Params(t_baseline_s=1e-3, t_influx_s=2e-3, t_pumpout_s=0.0))
                     ["t_half_unbind_bonds_ms"])
+
+
+def test_bond_rates(tmp_path, monkeypatch):
+    # 10 bonds formed and 4 broken per segment (1 ms), known exactly; two identical replicas
+    p = Params(n_qt=10, n_ft=20, box_length=100.0, output_every=500, rate_update_every=2000)
+    (tmp_path / "params.json").write_text(json.dumps({"params": p.__dict__}))
+    step = np.arange(0, 20_001, 500)
+    broken = 4 * step / 2000
+    df = pd.DataFrame({"Step": step, "time_ms": step * p.timestep * 1e-6, "Bonds": 6 * step / 2000,
+                       "n_broken": broken})
+    monkeypatch.setattr("qtft.ensemble.replica_series", lambda run_dir: {"rep_01": df, "rep_02": df})
+    r = bond_rates(tmp_path)
+    assert r["bin_ms"] == pytest.approx(1.0) and r["time_ms"] == pytest.approx(np.arange(10) + 0.5)
+    assert r["mean"]["formed_per_s"] == pytest.approx(np.full(10, 1e4))
+    assert r["mean"]["broken_per_s"] == pytest.approx(np.full(10, 4e3)) and not r["sd"]["formed_per_s"].any()
+    assert r["mean"]["k_a_per_M_s"] == pytest.approx(np.full(10, 1e-5 * 1e6 / 200 * TO_PER_M_S))
+    saved = pd.read_csv(tmp_path / "analysis" / "bond_rates.csv")
+    assert list(saved.columns[:3]) == ["time_ms", "formed_per_s_mean", "formed_per_s_sd"]
+    assert len(bond_rates(tmp_path, bin_s=2e-3, save=False)["time_ms"]) == 5
+    with pytest.raises(ValueError):
+        bond_rates(tmp_path, bin_s=1e-4)                                         # not a multiple of output_every
 
 
 def test_calcium_checks():
@@ -122,5 +143,6 @@ def test_compressed_protocol_run(tmp_path, rise):
     out = make_report(run, every=2, structure_analysis=False)
     assert (out / "figures" / "calcium.pdf").exists()
     assert (out / "figures" / "binding_rate.pdf").exists() == (rise == 0)      # only with a calcium step
+    assert (out / "figures" / "bond_rates.pdf").exists() and (out / "bond_rates.csv").exists()
     final = pd.read_csv(out / "final_state.csv", index_col=0)
     assert {"bonds_peak", "t_half_unbind_bonds_ms"} <= set(final.index)

@@ -38,7 +38,7 @@ pump-out (2.6·10⁸ steps); tests use small systems and short protocols.
 
 | Quantity | Where |
 |---|---|
-| bonds, free/bound counts, fraction bound, number of clusters, mean/largest size, clusters ≥ 5, size-category fractions, mean/max coordination, bond lengths, energies, virial pressure | LAMMPS during the run (`compute nbond/atom`, `fragment/atom`, `chunk/atom`, …), YAML thermo in `log.lammps` |
+| bonds, free/bound counts, fraction bound, number of clusters, mean/largest size (all particles, Qt only, Ft only: `compute reduce/chunk` per type), clusters ≥ 5, size-category fractions, mean/max coordination, bond lengths, energies, virial pressure | LAMMPS during the run (`compute nbond/atom`, `fragment/atom`, `chunk/atom`, …), YAML thermo in `log.lammps` |
 | Qt–Ft RDF, coordination histograms | LAMMPS (`rdf.dat`, `coord_*.hist`) |
 | mean ± SD over replicas (sample SD, ddof = 1: replicas are independent samples; NaN with a single replica, figures then show the mean without a band), half-times | `qtft/ensemble.py` |
 | percolation: one cluster spans the box along at least one axis; periodic box: the cluster wraps around the box (a closed bond path adds up to a box length, found by unwrapping along a spanning tree; checked against a doubled box), walls: it touches both opposite walls (particle surface within 5 nm of each face); time resolution `traj_every`; not "largest cluster ≥ 50 %" | `qtft/structure.py` (`percolation`, numpy/scipy from `traj.dump` + `bonds.dump`, cached in `rep_XX/analysis/percolation.csv`), used by `ensemble_stats` |
@@ -245,6 +245,11 @@ the decay after light-off is the channels closing, not the pumping. With a rise 
 holds only for clearance faster than ≈ 0.5 s; otherwise the real rise is slower and S-shaped, and the two-equation
 gate + pump model (dc/dt = J A − k (c − c0)) would be needed. As a curve shape the formula is exact.
 `binding_rate` needs a calcium step (`ca_rise_s = 0`): its fit assumes the peak rate from the influx start on.
+For any protocol, `bond_rates(run_dir)` gives the time course per calcium segment (or per `bin_s`): bonds formed
+per second (increase of Bonds + n_broken), bonds broken per second, and the apparent association rate constant
+k_a(t) = formed per second · V / (N_Qt N_Ft), normalized by the total particle numbers like the measured k_a of
+`binding_rate` (bonds also form between particles that are already bound). It is apparent: it follows k_on(t) but
+also falls as particles fill their bond slots (`maxbond_*`) and as free partners are used up, even at constant calcium.
 
 | Parameter | Default | Source |
 |---|---|---|
@@ -286,5 +291,6 @@ own template (up to 60 × 10).
 **Analysis.** `ensemble_stats` adds per replica the peaks of the bond count and the largest cluster and the
 deagglomeration half-times (`t_half_unbind_bonds_ms`, `t_half_unbind_largest_ms`: time after the end of the influx
 until the value has fallen to half of its value at that moment); "final" values are those at the end of the whole
-protocol. `fig_calcium` shows calcium, loading, rates, bonds and cluster sizes with the phases shaded.
+protocol. `fig_calcium` shows calcium, loading, rates, bonds, fraction bound and cluster sizes; all time-series figures mark
+the start and end of the influx with dotted vertical lines.
 

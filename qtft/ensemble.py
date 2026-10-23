@@ -305,6 +305,58 @@ def binding_rate(run_dir: str | Path, max_frac_bound: float = 0.1, save: bool = 
     return result
 
 
+BOND_RATES = ("formed_per_s", "broken_per_s", "k_a_per_M_s")
+
+
+def bond_rates(run_dir: str | Path, bin_s: float | None = None, save: bool = True) -> dict:
+    """Bond formation and breaking rates over the whole run, for any calcium protocol (rise or step).
+
+    Per bin (default: one calcium segment, rate_update_every steps; `bin_s` must be a multiple of
+    output_every): formed_per_s = increase of Bonds + n_broken (bonds formed) per second, broken_per_s =
+    increase of n_broken per second, and the apparent association rate constant k_a_per_M_s =
+    formed_per_s * V / (N_Qt N_Ft) in 1/(M s), normalized by the total particle numbers like the measured
+    k_a of binding_rate. It falls as particles fill their bond slots, even at constant calcium.
+    Times are the bin centres.
+
+    Returns {"time_ms", "mean", "sd", "traces", "replicas", "bin_ms"} (as ensemble_stats, keys
+    BOND_RATES); saved to <run>/analysis/bond_rates.csv.
+    """
+    run_dir = Path(run_dir).expanduser()
+    p = Params.load(run_dir / "params.json")
+    series = replica_series(run_dir)
+    if not series:
+        raise ValueError(f"no finished replicas in {run_dir}")
+    bin_steps = p.rate_update_every if bin_s is None else round(bin_s / (p.timestep * 1e-9))
+    if bin_steps < 1 or bin_steps % p.output_every:
+        raise ValueError(f"bin_s = {bin_s} s is not a positive multiple of output_every "
+                         f"({p.output_every * p.timestep * 1e-9:g} s)")
+    bin_ns = bin_steps * p.timestep
+    per_volume = math.prod(p.box) / (p.n_qt * p.n_ft)                  # V / (N_Qt N_Ft)
+    traces = {c: [] for c in BOND_RATES}
+    for df in series.values():
+        edges = df[df["Step"] % bin_steps == 0]
+        formed = np.diff((edges["Bonds"] + edges["n_broken"]).to_numpy()) / bin_ns          # bonds/ns
+        traces["formed_per_s"].append(formed * 1e9)
+        traces["broken_per_s"].append(np.diff(edges["n_broken"].to_numpy()) / bin_ns * 1e9)
+        traces["k_a_per_M_s"].append(formed * per_volume * TO_PER_M_S)
+    n = min(len(tr) for tr in traces["formed_per_s"])                  # replicas share the grid
+    traces = {c: np.array([tr[:n] for tr in v]) for c, v in traces.items()}
+    t = (np.arange(n) + 0.5) * bin_ns * 1e-6
+    mean = {c: v.mean(axis=0) for c, v in traces.items()}
+    sd = {c: v.std(axis=0, ddof=1) if len(series) > 1 else np.full(n, np.nan) for c, v in traces.items()}
+    result = {"time_ms": t, "mean": mean, "sd": sd, "traces": traces, "replicas": list(series),
+              "bin_ms": bin_ns * 1e-6}
+    if save:
+        out = run_dir / "analysis"
+        out.mkdir(exist_ok=True)
+        table = {"time_ms": t}
+        for c in BOND_RATES:
+            table[f"{c}_mean"] = mean[c]
+            table[f"{c}_sd"] = sd[c]
+        pd.DataFrame(table).to_csv(out / "bond_rates.csv", index=False)
+    return result
+
+
 # ------------------------------------------------------------------ index of all runs
 INDEX_PARAMS = ("n_qt", "n_ft", "box_length", "boundary", "k_qq", "k_ff", "k_qf", "bond_k", "k_on",
                 "k_off_ca_per_s", "k_off_free_per_s", "timestep", "t_baseline_s", "t_influx_s", "t_pumpout_s",

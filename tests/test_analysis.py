@@ -110,16 +110,19 @@ def test_report_and_comparison(runs, tmp_path):
     for name in ("final_table.csv", "final_table.tex", "bonds_timeseries.csv", "structure_timeseries.csv",
                  "clusters_final.csv", "overlap_final.csv", "binding_rate.csv"):
         assert (out / name).exists(), name
-    for name in ("calcium", "overview", "kinetics", "large_agglomerates", "overlap", "binding_rate",
-                 "journal/panel_g"):
+    for name in ("calcium", "bond_rates", "overview", "kinetics", "large_agglomerates", "overlap", "binding_rate"):
         for ext in ("pdf", "svg", "png"):
             assert (out / "figures" / f"{name}.{ext}").exists(), f"{name}.{ext}"
-    assert len(list((out / "figures" / "panels").glob("*.pdf"))) == 12
+    panels = {"overview": 12, "calcium": 6, "kinetics": 3, "bond_rates": 2}         # every panel alone
+    assert {d.name: len(list(d.glob("*.pdf"))) for d in (out / "figures").iterdir() if d.is_dir()} == panels
+    assert not (out / "figures" / "journal").exists()
     table = pd.read_csv(out / "final_table.csv", index_col=0)
     assert "mean Rg (nm)" in table.index
 
     cmp_dir = compare_report(runs, tmp_path / "cmp")
     assert (cmp_dir / "comparison.pdf").exists() and (cmp_dir / "comparison_table.tex").exists()
+    assert len(list((cmp_dir / "comparison").glob("*.pdf"))) == 12
+    assert len(list((cmp_dir / "kinetics").glob("*.pdf"))) == 3
 
 
 def test_fibsem_export(runs):

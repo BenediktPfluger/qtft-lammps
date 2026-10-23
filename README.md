@@ -45,10 +45,10 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `qtft/run.py`, `qtft/launcher.py` | start runs or whole sweeps in the background (one queue, at most `max_parallel` replicas at once), live progress (`watch`, `launcher.log`), stop |
 | `qtft/read.py` | readers for `log.lammps` (YAML thermo), dumps, `rdf.dat`, histograms |
 | `qtft/quicklook.py` | quick overview plot of a run: thermo time series, potential energy, virial pressure, mean overlap per pair family |
-| `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, association rate k_a (`binding_rate`, measured and Collins–Kimball), `index.csv` of all runs, comparison of runs |
+| `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, association rate k_a (`binding_rate`, measured and Collins–Kimball; needs a calcium step), bond formation and breaking rates and apparent k_a over time (`bond_rates`, any protocol), `index.csv` of all runs, comparison of runs |
 | `qtft/structure.py` | cluster geometry with OVITO (clusters from bonds, unwrapped across the periodic box; not needed with walls): Rg, compactness, centres, nearest-neighbour distances, composition; percolation (a cluster spanning the box) |
 | `qtft/overlap.py` | interpenetration diagnostics per pair family (with walls also particle–wall) |
-| `qtft/figures.py` | Nature-style figures (overview, kinetics, large agglomerates, overlap, journal panels g–j, comparison), final-state table (CSV + LaTeX), `make_report` |
+| `qtft/figures.py` | Nature-style figures (calcium, bond rates, binding rate, overview, kinetics, large agglomerates, overlap, comparison; multi-panel figures also as single panels, phase lines), final-state table (CSV + LaTeX), `make_report` |
 | `qtft/fibsem.py` | export of the final frame in the FIB-SEM segmentation schema (encapsulins, clusters from bonds; periodic box unwrapped, walls in the box frame) |
 | `qtft/sweep.py` | parameter sweeps: one run per combination of listed values (grid), same seeds for all variants, results table per variant |
 | `qtft/tuning.py` | force-constant sweep: constants for a target α, predicted vs measured overlap per pair family, binding kinetics |

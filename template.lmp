@@ -83,6 +83,13 @@ compute         frag all fragment/atom single yes
 compute         cl all chunk/atom c_frag nchunk every ids every compress yes
 compute         csize all property/chunk cl count
 compute         size all chunk/spread/atom cl c_csize
+# Qt and Ft per cluster: count per chunk, spread back to the atoms of the cluster
+variable        is_qt atom (type==1)
+variable        is_ft atom (type==2)
+compute         cqt all reduce/chunk cl sum v_is_qt
+compute         cft all reduce/chunk cl sum v_is_ft
+compute         size_qt all chunk/spread/atom cl c_cqt
+compute         size_ft all chunk/spread/atom cl c_cft
 
 variable        rad atom (type==1)*{{radius_qt}}+(type==2)*{{radius_ft}}
 variable        qt_bound atom (type==1)*(c_nb>0)
@@ -90,6 +97,8 @@ variable        ft_bound atom (type==2)*(c_nb>0)
 variable        qt_deg atom (type==1)*c_nb
 variable        ft_deg atom (type==2)*c_nb
 variable        large atom (c_size>={{large_cluster_min}})/c_size
+variable        qt_cl atom (type==1)/(c_size_qt+(c_size_qt==0))    # 1/(Qt in the cluster): sums to the clusters with Qt
+variable        ft_cl atom (type==2)/(c_size_ft+(c_size_ft==0))
 variable        cat_mono atom (c_size==1)
 variable        cat_small atom (c_size>=2)*(c_size<={{size_small}})
 variable        cat_medium atom (c_size>{{size_small}})*(c_size<={{size_medium}})
@@ -97,7 +106,7 @@ variable        cat_large atom (c_size>{{size_medium}})*(c_size<={{size_large}})
 variable        cat_vlarge atom (c_size>{{size_large}})
 
 compute         sums all reduce sum v_qt_bound v_ft_bound v_qt_deg v_ft_deg v_large &
-                v_cat_mono v_cat_small v_cat_medium v_cat_large v_cat_vlarge
+                v_cat_mono v_cat_small v_cat_medium v_cat_large v_cat_vlarge v_qt_cl v_ft_cl
 compute         maxdeg all reduce max v_qt_deg v_ft_deg
 
 variable        n_qt_bound equal c_sums[1]
@@ -110,6 +119,10 @@ variable        deg_ft_max equal c_maxdeg[2]
 variable        n_clusters equal c_cl
 variable        mean_size equal count(all)/c_cl
 variable        largest equal max(c_csize)
+variable        mean_size_qt equal count(Qt)/(c_sums[11]+(c_sums[11]==0))    # Qt per cluster with Qt
+variable        mean_size_ft equal count(Ft)/(c_sums[12]+(c_sums[12]==0))
+variable        largest_qt equal max(c_cqt)                                  # most Qt in one cluster
+variable        largest_ft equal max(c_cft)
 variable        n_large equal round(c_sums[5])
 variable        f_mono equal c_sums[6]/count(all)
 variable        f_small equal c_sums[7]/count(all)
@@ -131,6 +144,7 @@ compute         pvir all pressure NULL virial
 # ke, temp and etotal are omitted on purpose: velocities are not physical in fix brownian
 thermo_style    custom step pe evdwl ebond c_pvir bonds &
                 v_n_qt_bound v_n_ft_bound v_frac_bound v_n_clusters v_mean_size v_largest v_n_large &
+                v_mean_size_qt v_mean_size_ft v_largest_qt v_largest_ft &
                 v_f_mono v_f_small v_f_medium v_f_large v_f_vlarge &
                 v_deg_qt_mean v_deg_ft_mean v_deg_qt_max v_deg_ft_max v_bond_mean v_bond_max &
                 spcpu cpuremain
@@ -175,6 +189,7 @@ variable        nb_prev equal 0
 variable        n_broken equal v_nb_prev+f_unbind[2]
 thermo_style    custom step pe evdwl ebond c_pvir bonds &
                 v_n_qt_bound v_n_ft_bound v_frac_bound v_n_clusters v_mean_size v_largest v_n_large &
+                v_mean_size_qt v_mean_size_ft v_largest_qt v_largest_ft &
                 v_f_mono v_f_small v_f_medium v_f_large v_f_vlarge &
                 v_deg_qt_mean v_deg_ft_mean v_deg_qt_max v_deg_ft_max v_bond_mean v_bond_max &
                 v_ca v_f v_k_on_s v_k_off_s v_n_broken spcpu cpuremain

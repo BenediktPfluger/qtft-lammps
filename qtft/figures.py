@@ -3,7 +3,9 @@
 Every figure is drawn at its final size (89 mm single column, 183 mm double column, <= 170 mm high),
 Arial 7 pt labels / 6 pt ticks, 0.5 pt axes, inward ticks on all sides, 1 pt lines, frameless
 legends, no grid. Saved as PDF + SVG (editable text) + PNG (300 dpi). Ensemble data: mean line with
-a +-1 SD band, optionally the individual replicas. Time in ms.
+a +-1 SD band, optionally the individual replicas. Time in ms (axes in s for long runs); dotted
+vertical lines mark the start and end of the calcium influx. A figure of several panels is saved
+as <name>.* and every panel alone in <name>/<panel>.*.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import MultipleLocator
 
-from .ensemble import TO_PER_M_S, binding_rate, cached_stats, ensemble_stats
+from .ensemble import TO_PER_M_S, binding_rate, bond_rates, cached_stats, ensemble_stats
 from .params import Params
 from .read import read_histo
 
@@ -171,11 +173,30 @@ def _simple(key, ylabel, scale_by_n=False):
     return panel
 
 
+def _species_panel(key, ylabel):
+    """As _simple; for one run also the Qt-only and Ft-only counts (thermo columns <key>_qt, <key>_ft)."""
+    def panel(ax, runs, traces=False):
+        single = len(runs) == 1
+        curves = [(r, key, r.color, "all" if single else r.label) for r in runs]
+        if single:
+            curves += [(runs[0], f"{key}_{name.lower()}", LINE[name], name) for name in ("Qt", "Ft")]
+        values = []
+        for r, column, color, label in curves:
+            t, m, s, tr = _series(r, column)
+            band(ax, t, m, s, color, label, traces=tr if traces else None)
+            values.append(m)
+        k = _thousands(ax, np.concatenate(values))
+        ax.set_ylabel(ylabel + (" (×10³)" if k else ""))
+        if single:
+            ax.legend()
+    return panel
+
+
 p_bonds = _simple("Bonds", "bonds")
 p_clusters = _simple("n_clusters", "agglomerates + free particles")
-p_mean_size = _simple("mean_size", "mean agglomerate size")
+p_mean_size = _species_panel("mean_size", "mean agglomerate size")
 p_mean_size_n = _simple("mean_size", "mean size / N", scale_by_n=True)
-p_largest = _simple("largest", "largest agglomerate")
+p_largest = _species_panel("largest", "largest agglomerate")
 p_largest_n = _simple("largest", "largest / N", scale_by_n=True)
 p_large_count = _simple("n_large", "agglomerates ≥ N_min")
 
@@ -204,24 +225,25 @@ def p_fraction_bound(ax, runs, traces=False):
             band(ax, t, m, s, color, label, ls=ls if len(runs) > 1 else "-", traces=tr if traces else None)
     ax.set_ylim(0, 1.02)
     ax.set_ylabel("fraction bound")
+    ax.legend(ncol=2 if len(runs) > 1 else 1)
 
 
 CATEGORIES = [("f_mono", "monomers"), ("f_small", "small"), ("f_medium", "medium"),
               ("f_large", "large"), ("f_vlarge", "very large")]
 
 
-def p_categories(ax, runs, traces=False, short=False):
+def p_categories(ax, runs, traces=False):
     r = runs[0]
     t = r.stats["time_ms"]
     small, medium, large = r.p.size_bounds()
     names = {"f_mono": "1", "f_small": f"2–{small}", "f_medium": f"{small + 1}–{medium}",
              "f_large": f"{medium + 1}–{large}", "f_vlarge": f">{large}"}
     ys = [r.stats["mean"][k] for k, _ in CATEGORIES]
-    labels = [(lab if short else f"{lab} ({names[k]})") for k, lab in CATEGORIES]
+    labels = [f"{lab} ({names[k]})" for k, lab in CATEGORIES]
     ax.stackplot(t, ys, colors=CATEGORY_COLORS, labels=labels, lw=0)
     ax.set_ylim(0, 1)
     ax.set_ylabel("fraction of particles")
-    ax.legend(loc="center right", fontsize=5 if short else 6, reverse=True)
+    ax.legend(loc="center right", reverse=True)
 
 
 def _structure_panel(key, ylabel, ref=None):
@@ -297,6 +319,59 @@ def p_overlap(ax, runs, traces=False):
     ax.legend()
 
 
+def p_calcium(ax, runs, traces=False):
+    r = runs[0]
+    t, mean = r.stats["time_ms"], r.stats["mean"]
+    ax.plot(t, mean["ca"], color="k", label="Ca²⁺")
+    ax.set_ylabel("calcium (µM)")
+    a2 = ax.twinx()
+    a2.plot(t, mean["f"], color=LINE["Qt"], ls="--", label="loading f")
+    a2.set_ylim(0, 1.02)
+    a2.set_ylabel("calmodulin loading f")
+    ax.legend(handles=ax.get_lines() + a2.get_lines(), loc="upper right")
+
+
+def p_rates(ax, runs, traces=False):
+    r = runs[0]
+    t, mean = r.stats["time_ms"], r.stats["mean"]
+    ax.plot(t, mean["k_on_s"], color=LINE["Qt"], label="k_on per pair")
+    ax.plot(t, mean["k_off_s"], color=LINE["Ft"], label="k_off per bond")
+    ax.set_yscale("log")
+    ax.set_ylabel("rate (1/s)")
+    ax.legend(loc="lower right")
+
+
+def p_bonds_broken(ax, runs, traces=False):
+    r = runs[0]
+    t, mean, sd, tr = r.stats["time_ms"], r.stats["mean"], r.stats["sd"], r.stats["traces"]
+    band(ax, t, mean["Bonds"], sd["Bonds"], r.color, "bonds", traces=tr["Bonds"] if traces else None)
+    band(ax, t, mean["n_broken"], sd["n_broken"], "0.5", "broken (cumulative)", ls="--")
+    ax.set_ylabel("bonds")
+    ax.legend(loc="upper left")
+
+
+def _rate_panels(rates: dict) -> list:
+    """Panels of fig_bond_rates for a result of bond_rates()."""
+    t, mean, sd, tr = rates["time_ms"], rates["mean"], rates["sd"], rates["traces"]
+
+    def formed_broken(ax, runs, traces=False):
+        band(ax, t, mean["formed_per_s"], sd["formed_per_s"], runs[0].color, "formed",
+             traces=tr["formed_per_s"] if traces else None)
+        band(ax, t, mean["broken_per_s"], sd["broken_per_s"], "0.5", "broken", ls="--",
+             traces=tr["broken_per_s"] if traces else None)
+        k = _thousands(ax, np.concatenate([mean["formed_per_s"], mean["broken_per_s"]]))
+        ax.set_ylabel("bonds per second" + (" (×10³)" if k else ""))
+        ax.legend(loc="upper right")
+
+    def k_a(ax, runs, traces=False):
+        band(ax, t, mean["k_a_per_M_s"], sd["k_a_per_M_s"], runs[0].color,
+             traces=tr["k_a_per_M_s"] if traces else None)
+        ax.set_yscale("log")
+        ax.set_ylabel("apparent k_a (M⁻¹ s⁻¹)")
+
+    return [("bonds formed and broken", formed_broken, True), ("apparent k_a", k_a, True)]
+
+
 # ---------------------------------------------------------------------------- figures
 def _figure(width, height):
     return plt.figure(figsize=(width, height), layout="constrained")
@@ -308,14 +383,32 @@ def save(fig, stem: Path) -> None:
         fig.savefig(stem.with_suffix(f".{ext}"), dpi=300)
 
 
-def _grid(panels, runs, nrows, ncols, width, height, titles=True, traces=False, legend_below=False):
+def _t_end(runs) -> float:
+    return max(r.stats["time_ms"][-1] for r in runs)
+
+
+def phase_lines(ax, runs) -> None:
+    """Dotted vertical lines at the start and end of the calcium influx (time axis in ms), where they lie
+    inside the run; none if the runs have different phase times."""
+    bounds = {(r.p.t_on_s, r.p.t_off_s) for r in runs}
+    if len(bounds) != 1:
+        return
+    end = _t_end(runs)
+    for t in sorted({b * 1e3 for b in bounds.pop()}):
+        if 0 < t < end:
+            ax.axvline(t, color="0.6", lw=0.5, ls=":", zorder=0)
+
+
+def _grid(panels, runs, nrows, ncols, width, height, titles=True, traces=False, legend_below=False,
+          sharex=False):
     fig = _figure(width, height)
-    axes = fig.subplots(nrows, ncols, squeeze=False)
-    t_end = max(r.stats["time_ms"][-1] for r in runs)
+    axes = fig.subplots(nrows, ncols, squeeze=False, sharex=sharex)
+    t_end = _t_end(runs)
     for ax, (title, func, is_time) in zip(axes.flat, panels):
         func(ax, runs, traces=traces)
         if is_time:
-            _time_axis(ax, t_end)
+            phase_lines(ax, runs)
+            _time_axis(ax, t_end, label=not sharex or ax.get_subplotspec().is_last_row())
         if titles:
             ax.set_title(title, loc="left", fontweight="bold")
     for ax in axes.flat[len(panels):]:
@@ -326,16 +419,30 @@ def _grid(panels, runs, nrows, ncols, width, height, titles=True, traces=False, 
     return fig
 
 
-def _single_panels(panels, runs, out_dir: Path, prefix: str, traces=False):
-    t_end = max(r.stats["time_ms"][-1] for r in runs)
+def _single_panels(panels, runs, folder: Path, traces=False):
+    """Every panel of a figure alone (89 mm), into folder/<panel>.*; several runs get a legend."""
+    t_end = _t_end(runs)
     for title, func, is_time in panels:
         fig = _figure(SINGLE, 65 * MM)
         ax = fig.add_subplot()
         func(ax, runs, traces=traces)
         if is_time:
+            phase_lines(ax, runs)
             _time_axis(ax, t_end)
-        save(fig, out_dir / f"{prefix}_{_slug(title)}")
+        if len(runs) > 1 and ax.get_legend() is None and ax.get_legend_handles_labels()[0]:
+            ax.legend()
+        save(fig, folder / _slug(title))
         plt.close(fig)
+
+
+def _panel_figure(name, panels, runs, out_dir, nrows, ncols, width, height, traces=False, **grid):
+    """A figure of several panels: saved as out_dir/<name>.* and every panel alone in out_dir/<name>/."""
+    with plt.rc_context(STYLE):
+        fig = _grid(panels, runs, nrows, ncols, width, height, traces=traces, **grid)
+        if out_dir:
+            save(fig, out_dir / name)
+            _single_panels(panels, runs, out_dir / name, traces=traces)
+    return fig
 
 
 OVERVIEW = [
@@ -358,43 +465,25 @@ COMPARISON = [
 ]
 
 
-def fig_overview(run: RunData, out_dir: Path | None = None, traces=False, panels=True):
-    """4 x 3 metrics overview of one run (183 mm)."""
-    with plt.rc_context(STYLE):
-        fig = _grid(OVERVIEW, [run], 4, 3, DOUBLE, MAX_HEIGHT, traces=traces)
-        if out_dir:
-            save(fig, out_dir / "overview")
-            if panels:
-                _single_panels(OVERVIEW, [run], out_dir / "panels", "overview", traces=traces)
-    return fig
+def fig_overview(run: RunData, out_dir: Path | None = None, traces=False):
+    """4 x 3 metrics overview of one run (183 mm); panels also alone in overview/."""
+    return _panel_figure("overview", OVERVIEW, [run], out_dir, 4, 3, DOUBLE, MAX_HEIGHT, traces=traces)
 
 
-def fig_comparison(runs: list[RunData], out_dir: Path | None = None, panels=True):
-    """3 x 4 overlay of several runs with a shared legend below (183 mm)."""
-    with plt.rc_context(STYLE):
-        fig = _grid(COMPARISON, runs, 3, 4, DOUBLE, 140 * MM, legend_below=True)
-        if out_dir:
-            save(fig, out_dir / "comparison")
-            if panels:
-                _single_panels(COMPARISON, runs, out_dir / "panels", "comparison")
-    return fig
+def fig_comparison(runs: list[RunData], out_dir: Path | None = None):
+    """3 x 4 overlay of several runs with a shared legend below (183 mm); panels also alone in comparison/."""
+    return _panel_figure("comparison", COMPARISON, runs, out_dir, 3, 4, DOUBLE, 140 * MM, legend_below=True)
+
+
+KINETICS = [("bonds", p_bonds, True), ("fraction bound", p_fraction_bound, True),
+            ("mean agglomerate size", p_mean_size, True)]
 
 
 def fig_kinetics(runs: list[RunData], out_dir: Path | None = None, traces=False):
-    """Bonds, fraction bound (Qt, Ft) and mean agglomerate size on one time axis (89 mm)."""
-    with plt.rc_context(STYLE):
-        fig = _figure(SINGLE, 120 * MM)
-        axes = fig.subplots(3, 1, sharex=True)
-        p_bonds(axes[0], runs, traces=traces)
-        p_fraction_bound(axes[1], runs, traces=traces)
-        p_mean_size(axes[2], runs, traces=traces)
-        axes[1].legend(ncol=2 if len(runs) > 1 else 1)
-        if len(runs) > 1:
-            axes[0].legend()
-        _time_axis(axes[2], max(r.stats["time_ms"][-1] for r in runs))
-        if out_dir:
-            save(fig, out_dir / "kinetics")
-    return fig
+    """Bonds, fraction bound (Qt, Ft) and mean agglomerate size on one time axis (89 mm); panels also
+    alone in kinetics/."""
+    return _panel_figure("kinetics", KINETICS, runs, out_dir, 3, 1, SINGLE, 120 * MM, traces=traces,
+                         titles=False, sharex=True, legend_below=True)
 
 
 def fig_large_count(runs: list[RunData], out_dir: Path | None = None, traces=False):
@@ -404,7 +493,8 @@ def fig_large_count(runs: list[RunData], out_dir: Path | None = None, traces=Fal
         ax = fig.add_subplot()
         p_large_count(ax, runs, traces=traces)
         ax.set_ylabel(f"agglomerates ≥ {runs[0].p.large_cluster_min}")
-        _time_axis(ax, max(r.stats["time_ms"][-1] for r in runs))
+        phase_lines(ax, runs)
+        _time_axis(ax, _t_end(runs))
         if len(runs) > 1:
             ax.legend()
         if out_dir:
@@ -418,6 +508,7 @@ def fig_overlap(run: RunData, out_dir: Path | None = None):
         fig = _figure(SINGLE, 60 * MM)
         ax = fig.add_subplot()
         p_overlap(ax, [run])
+        phase_lines(ax, [run])
         _time_axis(ax, run.stats["time_ms"][-1])
         if out_dir:
             save(fig, out_dir / "overlap")
@@ -469,53 +560,28 @@ def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: 
     return fig
 
 
-PHASE_COLORS = {"baseline": "0.92", "influx": "#dbe9f6"}          # shading; the pump-out stays white
-
-
-def shade_phases(ax, p: Params, scale: float = 1e3) -> None:
-    """Shade the baseline and the influx of the calcium protocol (time axis in s * scale, default ms)."""
-    if p.t_baseline_s > 0:
-        ax.axvspan(0, p.t_on_s * scale, color=PHASE_COLORS["baseline"], lw=0, zorder=0)
-    if p.t_influx_s > 0:
-        ax.axvspan(p.t_on_s * scale, p.t_off_s * scale, color=PHASE_COLORS["influx"], lw=0, zorder=0)
+CALCIUM = [("calcium and loading", p_calcium, True), ("rates", p_rates, True),
+           ("bonds and broken bonds", p_bonds_broken, True), ("fraction bound", p_fraction_bound, True),
+           ("largest agglomerate", p_largest, True), ("mean agglomerate size", p_mean_size, True)]
 
 
 def fig_calcium(run: RunData, out_dir: Path | None = None, traces=False):
-    """Calcium protocol and its effect (183 mm): calcium and calmodulin loading f; binding
-    rate per pair and unbinding rate per bond; bonds and broken bonds; largest cluster and mean size
-    (mean +- SD over replicas). Grey: baseline, blue: influx, white: pump-out."""
-    t = run.stats["time_ms"]
-    mean, sd, tr = run.stats["mean"], run.stats["sd"], run.stats["traces"]
-    with plt.rc_context(STYLE):
-        fig = _figure(DOUBLE, 110 * MM)
-        (a, b), (c, d) = fig.subplots(2, 2, sharex=True)
-        a.plot(t, mean["ca"], color="k", label="Ca²⁺")
-        a.set_ylabel("calcium (µM)")
-        a2 = a.twinx()
-        a2.plot(t, mean["f"], color=LINE["Qt"], ls="--", label="loading f")
-        a2.set_ylim(0, 1.02)
-        a2.set_ylabel("calmodulin loading f")
-        a.legend(handles=a.get_lines() + a2.get_lines(), loc="upper right")
-        b.plot(t, mean["k_on_s"], color=LINE["Qt"], label="k_on per pair")
-        b.plot(t, mean["k_off_s"], color=LINE["Ft"], label="k_off per bond")
-        b.set_yscale("log")
-        b.set_ylabel("rate (1/s)")
-        b.legend(loc="lower right")
-        band(c, t, mean["Bonds"], sd["Bonds"], run.color, "bonds", traces=tr["Bonds"] if traces else None)
-        band(c, t, mean["n_broken"], sd["n_broken"], "0.5", "broken (cumulative)", ls="--")
-        c.set_ylabel("bonds")
-        c.legend(loc="upper left")
-        band(d, t, mean["largest"], sd["largest"], run.color, "largest cluster",
-             traces=tr["largest"] if traces else None)
-        band(d, t, mean["mean_size"], sd["mean_size"], "0.5", "mean size", ls="--")
-        d.set_ylabel("particles")
-        d.legend(loc="upper left")
-        for ax in (a, b, c, d):
-            shade_phases(ax, run.p)
-            _time_axis(ax, t[-1], label=ax in (c, d))
-        if out_dir:
-            save(fig, out_dir / "calcium")
-    return fig
+    """Calcium protocol and its effect (183 mm): calcium and calmodulin loading f; binding rate per pair
+    and unbinding rate per bond; bonds and broken bonds; fraction bound; largest agglomerate and mean
+    agglomerate size, each for all particles, Qt and Ft (mean +- SD over replicas); panels also alone
+    in calcium/."""
+    return _panel_figure("calcium", CALCIUM, [run], out_dir, 3, 2, DOUBLE, 140 * MM, traces=traces,
+                         titles=False, sharex=True)
+
+
+def fig_bond_rates(run: RunData, out_dir: Path | None = None, traces=False, rates: dict | None = None):
+    """Bonds formed and broken per second (top) and the apparent association rate constant k_a in
+    1/(M s), normalized by the total particle numbers (bottom, log scale), per calcium segment (mean +- SD
+    over replicas; 89 mm); panels also alone in bond_rates/. `rates`: a result of bond_rates() (computed
+    here if not given)."""
+    rates = rates or bond_rates(run.run_dir, save=False)
+    return _panel_figure("bond_rates", _rate_panels(rates), [run], out_dir, 2, 1, SINGLE, 90 * MM,
+                         traces=traces, titles=False, sharex=True)
 
 
 SWEEP_LABELS = {
@@ -554,31 +620,6 @@ def sweep_plot(results: pd.DataFrame, y: str = "final_frac_bound", x: str | None
         if out_dir:
             save(fig, out_dir / f"sweep_{y}")
     return fig
-
-
-JOURNAL = [("g", p_counts), ("h", p_categories), ("i", p_mean_size), ("j", p_largest)]
-
-
-def fig_journal(run: RunData, out_dir: Path | None = None) -> list:
-    """Journal panels g-j, each exactly 42 x 35 mm with fixed axes margins and 5 pt legends."""
-    figs = []
-    style = {**STYLE, "legend.fontsize": 5}
-    with plt.rc_context(style):
-        for letter, func in JOURNAL:
-            fig = plt.figure(figsize=(42 * MM, 35 * MM))
-            ax = fig.add_axes([10 / 42, 7 / 35, 30 / 42, 26 / 35])    # fixed margins in mm
-            if func is p_categories:
-                func(ax, [run], short=True)
-            else:
-                func(ax, [run])
-            if ax.get_legend() is not None:
-                ax.legend(fontsize=5, ncol=2 if func is p_counts else 1, loc="best",
-                          handlelength=1.2, columnspacing=0.8, labelspacing=0.2)
-            _time_axis(ax, run.stats["time_ms"][-1])
-            if out_dir:
-                save(fig, out_dir / "journal" / f"panel_{letter}")
-            figs.append(fig)
-    return figs
 
 
 # ---------------------------------------------------------------------------- tables
@@ -650,9 +691,9 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
 
     figs = out / "figures"
     rate = [fig_binding_rate(run, figs, rate=binding_rate(run_dir))] if run.p.t_influx_s > 0 and run.p.ca_rise_s == 0 else []  # + csv
-    for f in (fig_calcium(run, figs, traces=traces), fig_overview(run, figs, traces=traces),
-              fig_kinetics([run], figs, traces=traces), fig_large_count([run], figs, traces=traces),
-              fig_overlap(run, figs), *rate, *fig_journal(run, figs)):
+    for f in (fig_calcium(run, figs, traces=traces), fig_bond_rates(run, figs, traces, bond_rates(run_dir)),  # + csv
+              fig_overview(run, figs, traces=traces), fig_kinetics([run], figs, traces=traces),
+              fig_large_count([run], figs, traces=traces), fig_overlap(run, figs), *rate):
         plt.close(f)
 
     table = final_table(run)
