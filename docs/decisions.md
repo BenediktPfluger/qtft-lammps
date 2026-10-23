@@ -226,8 +226,8 @@ section 11):
           = Ca_rest + (Ca_start − Ca_rest) · exp(−t'/τ)            pump-out   (t' from its start; Ca_start = Ca reached at
                                                                              the end of the influx, or Ca_rest without one)
     f(t)  = Caⁿ / (K_Caⁿ + Caⁿ)                                  calmodulin loading (Hill)
-    k_on(t)  = k_on · f                                          binding rate per Qt–Ft pair in contact
-    k_off(t) = f · k_off,Ca + (1 − f) · k_off,free               unbinding rate per bond
+    k_on(t)  = k_on · f                                          binding rate constant per Qt–Ft pair in contact
+    k_off(t) = f · k_off,Ca + (1 − f) · k_off,free               unbinding rate constant per bond
 
 f is the fraction of calmodulin with calcium bound, i.e. able to hold RS20 (mean field: every bond sees the
 average loading; calcium binding to calmodulin takes milliseconds, so f follows Ca(t) instantly).
@@ -291,6 +291,9 @@ own template (up to 60 × 10).
 **Analysis.** `ensemble_stats` adds per replica the peaks of the bond count and the largest cluster and the
 deagglomeration half-times (`t_half_unbind_bonds_ms`, `t_half_unbind_largest_ms`: time after the end of the influx
 until the value has fallen to half of its value at that moment); "final" values are those at the end of the whole
-protocol. `fig_calcium` shows calcium, loading, rates, bonds, fraction bound and cluster sizes; all time-series figures mark
+protocol. `fig_calcium` shows calcium, loading, the rate constants k_on and k_off, the binding and unbinding rates (bonds formed
+and broken per second) with the apparent k_a, bonds, fraction bound and cluster sizes. k_on (per contact pair) and
+k_off (per bond) are not comparable with each other: the per-particle binding rate is k_a·c_Ft, which includes the
+encounters; all time-series figures mark
 the start and end of the influx with dotted vertical lines.
 

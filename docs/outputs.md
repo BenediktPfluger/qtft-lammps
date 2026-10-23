@@ -109,7 +109,7 @@ repeated steps.
 | `v_largest_qt`, `v_largest_ft` | highest number of Qt (Ft) in one cluster (not necessarily the overall largest cluster) |
 | `v_n_large` | number of clusters with ≥ `large_cluster_min` particles |
 | `v_ca`, `v_f` | calcium (µM) and calmodulin loading f (production only) |
-| `v_k_on_s`, `v_k_off_s` | binding rate per Qt–Ft pair in contact and unbinding rate per bond (1/s; production only) |
+| `v_k_on_s`, `v_k_off_s` | rate constants: binding per Qt–Ft pair in contact and unbinding per bond (1/s; production only) |
 | `v_n_broken` | bonds broken since the start of the production (production only) |
 | `v_f_mono` … `v_f_vlarge` | fraction of particles in monomers / small / medium / large / very large clusters |
 | `v_deg_qt_mean`, `v_deg_ft_mean`, `v_deg_qt_max`, `v_deg_ft_max` | mean (over bound particles) and maximum bonds per Qt / Ft |
@@ -154,7 +154,7 @@ regenerated from the replica files at any time.
 | `final_table.csv`, `final_table.tex` | Final-state table (bonds, clusters, sizes, fraction bound, half-time, Rg, Qt fraction) as CSV and LaTeX | Python: `make_report()` |
 | `bonds_timeseries.csv` | Bond count over time: step, time (µs, ms), mean, SD | Python: `make_report()` |
 | `report.json` | Settings used for the report | Python: `make_report()` |
-| `figures/` | All figures as PDF + SVG + PNG: `calcium` (calcium and loading f, rates, bonds and broken bonds, fraction bound, largest cluster, mean cluster size), `bond_rates` (bonds formed and broken per second, apparent k_a on a log scale; any calcium protocol), `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx and a calcium step, `ca_rise_s = 0`); every figure with several panels (`calcium`, `bond_rates`, `overview`, `kinetics`) also has each panel alone (89 mm) in `figures/<figure>/<panel>.*`. Largest and mean cluster size are drawn for all particles, Qt only and Ft only (one run). Dotted vertical lines mark the start and end of the calcium influx in every time panel. Time axes in ms, in s for runs of ≥ 10 s (also in `quicklook`) | Python: `make_report()` |
+| `figures/` | All figures as PDF + SVG + PNG: `calcium` (4 × 2: calcium and loading f; rate constants k_on per contact pair and k_off per bond; binding and unbinding rates in bonds/s; apparent k_a; bonds and broken bonds; fraction bound; largest cluster; mean cluster size), `bond_rates` (bonds formed and broken per second, apparent k_a on a log scale; any calcium protocol), `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx and a calcium step, `ca_rise_s = 0`); every figure with several panels (`calcium`, `bond_rates`, `overview`, `kinetics`) also has each panel alone (89 mm) in `figures/<figure>/<panel>.*`. Largest and mean cluster size are drawn for all particles, Qt only and Ft only (one run). Dotted vertical lines mark the start and end of the calcium influx in every time panel. Time axes in ms, in s for runs of ≥ 10 s (also in `quicklook`) | Python: `make_report()` |
 
 Comparisons of several runs (`compare_report(runs, out_dir)`) are written to the chosen `out_dir`:
 `comparison`, `kinetics`, `large_agglomerates` (PDF/SVG/PNG), the single panels in `comparison/` and `kinetics/`

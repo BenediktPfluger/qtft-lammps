@@ -113,7 +113,7 @@ def test_report_and_comparison(runs, tmp_path):
     for name in ("calcium", "bond_rates", "overview", "kinetics", "large_agglomerates", "overlap", "binding_rate"):
         for ext in ("pdf", "svg", "png"):
             assert (out / "figures" / f"{name}.{ext}").exists(), f"{name}.{ext}"
-    panels = {"overview": 12, "calcium": 6, "kinetics": 3, "bond_rates": 2}         # every panel alone
+    panels = {"overview": 12, "calcium": 8, "kinetics": 3, "bond_rates": 2}         # every panel alone
     assert {d.name: len(list(d.glob("*.pdf"))) for d in (out / "figures").iterdir() if d.is_dir()} == panels
     assert not (out / "figures" / "journal").exists()
     table = pd.read_csv(out / "final_table.csv", index_col=0)

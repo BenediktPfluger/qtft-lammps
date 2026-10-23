@@ -331,14 +331,14 @@ def p_calcium(ax, runs, traces=False):
     ax.legend(handles=ax.get_lines() + a2.get_lines(), loc="upper right")
 
 
-def p_rates(ax, runs, traces=False):
+def p_rate_constants(ax, runs, traces=False):
     r = runs[0]
     t, mean = r.stats["time_ms"], r.stats["mean"]
-    ax.plot(t, mean["k_on_s"], color=LINE["Qt"], label="k_on per pair")
-    ax.plot(t, mean["k_off_s"], color=LINE["Ft"], label="k_off per bond")
+    ax.plot(t, mean["k_on_s"], color=LINE["Qt"], label="k_on (per contact pair)")
+    ax.plot(t, mean["k_off_s"], color=LINE["Ft"], label="k_off (per bond)")
     ax.set_yscale("log")
-    ax.set_ylabel("rate (1/s)")
-    ax.legend(loc="lower right")
+    ax.set_ylabel("rate constant (1/s)")
+    ax.legend(loc="best")
 
 
 def p_bonds_broken(ax, runs, traces=False):
@@ -355,12 +355,12 @@ def _rate_panels(rates: dict) -> list:
     t, mean, sd, tr = rates["time_ms"], rates["mean"], rates["sd"], rates["traces"]
 
     def formed_broken(ax, runs, traces=False):
-        band(ax, t, mean["formed_per_s"], sd["formed_per_s"], runs[0].color, "formed",
+        band(ax, t, mean["formed_per_s"], sd["formed_per_s"], runs[0].color, "binding (formed)",
              traces=tr["formed_per_s"] if traces else None)
-        band(ax, t, mean["broken_per_s"], sd["broken_per_s"], "0.5", "broken", ls="--",
+        band(ax, t, mean["broken_per_s"], sd["broken_per_s"], "0.5", "unbinding (broken)", ls="--",
              traces=tr["broken_per_s"] if traces else None)
         k = _thousands(ax, np.concatenate([mean["formed_per_s"], mean["broken_per_s"]]))
-        ax.set_ylabel("bonds per second" + (" (×10³)" if k else ""))
+        ax.set_ylabel("rate (bonds/s)" + (" (×10³)" if k else ""))
         ax.legend(loc="upper right")
 
     def k_a(ax, runs, traces=False):
@@ -369,7 +369,7 @@ def _rate_panels(rates: dict) -> list:
         ax.set_yscale("log")
         ax.set_ylabel("apparent k_a (M⁻¹ s⁻¹)")
 
-    return [("bonds formed and broken", formed_broken, True), ("apparent k_a", k_a, True)]
+    return [("binding and unbinding rates", formed_broken, True), ("apparent k_a", k_a, True)]
 
 
 # ---------------------------------------------------------------------------- figures
@@ -560,17 +560,18 @@ def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: 
     return fig
 
 
-CALCIUM = [("calcium and loading", p_calcium, True), ("rates", p_rates, True),
-           ("bonds and broken bonds", p_bonds_broken, True), ("fraction bound", p_fraction_bound, True),
-           ("largest agglomerate", p_largest, True), ("mean agglomerate size", p_mean_size, True)]
-
-
-def fig_calcium(run: RunData, out_dir: Path | None = None, traces=False):
-    """Calcium protocol and its effect (183 mm): calcium and calmodulin loading f; binding rate per pair
-    and unbinding rate per bond; bonds and broken bonds; fraction bound; largest agglomerate and mean
-    agglomerate size, each for all particles, Qt and Ft (mean +- SD over replicas); panels also alone
-    in calcium/."""
-    return _panel_figure("calcium", CALCIUM, [run], out_dir, 3, 2, DOUBLE, 140 * MM, traces=traces,
+def fig_calcium(run: RunData, out_dir: Path | None = None, traces=False, rates: dict | None = None):
+    """Calcium protocol and its effect (183 x 170 mm): calcium and calmodulin loading f; rate constants
+    k_on per contact pair and k_off per bond; binding and unbinding rates (bonds formed and broken per
+    second) and the apparent k_a per calcium segment; bonds and broken bonds; fraction bound; largest
+    agglomerate and mean agglomerate size, each for all particles, Qt and Ft (mean +- SD over replicas);
+    panels also alone in calcium/. `rates`: a result of bond_rates() (computed here if not given)."""
+    rates = rates or bond_rates(run.run_dir, save=False)
+    panels = [("calcium and loading", p_calcium, True), ("rate constants", p_rate_constants, True),
+              *_rate_panels(rates),
+              ("bonds and broken bonds", p_bonds_broken, True), ("fraction bound", p_fraction_bound, True),
+              ("largest agglomerate", p_largest, True), ("mean agglomerate size", p_mean_size, True)]
+    return _panel_figure("calcium", panels, [run], out_dir, 4, 2, DOUBLE, MAX_HEIGHT, traces=traces,
                          titles=False, sharex=True)
 
 
@@ -691,7 +692,8 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
 
     figs = out / "figures"
     rate = [fig_binding_rate(run, figs, rate=binding_rate(run_dir))] if run.p.t_influx_s > 0 and run.p.ca_rise_s == 0 else []  # + csv
-    for f in (fig_calcium(run, figs, traces=traces), fig_bond_rates(run, figs, traces, bond_rates(run_dir)),  # + csv
+    rates = bond_rates(run_dir)                                                                  # + csv
+    for f in (fig_calcium(run, figs, traces, rates), fig_bond_rates(run, figs, traces, rates),
               fig_overview(run, figs, traces=traces), fig_kinetics([run], figs, traces=traces),
               fig_large_count([run], figs, traces=traces), fig_overlap(run, figs), *rate):
         plt.close(f)
