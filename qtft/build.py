@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import datetime
+import functools
 import json
 import re
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,6 +18,7 @@ from .params import REPO_DIR, Params
 
 TEMPLATE = REPO_DIR / "template.lmp"
 PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+PLUGIN = REPO_DIR / "lammps_plugins" / "bond_break_random" / "bondbreakrandom.so"
 SEED_NAMES = ("seed_place_qt", "seed_place_ft", "seed_bd_qt", "seed_bd_ft", "seed_bind", "seed_break")
 
 
@@ -29,8 +32,26 @@ def replica_seeds(master_seed: int, n_replicas: int) -> list[dict]:
     return seeds
 
 
+@functools.lru_cache
+def _lmp_help(lmp_command: str) -> str:
+    try:
+        return subprocess.run(shlex.split(lmp_command) + ["-h"], capture_output=True, text=True,
+                              timeout=120).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def plugin_to_load(p: Params) -> Path | None:
+    """The plugin with fix bond/break/random if the run needs it and lmp does not have the style built in
+    (build it with lammps_plugins/bond_break_random/build.sh)."""
+    if p.bond_break != "random" or "bond/break/random" in _lmp_help(p.lmp_command):
+        return None
+    return PLUGIN
+
+
 def template_values(p: Params, replica: int, seeds: dict) -> dict:
     small, medium, large = p.size_bounds()
+    plugin = plugin_to_load(p)
     return {
         "run_name": p.name,
         "replica": replica,
@@ -69,7 +90,8 @@ def template_values(p: Params, replica: int, seeds: dict) -> dict:
         "ca_rate_on": p.ca_rate_on_per_s if p.ca_rise_s > 0 else 0.0,
         "ca_K": p.ca_K_uM, "ca_hill": p.ca_hill,
         "k_on_per_s": p.k_on * 1e9, "k_off_ca": p.k_off_ca_per_s, "k_off_free": p.k_off_free_per_s,
-        "break_every": p.break_every,
+        "break_every": p.break_every, "bond_break": p.bond_break,
+        "load_plugin": int(plugin is not None), "plugin_path": plugin or "none",
         "n_segments": p.prod_steps // p.rate_update_every, "segment_steps": p.rate_update_every,
         "rdf_bins": p.rdf_bins, "rdf_cutoff": p.rdf_cut,
         "hist_qt_max": p.maxbond_qt + 0.5, "hist_qt_bins": p.maxbond_qt + 1,

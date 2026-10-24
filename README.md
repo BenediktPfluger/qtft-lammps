@@ -15,13 +15,14 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j |
 | Bonds | `bond_style harmonic`, E = K (r − r₀)², r₀ = r_Qt + r_Ft |
 | Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on f Δt) per step: a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ (see `docs/decisions.md`) |
-| Unbinding | `fix bond/break`, probability 1 − exp(−k_off Δt) per attempt (limitation: only the longest bond per atom, see `docs/decisions.md`) |
-| Calcium control | every production follows a calcium protocol (baseline → influx with an exponential rise to the plateau → exponential pump-out, each phase optional); calmodulin loading f = Caⁿ/(K_Caⁿ + Caⁿ) sets k_on f and k_off = f k_off,Ca + (1 − f) k_off,free; computed inside LAMMPS, in segments |
+| Unbinding | `fix bond/break/random` (own plugin in `lammps_plugins/`): every bond breaks independently with probability 1 − exp(−k_off Δt) per attempt, k_off following the calcium at every attempt (`bond_break="random"`, default); `bond_break="longest"`: the built-in `fix bond/break` (only the longest bond of both atoms can break, see `docs/decisions.md`) |
+| Calcium control | every production follows a calcium protocol (baseline → influx with an exponential rise to the plateau → exponential pump-out, each phase optional); calmodulin loading f = Caⁿ/(K_Caⁿ + Caⁿ) sets k_on f and k_off = f k_off,Ca + (1 − f) k_off,free; computed inside LAMMPS (k_on per segment, k_off at every unbinding attempt) |
 | Start | overlap-free random insertion, short equilibration without binding |
 
 ## Usage
 
-1. Install everything as described in [docs/INSTALL.md](docs/INSTALL.md).
+1. Install everything as described in [docs/INSTALL.md](docs/INSTALL.md), including the unbinding plugin
+   (`lammps_plugins/bond_break_random/build.sh`; again after every LAMMPS update).
 2. `conda activate lammps`, open the repo in VS Code.
 3. Open `control.ipynb`: set the parameters, check the derived values, build and run. For a parameter
    study, list values per parameter in section 4 (`build_sweep`): one run per combination.
@@ -40,6 +41,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `docs/decisions.md` | model and project decisions with reasons, status of the implementation |
 | `docs/outputs.md` | every output file: content and what creates it |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
+| `lammps_plugins/bond_break_random/` | LAMMPS plugin `fix bond/break/random` (C++ source, `build.sh`; the built `.so` is not committed) |
 | `qtft/params.py` | all parameters with defaults, derived values (γ = k_BT/D, α, p, …) and checks |
 | `qtft/build.py` | fills the template → `rep_XX/in.lammps`, writes `params.json`, derives seeds |
 | `qtft/run.py`, `qtft/launcher.py` | start runs or whole sweeps in the background (one queue, at most `max_parallel` replicas at once), live progress (`watch`, `launcher.log`), stop |

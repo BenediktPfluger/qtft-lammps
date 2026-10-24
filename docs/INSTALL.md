@@ -155,8 +155,14 @@ All four names must be printed.
 cd ~/projects/qtft-lammps
 conda activate lammps
 nbstripout --install      # strips notebook outputs automatically on every commit
+lammps_plugins/bond_break_random/build.sh   # unbinding plugin fix bond/break/random (needs ~/src/lammps)
 pytest -q                 # quick self-test of the Python helpers
 ```
+
+`build.sh` compiles the plugin against the headers in `~/src/lammps` (or the folder given as argument), which
+must be the same LAMMPS version as `lmp` (it checks this). The result,
+`lammps_plugins/bond_break_random/bondbreakrandom.so`, is loaded by every run with `bond_break="random"`;
+`start()` refuses to run without it.
 
 ## 8. Set up VS Code
 
@@ -201,6 +207,7 @@ OMP_NUM_THREADS=2 mpirun -np 4 lmp -sf omp -in in.myscript   # hybrid MPI + Open
 | CMake version too old | Use the conda env's CMake (`conda activate lammps`) |
 | `ImportError` / `liblammps.so` not found in Python | Build with `BUILD_SHARED_LIBS=on`, then re-run the `install-python` target |
 | CMake error about conflicting files in `src/` | `cd ~/src/lammps/src && make no-all purge`, then reconfigure |
+| `LAMMPS plugin not found` from `start()`, or `plugin load` fails | Build (or rebuild after a LAMMPS update) with `lammps_plugins/bond_break_random/build.sh` |
 
 ## Updating LAMMPS
 
@@ -208,4 +215,5 @@ OMP_NUM_THREADS=2 mpirun -np 4 lmp -sf omp -in in.myscript   # hybrid MPI + Open
 cd ~/src/lammps && git pull
 conda activate lammps
 cmake --build build -j $(nproc) && cmake --install build && cmake --build build --target install-python
+~/projects/qtft-lammps/lammps_plugins/bond_break_random/build.sh   # the plugin must match the new version
 ```

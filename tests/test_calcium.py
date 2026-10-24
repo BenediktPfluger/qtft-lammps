@@ -94,20 +94,49 @@ def test_input_has_segment_loop(tmp_path):
     p = Params(data_dir=str(tmp_path), run_name="ca")
     text = (build_run(p) / "rep_01" / "in.lammps").read_text()
     assert "variable        seg loop 13000" in text and "jump            SELF segment" in text
-    assert "fix             unbind all bond/break 10 1 0.0" in text
+    assert 'if "random == random" then &\n                "fix unbind all bond/break/random 10 1 v_p_off ' in text
+    assert 'if "random == longest" then &\n                "fix unbind all bond/break 10 1 0.0 prob ' in text
     assert "v_ca v_f v_k_on_s v_k_off_s v_n_broken" in text
     seeds = json.loads((tmp_path / "single" / "ca" / "params.json").read_text())["seeds"][0]
     assert "seed_break" in seeds
 
 
+def test_bond_break_toggle(tmp_path, monkeypatch):
+    assert Params().bond_break == "random"
+    assert any("bond_break" in m for lvl, m in Params(bond_break="all").check() if lvl == "ERROR")
+    assert Params.from_dict({}).bond_break == "longest"                          # runs from before the toggle
+    assert Params.from_dict({"bond_break": "random"}).bond_break == "random"
+    assert Params(bond_break="longest").auto_name() == Params().auto_name()       # no run-name tag
+
+    # the plugin is loaded only for "random" and only if lmp does not have the style built in
+    monkeypatch.setattr("qtft.build._lmp_help", lambda cmd: "")
+    plugin = 'if "1 == 1" then "plugin load '
+    texts = {m: (build_run(Params(bond_break=m, data_dir=str(tmp_path), run_name=m)) / "rep_01" / "in.lammps")
+             .read_text() for m in ("random", "longest")}
+    assert plugin in texts["random"] and plugin not in texts["longest"]
+    assert 'if "longest == longest" then &\n                "fix unbind all bond/break 10 1 0.0' in texts["longest"]
+    monkeypatch.setattr("qtft.build._lmp_help", lambda cmd: "... bond/break/random ...")
+    text = (build_run(Params(data_dir=str(tmp_path), run_name="builtin")) / "rep_01" / "in.lammps").read_text()
+    assert plugin not in text
+
+    # start() refuses a run whose plugin is missing
+    monkeypatch.setattr("qtft.build._lmp_help", lambda cmd: "")
+    monkeypatch.setattr("qtft.build.PLUGIN", tmp_path / "missing.so")
+    run = build_run(Params(data_dir=str(tmp_path), run_name="missing"))
+    with pytest.raises(FileNotFoundError, match="build.sh"):
+        start(run)
+    assert (run / "rep_01" / "status").read_text().strip() == "built"
+
+
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
-@pytest.mark.parametrize("rise", [0.0, 2e-3])
-def test_compressed_protocol_run(tmp_path, rise):
+@pytest.mark.parametrize("rise, method", [(0.0, "random"), (2e-3, "random"), (0.0, "longest")])
+def test_compressed_protocol_run(tmp_path, rise, method):
     # milliseconds instead of seconds and fast rates, so that bonds form and break within the test
     p = Params(n_qt=150, n_ft=600, box_length=500.0, equil_steps=200, output_every=500, traj_every=1000,
                t_baseline_s=2e-3, t_influx_s=4e-3, t_pumpout_s=6e-3, ca_tau_s=2e-3, ca_rise_s=rise,
                rate_update_every=1000,
-               k_on=2e-3, k_off_ca_per_s=1.0, k_off_free_per_s=2000.0, data_dir=str(tmp_path), run_name="ca")
+               k_on=2e-3, k_off_ca_per_s=1.0, k_off_free_per_s=2000.0, bond_break=method,
+               data_dir=str(tmp_path), run_name="ca")
     run = build_run(p)
     rep = run / "rep_01"
     # after the run: rebuild the special lists from the bonds; the energy must not change

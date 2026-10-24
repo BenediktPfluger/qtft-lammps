@@ -26,3 +26,7 @@ runs/
 
 # Claude Code project instructions (local only)
 CLAUDE.md
+
+# LAMMPS plugin build output (built locally with build.sh)
+lammps_plugins/*/build/
+lammps_plugins/*/*.so

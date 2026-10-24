@@ -21,9 +21,9 @@ conventions. Read this first when continuing the work.
 | Binding | `fix bond/create`, Qt–Ft only, R_bind = 40.5 nm, prob p_on = 1 − exp(−k_on f Δt) per step with the calmodulin loading f(t) (see Calcium control); k_on = 1.86·10⁻⁶ ns⁻¹ is the rate at full loading (f = 1) (10⁻⁶ × √(4.3/1.245): same kinetics as with the former k_QF, see Overlap and force constants; to be calibrated against experiment); max 60 bonds per Qt, 10 per Ft; loops allowed | contact reaction of the Collins–Kimball type (partially reactive surface at contact, see Binding model); difference to ReaDDy accepted: each atom bonds at most once per step, and only with a partner that also has it as its closest eligible partner |
 | Bond bookkeeping | `extra/bond/per/atom 60`, `extra/special/per/atom 1000` (LAMMPS reserves 2001 slots); `comm_modify cutoff` = max(2.5 r₀, RDF cutoff) + skin = 141.5 nm (skin 20) | bond/create keeps 1-2/1-3/1-4 neighbour lists and needs partners 2 bonds away as ghosts; actual need measured with `benchmark.special_need` |
 | Start | overlap-free random insertion (`create_atoms random … overlap`): Qt with 55 nm, then Ft with 40.5 nm; 5000 steps (2.5 ms) equilibration without binding | dilute system (φ ≈ 6 %), so the insertion is already close to an equilibrium fluid; only the contact pairs (overlap, needed for binding) are missing at the start: repulsion energy and pressure reach their plateau within ≈ 1000 steps (test 2026-10-20, 4000 Qt / 10 000 Ft, 20 000 steps), 5000 steps give a 5× margin at 0.5 % of a 10⁶-step production; the Ft–Ft start bias (≥ 40.5 instead of 26 nm) is erased (RMS displacement in 2.5 ms: Qt ≈ 55 nm, Ft ≈ 87 nm) |
-| Unbinding | `fix bond/break` every `break_every` = 10 steps with Rmax = 0 (every bond is a candidate), prob p_off = 1 − exp(−k_off(t) · break_every · Δt), k_off(t) = f k_off,Ca + (1 − f) k_off,free (see Calcium control) | the only built-in rate-based option; **limitation**: only the longest bond of an atom can break (see Calcium control), to be replaced by a custom fix |
-| Calcium control | every production follows a calcium protocol: baseline (Ca_rest) → influx (exponential rise to the plateau Ca_peak, 99 % after `ca_rise_s`; optoCRAC one-equation model) → exponential pump-out (τ); durations `t_baseline_s`, `t_influx_s`, `t_pumpout_s` (each may be 0, e.g. 0/30/0 = agglomeration at constant rates); the production runs in segments of `rate_update_every` steps that re-create the binding and unbinding fixes with the rates at the segment start | the agglomeration–deagglomeration cycle of the experiment (calcium influx, then pumping); all in one LAMMPS input, calcium computed inside LAMMPS from the step |
-| Seeds | per replica 6 independent seeds (placement Qt/Ft, Brownian Qt/Ft, binding, unbinding; binding and unbinding add the segment number) from `numpy.random.SeedSequence(master_seed)`, range 1…900 000 000 | the LAMMPS Marsaglia generator rejects larger seeds; runs are reproducible |
+| Unbinding | `bond_break = "random"` (default): `fix bond/break/random` (own LAMMPS plugin, `lammps_plugins/`) every `break_every` = 10 steps; every bond breaks independently with p_off = 1 − exp(−k_off(t) · break_every · Δt), k_off(t) = f k_off,Ca + (1 − f) k_off,free (see Calcium control), p_off evaluated at every attempt. `"longest"`: the built-in `fix bond/break` with Rmax = 0, p_off fixed per segment | a Poisson process per bond, as the model requires; the built-in `fix bond/break` lets only the longest bond of both atoms break (≈ 0.1 × k_off, coordination dependent; see Unbinding below), kept as an option for comparison with older runs |
+| Calcium control | every production follows a calcium protocol: baseline (Ca_rest) → influx (exponential rise to the plateau Ca_peak, 99 % after `ca_rise_s`; optoCRAC one-equation model) → exponential pump-out (τ); durations `t_baseline_s`, `t_influx_s`, `t_pumpout_s` (each may be 0, e.g. 0/30/0 = agglomeration at constant rates); the production runs in segments of `rate_update_every` steps that re-create the binding fix with k_on at the segment start (with `bond_break = "longest"` also the unbinding fix); with `"random"` k_off follows the calcium at every unbinding attempt | the agglomeration–deagglomeration cycle of the experiment (calcium influx, then pumping); all in one LAMMPS input, calcium computed inside LAMMPS from the step |
+| Seeds | per replica 6 independent seeds (placement Qt/Ft, Brownian Qt/Ft, binding, unbinding; binding adds the segment number, unbinding too with `bond_break = "longest"`) from `numpy.random.SeedSequence(master_seed)`, range 1…900 000 000 | the LAMMPS Marsaglia generator rejects larger seeds; runs are reproducible |
 
 ReaDDy is not used for validation; the LAMMPS model stands on its own.
 
@@ -84,7 +84,8 @@ pump-out (2.6·10⁸ steps); tests use small systems and short protocols.
 | 4 | structure (OVITO) and overlap analysis, figures, tables | merged |
 | 5 | FIB-SEM export, this document | merged |
 | 6 | parameter sweeps, walls, Collins–Kimball binding rate, calcium-controlled binding and unbinding | merged |
-| later | custom bond-breaking fix (`bond/break/random`), restart files for long runs, HPC cluster runs | open |
+| 7 | unbinding fix `bond/break/random` (LAMMPS plugin), `bond_break` toggle | merged |
+| later | restart files for long runs, HPC cluster runs, continuous k_on (the same for `fix bond/create`) | open |
 
 Open items: size `extra_special` from a long production run (`special_need`); compare the real run speed
 with the benchmark projection.
@@ -100,7 +101,10 @@ with the benchmark projection.
 - Recommended for the full protocol (10/30/90 s = 2.6·10⁸ steps): `output_every` = 2000 (1 ms; resolves the
   initial binding slope for `binding_rate`, ≈ 30 MB of thermo), `traj_every` = 2·10⁵ (100 ms, ≈ 3.4 GB for
   37 000 particles) or 10⁶ (0.5 s) for 240 000 particles, `rate_update_every` = 10⁵ (50 ms; Ca changes by
-  0.25 % per segment at τ = 20 s), `break_every` = 100 (p_break per attempt ≈ 5·10⁻⁵ at k_off,free = 1 s⁻¹).
+  0.25 % per segment at τ = 20 s), `break_every` = 10 (p_break per attempt ≈ 5·10⁻⁶ at k_off,free = 1 s⁻¹). Benchmark 2026-10-24 (state at the
+  bond peak of a 3 µm run, 675 Qt / 2700 Ft, 7905 bonds, 8 MPI processes, median of 4 rounds): unbinding at
+  every step costs 13–14 % (both methods), every 10 or 100 steps nothing measurable (3059 / 3134 steps/s with
+  `"random"`, 3055 without unbinding); `"random"` is not slower than `"longest"`.
   The defaults (1000 / 1000 / 20 000 / 10) suit the short test runs.
 
 ## Performance (local machine)
@@ -265,28 +269,47 @@ baseline binds weakly (k_on < 1 % of its maximum) and the few bonds live ~1 s; f
 near its maximum, but the 11 % unloaded calmodulin dominates unbinding even at the peak: k_off(peak) = 0.11 s⁻¹
 (bond lifetime ≈ 9 s), not 10⁻³ s⁻¹.
 
-**Segments.** `fix bond/create` and `fix bond/break` take a fixed probability, so the production runs in segments of
-`rate_update_every` steps (default 20 000 = 10 ms): each segment re-creates both fixes with the probabilities at its
-start and a new seed (seed + segment number). A phase boundary inside a segment takes effect at the next segment
-(warning in `check()`). The segment starts write "Inconsistent image flags" (bonds across the periodic boundary,
+**Segments.** `fix bond/create` (and `fix bond/break`) take a fixed probability, so the production runs in segments
+of `rate_update_every` steps (default 20 000 = 10 ms): each segment re-creates the binding fix (with
+`bond_break = "longest"` also the unbinding fix) with the probability at its start and a new seed (seed + segment
+number). A phase boundary inside a segment takes effect for these at the next segment (warning in `check()`).
+`fix bond/break/random` (`"random"`) is defined once for the whole production and evaluates p_off at every attempt,
+so unbinding needs no segments. `fix bond/create` counts the bonds per atom (for `maxbond_*`) only when it is
+created, so a bond broken within a segment still counts until the next segment (with both methods). The segment starts write "Inconsistent image flags" (bonds across the periodic boundary,
 harmless; the analysis uses the minimum image) and "Using fix bond/create … with fix bond/break may not work as
 expected" (≈ 2 log lines per segment, ≈ 26 000 lines for 130 s; not limited, so that other warnings stay
 visible). Checked: after a full protocol the special lists are
 consistent (energy unchanged after rebuilding them), the bond count in the thermo output equals `bonds.dump`, and
 no bond is duplicated.
 
-**Limitation of `fix bond/break` (to be replaced).** Every `break_every` steps each atom picks its *longest* bond as
+**Unbinding: limitation of `fix bond/break` (`bond_break = "longest"`).** Every `break_every` steps each atom picks its *longest* bond as
 its only candidate, and a bond breaks (with probability p_off) only if it is the longest bond of both atoms. With
 Rmax = 0 every bond is a candidate, but bonds of highly connected atoms break less often. Measured 2026-10-21
 (150 Qt / 600 Ft, 964 bonds, unbinding only): per-bond rate 0.37 / 0.27 / 0.17 / 0.12 / 0.09 × k_off for Qt with
 1–2 / 3–4 / 5–6 / 7–9 / ≥ 10 bonds (0.14 for all bonds; by Ft bonds 0.17 for 1, 0.07 for ≥ 4). Consequences:
 the effective k_off is much smaller than set, cluster cores (well-connected Qt) dissolve too slowly, so
 deagglomeration peels clusters from the outside, and stretched bonds break preferentially (no calibration with a
-single factor can remove this). The planned replacement is a custom LAMMPS fix `bond/break/random` (a plugin; a
-copy of `fix bond/break` that tests every bond independently with a probability that may be a variable).
-`fix bond/react` was tested and is unsuitable: its templates must match the exact number of bonds of both atoms
+single factor can remove this). `fix bond/react` was tested and is unsuitable: its templates must match the exact number of bonds of both atoms
 of the breaking bond (edge atoms are not modified), so every combination of Qt and Ft bond counts would need its
 own template (up to 60 × 10).
+
+**Unbinding: `fix bond/break/random` (`bond_break = "random"`, default).** A LAMMPS plugin in
+`lammps_plugins/bond_break_random/` (C++, based on `fix bond/break` of the installed version; built with
+`build.sh` against the LAMMPS source of the same version, loaded with `plugin load` unless `lmp` has the style built
+in): `fix ID group bond/break/random Nevery btype prob seed`, `prob` a number or an equal-style variable
+(`v_p_off`), evaluated at every attempt. Every bond (stored once with `newton_bond on`) is tested once per attempt
+with its own random number, an atom can lose several bonds in one attempt; the broken pairs are gathered from all
+MPI ranks, the special lists are updated as in `fix bond/break` (1-2 removed, 1-3/1-4 rebuilt), and the neighbour
+lists are rebuilt in the same step. Output vector: [1] broken in the last attempt, [2] since the fix was defined.
+Checked 2026-10-24 (150 Qt / 600 Ft): per-bond rate 0.97 ± 0.03 × k_off, flat over the coordination (Qt 1–2 …
+≥ 10 bonds: 0.91–1.17, Ft 1–3: 0.89–0.99; `"longest"` in the same test 0.15); decay 991 → 142 bonds (theory 134);
+during a pump-out in which k_off rises 345 → 1974 s⁻¹ within the segments, broken / expected = 0.99 / 1.01 / 1.01
+at 1 / 2 / 4 MPI processes (`"longest"` 0.06); with binding and breaking in the same steps (p up to 0.3): energy
+unchanged after rebuilding the special lists, bonds = created − broken, `bonds.dump` = thermo, no duplicates; the
+`"longest"` input reproduces the former one bit for bit. **Calibration:** with `"random"` k_off is the real rate
+per bond; runs with `"longest"` (all runs before 2026-10-24) had an effective k_off of ≈ 0.1 × the set value
+(coordination dependent), so `k_off_ca_per_s` and `k_off_free_per_s` must be recalibrated. Old `params.json` files
+(without `bond_break`) are read as `"longest"`.
 
 **Analysis.** `ensemble_stats` adds per replica the peaks of the bond count and the largest cluster and the
 deagglomeration half-times (`t_half_unbind_bonds_ms`, `t_half_unbind_largest_ms`: time after the end of the influx

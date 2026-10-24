@@ -84,8 +84,11 @@ class Params:
     ca_hill: float = 3.0             # Hill coefficient of the calmodulin loading
     k_off_ca_per_s: float = 1e-3     # unbinding rate of a bond with Ca-loaded calmodulin [1/s]
     k_off_free_per_s: float = 1.0    # unbinding rate of a bond with Ca-free calmodulin [1/s]
-    rate_update_every: int = 20_000  # segment length [steps]: k_on and k_off are updated every segment
-    break_every: int = 10            # unbinding attempts every N steps (fix bond/break)
+    rate_update_every: int = 20_000  # segment length [steps]: k_on is updated every segment ("longest": k_off too)
+    break_every: int = 10            # unbinding attempts every N steps
+    bond_break: str = "random"       # "random": every bond breaks independently, k_off follows f at every attempt
+                                     # (fix bond/break/random, lammps_plugins/); "longest": fix bond/break (only
+                                     # the longest bond of both atoms can break, k_off per segment)
 
     # --- run -----------------------------------------------------------------
     timestep: float = 500.0          # [ns]
@@ -328,6 +331,8 @@ class Params:
                               "the rise must be faster than the decay (k_act > 0)")]
         if min(self.k_off_ca_per_s, self.k_off_free_per_s) < 0 or self.break_every < 1:
             return [("ERROR", "k_off values must be >= 0 and break_every >= 1")]
+        if self.bond_break not in ("random", "longest"):
+            return [("ERROR", f"bond_break '{self.bond_break}' unknown: use 'random' or 'longest'")]
         if self.boundary not in ("periodic", "reflect", "harmonic"):
             return [("ERROR", f"boundary '{self.boundary}' unknown: use 'periodic', 'reflect' or 'harmonic'")]
         if not self.periodic and min(self.box) <= 2 * max(self.radius_qt, self.radius_ft):
@@ -365,7 +370,8 @@ class Params:
             out.append(("ERROR", f"the production ({self.prod_steps} steps) must be a whole number of segments "
                                  f"(rate_update_every = {self.rate_update_every})"))
         elif any(n % self.rate_update_every for n in self.phase_steps[:2]):
-            out.append(("WARNING", "a phase boundary falls inside a segment: rates change at the next segment"))
+            rates = "k_on changes" if self.bond_break == "random" else "rates change"
+            out.append(("WARNING", f"a phase boundary falls inside a segment: {rates} at the next segment"))
         if 0 < self.t_influx_s < self.ca_rise_s:
             out.append(("WARNING", f"the influx ({self.t_influx_s:g} s) is shorter than ca_rise_s "
                                    f"({self.ca_rise_s:g} s): calcium does not reach its plateau"))
@@ -422,7 +428,9 @@ class Params:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Params":
+        """Params of a stored run (params.json); runs from before bond_break existed used fix bond/break."""
         known = {f.name for f in fields(cls)}
+        data = {"bond_break": "longest", **data}
         return cls(**{k: v for k, v in data.items() if k in known})
 
     @classmethod

@@ -51,7 +51,7 @@ and the boundary (`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_ca10-30-90s_periodic`,
 
 | File | Content | Created by |
 |---|---|---|
-| `params.json` | **The record of the run**: all parameters, derived values (k_BT, γ, α, p, …), check results, seeds of every replica, git commit, creation time | Python: `build_run()` (control notebook, section 2) |
+| `params.json` | **The record of the run**: all parameters (including `bond_break`, the unbinding method; a file from before 2026-10-24 has none and is read as `"longest"`), derived values (k_BT, γ, α, p, …), check results, seeds of every replica, git commit, creation time | Python: `build_run()` (control notebook, section 2) |
 | `launcher.log` | Log of the background launcher: header (replicas, parallel slots, command); start of every replica; end or failure with wall time and count done; every minute a summary (elapsed, done/running/queued, estimated end) and one line per running replica (phase, step, %, speed, bonds); final summary. Follow it live with `tail -f launcher.log` | Python: `start()` (section 3) |
 | `launcher.pid` | Process ID of the launcher, used by `stop()` | Python: `start()` (background runs only) |
 

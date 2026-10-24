@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -31,6 +32,7 @@ from .read import last_thermo
 from .sweep import is_sweep, sweep_runs
 
 POLL_SECONDS = 2.0
+PLUGIN_LOAD = re.compile(r'^if "1 == 1" then "plugin load (.+)"$', re.MULTILINE)   # see template.lmp
 
 
 def _record(run_dir: Path) -> dict:
@@ -93,6 +95,11 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
     busy = [_rep_name(run_dir, r) for r in reps if _status(r) in ("queued", "running")]
     if busy:
         raise RuntimeError(f"replicas already queued/running: {busy}")
+    missing = sorted({so for rep in reps for so in PLUGIN_LOAD.findall((rep / "in.lammps").read_text())
+                      if not Path(so).exists()})
+    if missing:
+        raise FileNotFoundError(f"LAMMPS plugin not found: {missing}; build it with "
+                                "lammps_plugins/bond_break_random/build.sh (see README)")
     for rep in reps:
         _set_status(rep, "queued")
         (rep / "pid").unlink(missing_ok=True)          # pid file = replica has started

@@ -6,6 +6,9 @@
 # ---------------------------------------------------------------- 1. initialisation
 units           nano
 atom_style      bond
+# fix bond/break/random for bond_break = random (here: {{bond_break}}) from the plugin in lammps_plugins/,
+# unless it is built into lmp
+if "{{load_plugin}} == 1" then "plugin load {{plugin_path}}"
 boundary        {{boundary_flags}}   # p p p = periodic box, f f f = walls ({{boundary}})
 
 # ---------------------------------------------------------------- 2. box
@@ -184,7 +187,13 @@ variable        k_off_s equal "v_f*{{k_off_ca}} + (1 - v_f)*{{k_off_free}}"
 variable        p_on equal "1 - exp(-v_k_on_s*{{dt_s}}*{{bind_every}})"
 variable        p_off equal "1 - exp(-v_k_off_s*{{dt_s}}*{{break_every}})"
 
-# broken bonds, summed over the segments (the counter of fix bond/break restarts with every segment)
+# unbinding, bond_break = random: fix bond/break/random, defined once for the whole production; every
+# bond breaks independently with probability p_off, evaluated at every attempt, so k_off follows f(t)
+if "{{bond_break}} == random" then &
+                "fix unbind all bond/break/random {{break_every}} 1 v_p_off {{seed_break}}"
+
+# broken bonds, summed over the segments (bond_break = longest: the counter of fix bond/break restarts
+# with every segment; random: nb_prev stays 0)
 variable        nb_prev equal 0
 variable        n_broken equal v_nb_prev+f_unbind[2]
 thermo_style    custom step pe evdwl ebond c_pvir bonds &
@@ -198,13 +207,13 @@ thermo_style    custom step pe evdwl ebond c_pvir bonds &
 # fix bond/break (checked: consistent); the warnings are not limited, so that others stay visible
 thermo_modify   line yaml norm no flush yes
 
-# the production runs in segments of {{segment_steps}} steps; every segment re-creates the binding and
-# unbinding fixes with the probabilities at its start and a new seed:
+# the production runs in segments of {{segment_steps}} steps; every segment re-creates the binding fix
+# (bond_break = longest: also the unbinding fix) with the probability at its start and a new seed:
 # - fix bond/create: a Qt-Ft pair closer than R_bind bonds with probability p_on per attempt; each atom
 #   bonds at most once per attempt (with its closest eligible partner)
-# - fix bond/break with Rmax = 0: every bond is a candidate and breaks with probability p_off, BUT only
-#   the longest bond of each atom (and only if it is also the partner's longest) can break, so bonds of
-#   highly connected atoms break less often (see docs/decisions.md; to be replaced by a custom fix)
+# - bond_break = longest, fix bond/break with Rmax = 0: every bond is a candidate and breaks with
+#   probability p_off, BUT only the longest bond of each atom (and only if it is also the partner's
+#   longest) can break, so bonds of highly connected atoms break less often (see docs/decisions.md)
 variable        seg loop {{n_segments}}
 variable        seed_on equal ({{seed_bind}} + v_seg) % 900000000 + 1
 variable        seed_off equal ({{seed_break}} + v_seg) % 900000000 + 1
@@ -212,15 +221,17 @@ label           segment
 fix             bind all bond/create {{bind_every}} 1 2 {{r_bind}} 1 &
                 iparam {{maxbond_qt}} 1 jparam {{maxbond_ft}} 2 &
                 prob $(v_p_on:%.12g) $(v_seed_on:%.0f)
-fix             unbind all bond/break {{break_every}} 1 0.0 &
-                prob $(v_p_off:%.12g) $(v_seed_off:%.0f)
+if "{{bond_break}} == longest" then &
+                "fix unbind all bond/break {{break_every}} 1 0.0 prob $(v_p_off:%.12g) $(v_seed_off:%.0f)"
 if "${seg} < {{n_segments}}" then "run {{segment_steps}} post no" else "run {{segment_steps}}"
-variable        nb_prev equal $(v_n_broken:%.0f)
 unfix           bind
-unfix           unbind
+if "{{bond_break}} == longest" then &
+                "variable nb_prev equal $(v_n_broken:%.0f)" &
+                "unfix unbind"
 next            seg
 jump            SELF segment
-variable        n_broken equal ${nb_prev}           # the fix is gone; keep the final count
+if "{{bond_break}} == longest" then &
+                "variable n_broken equal ${nb_prev}"    # the fix is gone; keep the final count
 
 # ---------------------------------------------------------------- 12. final state
 write_data      final.data pair ij
