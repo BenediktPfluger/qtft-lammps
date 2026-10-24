@@ -120,7 +120,7 @@ Kinetic energy and temperature are not logged: they are meaningless in overdampe
 
 ## FIB-SEM export `rep_XX/fibsem/`
 
-Only after `fibsem_export_run(run_dir)` (analysis notebook, section 5).
+Only after `fibsem_export_run(run_dir)` (analysis notebook, section 6).
 
 | File | Content | Created by |
 |---|---|---|
@@ -154,7 +154,7 @@ regenerated from the replica files at any time.
 | `final_table.csv`, `final_table.tex` | Final-state table (bonds, clusters, sizes, fraction bound, half-time, Rg, Qt fraction) as CSV and LaTeX | Python: `make_report()` |
 | `bonds_timeseries.csv` | Bond count over time: step, time (µs, ms), mean, SD | Python: `make_report()` |
 | `report.json` | Settings used for the report | Python: `make_report()` |
-| `figures/` | All figures as PDF + SVG + PNG: `calcium` (4 × 2: calcium and loading f; rate constants k_on per contact pair and k_off per bond; binding and unbinding rates in bonds/s; apparent k_a; bonds and broken bonds; fraction bound; largest cluster; mean cluster size), `bond_rates` (bonds formed and broken per second, apparent k_a on a log scale; any calcium protocol), `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx and a calcium step, `ca_rise_s = 0`); every figure with several panels (`calcium`, `bond_rates`, `overview`, `kinetics`) also has each panel alone (89 mm) in `figures/<figure>/<panel>.*`. Largest and mean cluster size are drawn for all particles, Qt only and Ft only (one run). Dotted vertical lines mark the start and end of the calcium influx in every time panel. Time axes in ms, in s for runs of ≥ 10 s (also in `quicklook`) | Python: `make_report()` |
+| `figures/` | All figures as PDF + SVG + PNG: `calcium` (3 × 2: calcium and loading f; rate constants k_on per contact pair and k_off per bond; binding and unbinding rates in bonds/s; apparent k_a on a log scale; bonds and broken bonds; fraction bound), `overview`, `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx and a calcium step, `ca_rise_s = 0`); every figure with several panels (`calcium`, `overview`, `kinetics`) also has each panel alone (89 mm) in `figures/<figure>/<panel>.*`. Largest and mean cluster size (in `overview`) are drawn for all particles, Qt only and Ft only (one run). `fig_bond_rates()` draws the two rate panels alone, e.g. with coarser bins (`bond_rates(run_dir, bin_s=…)`); `make_report()` doesn't save it. Dotted vertical lines mark the start and end of the calcium influx in every time panel. Time axes in ms, in s for runs of ≥ 10 s (also in `quicklook`) | Python: `make_report()` |
 
 Comparisons of several runs (`compare_report(runs, out_dir)`) are written to the chosen `out_dir`:
 `comparison`, `kinetics`, `large_agglomerates` (PDF/SVG/PNG), the single panels in `comparison/` and `kinetics/`
@@ -178,7 +178,7 @@ above, except that the launcher files belong to the whole sweep.
 |---|---|---|
 | `sweep.json` | **The record of the sweep**: name, mode (`grid`), the listed values per parameter, base parameters, label and parameter values of every run, git commit, creation time | Python: `build_sweep()` |
 | `launcher.log`, `launcher.pid` | As for a run, for all replicas of the sweep (one queue); replicas are named `<label>/rep_XX` | Python: `start(sweep)` |
-| `sweep_results.csv` | One row per run: swept parameters, number of finished replicas, mean and SD over them of final fraction bound, bonds, largest cluster fraction, mean cluster size, half-times (bonds, Qt, Ft bound; ms), percolation time and number of percolated replicas | Python: `sweep_results()` (analysis notebook, section 6) |
+| `sweep_results.csv` | One row per run: swept parameters, number of finished replicas, mean and SD over them of final fraction bound, bonds, largest cluster fraction, mean cluster size, half-times (bonds, Qt, Ft bound; ms), percolation time and number of percolated replicas | Python: `sweep_results()` (analysis notebook, section 5) |
 
 ## Force-constant sweep `runs/tuning/`
 

@@ -561,17 +561,16 @@ def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: 
 
 
 def fig_calcium(run: RunData, out_dir: Path | None = None, traces=False, rates: dict | None = None):
-    """Calcium protocol and its effect (183 x 170 mm): calcium and calmodulin loading f; rate constants
+    """Calcium protocol and its effect (183 x 130 mm): calcium and calmodulin loading f; rate constants
     k_on per contact pair and k_off per bond; binding and unbinding rates (bonds formed and broken per
-    second) and the apparent k_a per calcium segment; bonds and broken bonds; fraction bound; largest
-    agglomerate and mean agglomerate size, each for all particles, Qt and Ft (mean +- SD over replicas);
-    panels also alone in calcium/. `rates`: a result of bond_rates() (computed here if not given)."""
+    second) and the apparent k_a per calcium segment; bonds and broken bonds; fraction bound (mean +- SD
+    over replicas); panels also alone in calcium/. Cluster sizes are in fig_overview.
+    `rates`: a result of bond_rates() (computed here if not given)."""
     rates = rates or bond_rates(run.run_dir, save=False)
     panels = [("calcium and loading", p_calcium, True), ("rate constants", p_rate_constants, True),
               *_rate_panels(rates),
-              ("bonds and broken bonds", p_bonds_broken, True), ("fraction bound", p_fraction_bound, True),
-              ("largest agglomerate", p_largest, True), ("mean agglomerate size", p_mean_size, True)]
-    return _panel_figure("calcium", panels, [run], out_dir, 4, 2, DOUBLE, MAX_HEIGHT, traces=traces,
+              ("bonds and broken bonds", p_bonds_broken, True), ("fraction bound", p_fraction_bound, True)]
+    return _panel_figure("calcium", panels, [run], out_dir, 3, 2, DOUBLE, 130 * MM, traces=traces,
                          titles=False, sharex=True)
 
 
@@ -693,8 +692,7 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     figs = out / "figures"
     rate = [fig_binding_rate(run, figs, rate=binding_rate(run_dir))] if run.p.t_influx_s > 0 and run.p.ca_rise_s == 0 else []  # + csv
     rates = bond_rates(run_dir)                                                                  # + csv
-    for f in (fig_calcium(run, figs, traces, rates), fig_bond_rates(run, figs, traces, rates),
-              fig_overview(run, figs, traces=traces), fig_kinetics([run], figs, traces=traces),
+    for f in (fig_calcium(run, figs, traces, rates), fig_overview(run, figs, traces=traces), fig_kinetics([run], figs, traces=traces),
               fig_large_count([run], figs, traces=traces), fig_overlap(run, figs), *rate):
         plt.close(f)
 

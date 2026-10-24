@@ -143,6 +143,6 @@ def test_compressed_protocol_run(tmp_path, rise):
     out = make_report(run, every=2, structure_analysis=False)
     assert (out / "figures" / "calcium.pdf").exists()
     assert (out / "figures" / "binding_rate.pdf").exists() == (rise == 0)      # only with a calcium step
-    assert (out / "figures" / "bond_rates.pdf").exists() and (out / "bond_rates.csv").exists()
+    assert (out / "bond_rates.csv").exists()
     final = pd.read_csv(out / "final_state.csv", index_col=0)
     assert {"bonds_peak", "t_half_unbind_bonds_ms"} <= set(final.index)
