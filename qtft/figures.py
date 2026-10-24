@@ -692,8 +692,9 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     figs = out / "figures"
     rate = [fig_binding_rate(run, figs, rate=binding_rate(run_dir))] if run.p.t_influx_s > 0 and run.p.ca_rise_s == 0 else []  # + csv
     rates = bond_rates(run_dir)                                                                  # + csv
-    for f in (fig_calcium(run, figs, traces, rates), fig_overview(run, figs, traces=traces), fig_kinetics([run], figs, traces=traces),
-              fig_large_count([run], figs, traces=traces), fig_overlap(run, figs), *rate):
+    for f in (fig_calcium(run, figs, traces, rates), fig_overview(run, figs, traces=traces),
+              fig_kinetics([run], figs, traces=traces), fig_large_count([run], figs, traces=traces),
+              fig_overlap(run, figs), *rate):
         plt.close(f)
 
     table = final_table(run)
