@@ -31,6 +31,7 @@ from scipy.spatial import cKDTree
 
 from .params import Params
 from .read import TYPE_IDS, dump_steps, read_bonds, read_dump
+from .remote import require_fetched
 
 PACKING = 0.64          # random close packing, for the ideal compact sphere (Rg_ideal)
 WALL_TOUCH = 5.0        # [nm] a particle surface this close to a wall touches it (percolation with walls)
@@ -172,6 +173,7 @@ def structure_ensemble(run_dir: str | Path, every: int = 10, save: bool = True) 
     """Structure metrics of all finished replicas: mean/SD per frame, per-replica traces and the
     pooled final-frame cluster table. Saved to <run>/analysis/structure_*.csv."""
     run_dir = Path(run_dir).expanduser()
+    require_fetched(run_dir)
     per_rep, finals = {}, []
     for rep in sorted(run_dir.glob("rep_*")):
         if (rep / "status").exists() and (rep / "status").read_text().strip() == "done":
@@ -331,6 +333,7 @@ def cluster_volumes_run(run_dir: str | Path, probe_xy_nm: float = PROBE_XY_NM, p
     influx (the last frame at or before it; the last frame without an influx). Saved to
     <run>/analysis/clusters_influx_end.csv."""
     run_dir = Path(run_dir).expanduser()
+    require_fetched(run_dir)
     p = Params.load(run_dir / "params.json")
     tables = []
     for rep in sorted(run_dir.glob("rep_*")):

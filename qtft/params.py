@@ -122,7 +122,7 @@ class Params:
     # --- execution -----------------------------------------------------------
     n_replicas: int = 1
     mpi_procs: int = 1               # MPI processes per replica
-    max_parallel: int | None = None  # replicas running at once; None -> cores // mpi_procs
+    max_parallel: int | None = None  # replicas running at once; None -> local: cores // mpi_procs, lrz: all
     master_seed: int = 12345
     data_dir: str = "runs"           # relative -> inside the repository (gitignored)
     group: str | None = None         # subfolder; None -> "single" (1 replica) or "ensemble"
@@ -420,6 +420,9 @@ class Params:
                                    "are not the final state"))
         if self.maxbond_qt < 1 or self.maxbond_ft < 1:
             out.append(("ERROR", "maxbond values must be >= 1"))
+        if self.executor == "lrz" and self.max_parallel and self.max_parallel < self.n_replicas:
+            out.append(("WARNING", f"on LRZ only {self.max_parallel} of {self.n_replicas} replicas run at once "
+                                   "(max_parallel); max_parallel=None runs all at once"))
         return out
 
     def raise_on_error(self) -> None:

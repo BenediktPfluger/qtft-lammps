@@ -18,6 +18,7 @@ from scipy.spatial import cKDTree
 
 from .params import EXECUTION_SETTINGS, N_A, NM3_TO_L, Params, data_path
 from .read import load_thermo, read_bonds, read_dump
+from .remote import require_fetched
 from .structure import percolation
 
 SKIP_COLUMNS = {"Step", "time_ms", "S/CPU", "CPULeft"}
@@ -104,6 +105,7 @@ def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
     Saved to <run>/analysis/: ensemble_stats.json, ensemble_timeseries.csv, final_state.csv.
     """
     run_dir = Path(run_dir).expanduser()
+    require_fetched(run_dir)
     p = Params.load(run_dir / "params.json")
     series = replica_series(run_dir)
     if not series:
@@ -247,6 +249,7 @@ def binding_rate(run_dir: str | Path, max_frac_bound: float = 0.1, save: bool = 
     counted and continuum [nm^3]; saved to <run>/analysis/binding_rate.csv.
     """
     run_dir = Path(run_dir).expanduser()
+    require_fetched(run_dir)
     p = Params.load(run_dir / "params.json")
     if p.t_influx_s <= 0:
         raise ValueError(f"{run_dir}: no influx phase, the binding rate is measured during the influx")
@@ -385,6 +388,7 @@ def update_index(data_dir: str | Path = "runs") -> pd.DataFrame:
             "created": record.get("created"),
             "status": ", ".join(f"{s}:{statuses.count(s)}" for s in sorted(set(statuses))),
             **{k: params.get(k) for k in INDEX_PARAMS},
+            "executor": params.get("executor", "local"),             # runs from before LRZ: local
             "changed vs defaults": "; ".join(changed),
             "git": (record.get("git") or {}).get("commit"),
         })

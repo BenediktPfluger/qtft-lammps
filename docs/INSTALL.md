@@ -245,9 +245,18 @@ CPU, i.e. 102 GB for 8 tasks with hyperthreads, the whole per-user limit of `ser
 (hyperthreads: 8 MPI tasks count as 16) and ~100 GB in total, e.g. 10 replicas × 8 processes at once.
 
 **Use it from the notebook.** Open the connection once with `ssh lrz` in a terminal, set
-`executor="lrz"` in the parameter cell of `control.ipynb`, then as usual `build_run` → `start` → `watch`;
-`fetch(run_dir)` downloads the results when the run is done. The run folder on LRZ is
-`~/qtft-lammps/runs/<group>/<run name>/` (the same path below the repository as here).
+`executor="lrz"` in the parameter cell of `control.ipynb` (and `max_parallel=None`, so that all replicas
+run at once; a number limits the job array, `check()` warns), then as usual `build_run` → `start` →
+`watch`. The run folder on LRZ is `~/qtft-lammps/runs/<group>/<run name>/` (the same path below the
+repository as here).
+
+**When the run has finished**, its outputs stay on LRZ: nothing is copied back by itself, and nothing
+runs in the background on this PC. While `watch`, `progress` or `summary` run, only `status`, `pid` and
+the new lines of the logs come over (every 30 s at most), enough for the progress table and `quicklook`
+(without the overlap panels). `fetch(run_dir)` downloads everything (≈ 360 MB per replica of the 3 µm
+run), whenever you want; until then `make_report`, `ensemble_stats`, the structure, cluster-volume and
+FIB-SEM analysis and `binding_rate` stop with "download the results first with fetch(run_dir)". If the
+ssh connection is lost, `watch` stops with a notice; the run continues on LRZ.
 
 ## Running simulations
 

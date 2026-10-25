@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from .params import Params
+from .remote import require_fetched
 from .structure import load_frames, particle_types
 
 BOND_TOLERANCE = 1.5          # a bond may be at most 1.5 x contact distance long
@@ -159,5 +160,6 @@ def _check_plot(table: pd.DataFrame, lower: np.ndarray, box, out: Path, periodic
 def fibsem_export_run(run_dir: str | Path, voxel_nm: float = 4.0) -> list[Path]:
     """Export every finished replica of a run."""
     run_dir = Path(run_dir).expanduser()
+    require_fetched(run_dir)
     return [fibsem_export(rep, voxel_nm) for rep in sorted(run_dir.glob("rep_*"))
             if (rep / "status").exists() and (rep / "status").read_text().strip() == "done"]

@@ -15,6 +15,7 @@ import numpy as np
 
 from .ensemble import update_index
 from .params import REPO_DIR, Params
+from .remote import LRZ
 
 TEMPLATE = REPO_DIR / "template.lmp"
 JOB_TEMPLATE = REPO_DIR / "job_template.slurm"
@@ -162,7 +163,6 @@ def build_run(p: Params, overwrite: bool = False) -> Path:
 def write_job(target: Path, p: Params, reps: list[Path]) -> Path:
     """job.slurm (from job_template.slurm) and replicas.txt for a run or sweep folder on LRZ: one task
     of a Slurm job array per replica, at most max_parallel at once."""
-    from .remote import LRZ
     (target / "replicas.txt").write_text("".join(f"{r.relative_to(target).as_posix()}\n" for r in reps))
     values = {**LRZ, "job_name": target.name, "mpi_procs": p.mpi_procs, "slurm_mem": p.slurm_mem,
               "slurm_time": p.slurm_time, "n_tasks": len(reps),

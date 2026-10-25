@@ -9,7 +9,9 @@ plugin. Setup (ssh, LAMMPS build): docs/INSTALL.md, section "LRZ Linux cluster".
 All commands go through ssh/rsync to the host LRZ["host"] in non-interactive mode (BatchMode): they
 use the connection opened once with `ssh lrz` in a terminal (ControlMaster, 2FA) and fail at once,
 with a hint, when it is closed. qtft.run hands runs with executor "lrz" to submit (start), sync
-(progress, summary, watch), cancel (stop) and fetch.
+(progress, summary, watch; fetch with everything=True) and cancel (stop). Nothing is copied back by
+itself: outputs stay on LRZ until fetch. require_fetched (local files only) stops the analysis of a
+run whose finished replicas are not downloaded yet.
 """
 
 from __future__ import annotations
@@ -34,7 +36,8 @@ LRZ = {
     "mail_type": "BEGIN,END,FAIL",                 # for a job array: once for the whole array
 }
 SSH_OPTIONS = ["-x", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20"]   # no X11, never ask for a password
-SMALL_FILES = ("status", "pid", "log.lammps", "lammps.out")              # what progress/watch fetch
+STATUS_FILES = ("status", "pid")                                         # progress/watch fetch these ...
+LOG_FILES = ("log.lammps", "lammps.out", "slurm-*.out")                  # ... and the new lines of these
 SYNC_SECONDS = 30.0      # progress/summary fetch the small files at most this often
 JOB_FILE = "slurm_job.json"
 _last_sync: dict[Path, float] = {}
@@ -73,25 +76,15 @@ def _rsync(*args: str) -> None:
 
 
 # ------------------------------------------------------------------ job bookkeeping
-def _params(target: Path) -> Params:
-    """Params of a run folder, or of the first run of a sweep folder (execution settings are shared)."""
-    from .sweep import is_sweep, sweep_runs
-    return Params.load((sweep_runs(target)[0] if is_sweep(target) else target) / "params.json")
-
-
-def _job(target: Path) -> tuple[dict, Path] | None:
+def job(target: Path) -> tuple[dict, Path] | None:
     """The Slurm job that runs the replicas of target (submitted for target itself or, for a run
-    inside a sweep, for the sweep) and the folder it was submitted from."""
+    inside a sweep, for the sweep): its slurm_job.json (job ID, cluster, folder on LRZ, submission
+    time) and the folder it was submitted from; None if never submitted."""
+    target = Path(target)
     for folder in (target, target.parent):
         if (folder / JOB_FILE).exists():
             return json.loads((folder / JOB_FILE).read_text()), folder
     return None
-
-
-def job_info(target: Path) -> dict | None:
-    """Job ID, Slurm cluster, folder on LRZ and submission time of target's job (None if not submitted)."""
-    found = _job(Path(target))
-    return found[0] if found else None
 
 
 def _tasks(job_dir: Path, target: Path) -> dict[int, Path]:
@@ -101,12 +94,12 @@ def _tasks(job_dir: Path, target: Path) -> dict[int, Path]:
     return {i: r for i, r in reps.items() if r == target or target in r.parents}
 
 
-def slurm_states(target: Path) -> dict[int, tuple[str, str]] | None:
-    """State and reason per array task of the job of target while it is in the Slurm queue ({} when it
-    has left the queue); None if target was never submitted."""
-    found = _job(target)
+def slurm_states(target: Path) -> dict[int, tuple[str, str]]:
+    """State and reason per array task of target's job while it is in the Slurm queue ({} when it has
+    left the queue or was never submitted)."""
+    found = job(target)
     if found is None:
-        return None
+        return {}
     info, job_dir = found
     out = ssh(f"squeue -M {info['cluster']} -h -r -j {info['job']} -o '%i|%T|%r' 2>/dev/null || true")
     states = {}
@@ -133,7 +126,7 @@ def _write_status(job_dir: Path, info: dict, changes: dict[Path, str]) -> None:
 def _close_lost_tasks(target: Path, fetch_small) -> None:
     """Replicas still queued/running whose array task has left Slurm without finishing (time limit, node
     failure, cancelled outside qtft) get status failed (cancelled: stopped), as sacct reports."""
-    found = _job(target)
+    found = job(target)
     if found is None:
         return
     info, job_dir = found
@@ -168,12 +161,12 @@ def _close_lost_tasks(target: Path, fetch_small) -> None:
 
 
 # ------------------------------------------------------------------ public: submit, sync, cancel, fetch
-def submit(target: Path) -> str:
-    """Copy the run or sweep folder to LRZ and submit its job.slurm; returns the Slurm job ID."""
+def submit(target: Path, p: Params) -> str:
+    """Copy the run or sweep folder to LRZ and submit its job.slurm; returns the Slurm job ID. p: the
+    parameters of the run (of a sweep: of any of its runs; the execution settings are shared)."""
     target = Path(target)
     if not (target / "job.slurm").exists():
         raise FileNotFoundError(f"{target / 'job.slurm'} missing: build the run with executor='lrz'")
-    p = _params(target)
     remote = remote_dir(target, p)
     ssh(f"test -x {LRZ['lmp']} || {{ echo 'LAMMPS not found on LRZ: {LRZ['lmp']} (docs/INSTALL.md, section 9)' >&2; exit 1; }}"
         f" && mkdir -p {remote}")
@@ -193,17 +186,26 @@ def sync(target: Path, force: bool = False, everything: bool = False) -> None:
     """Fetch status, pid, log.lammps and lammps.out of every replica (everything=True: all files) from
     LRZ; at most every SYNC_SECONDS unless force."""
     target = Path(target)
-    found = _job(target)
+    found = job(target)
     if found is None:
         return
     if not force and time.time() - _last_sync.get(target, 0.0) < SYNC_SECONDS:
         return
     info, job_dir = found
     rel = target.relative_to(job_dir).as_posix()
-    remote = info["remote"] if rel == "." else f"{info['remote']}/{rel}"
-    small = ["--include=*/", *[f"--include={f}" for f in SMALL_FILES], "--include=slurm-*.out", "--exclude=*"]
-    _rsync(*([] if everything else small), f"{LRZ['host']}:{remote}/", f"{target}/")
-    _close_lost_tasks(target, lambda: _rsync(*small, f"{LRZ['host']}:{remote}/", f"{target}/"))
+    source = f"{LRZ['host']}:{info['remote'] if rel == '.' else info['remote'] + '/' + rel}/"
+    only = lambda names: ["--include=*/", *[f"--include={n}" for n in names], "--exclude=*"]
+
+    def small():
+        _rsync(*only(STATUS_FILES), source, f"{target}/")
+        # logs only grow: transfer the new lines (start() removes local logs before a new submission)
+        _rsync("--append-verify", *only(LOG_FILES), source, f"{target}/")
+
+    if everything:
+        _rsync(source, f"{target}/")
+    else:
+        small()
+    _close_lost_tasks(target, small)
     _last_sync[target] = time.time()
 
 
@@ -215,7 +217,7 @@ def last_states(target: Path) -> dict[int, tuple[str, str]]:
 def cancel(target: Path) -> None:
     """Cancel the array tasks of target's replicas on LRZ; queued/running replicas get status stopped."""
     target = Path(target)
-    found = _job(target)
+    found = job(target)
     if found is None:
         return
     info, job_dir = found
@@ -227,6 +229,23 @@ def cancel(target: Path) -> None:
     _last_sync.pop(target, None)
 
 
-def fetch(target: Path) -> None:
-    """Download all files of target from LRZ (dumps, logs, ...); the folder then looks like a local run."""
-    sync(Path(target), force=True, everything=True)
+def unfetched(target: str | Path) -> list[Path]:
+    """Finished replicas of an LRZ run or sweep whose results are not downloaded yet (no final.data
+    here, which LAMMPS writes at the end and only fetch copies). Local files only, no ssh."""
+    from .sweep import is_sweep, sweep_runs
+    target = Path(target).expanduser()
+    if job(target) is None:
+        return []
+    runs = sweep_runs(target) if is_sweep(target) else [target]
+    return [rep for run in runs for rep in sorted(run.glob("rep_*"))
+            if (rep / "status").exists() and (rep / "status").read_text().strip() == "done"
+            and not (rep / "final.data").exists()]
+
+
+def require_fetched(target: str | Path) -> None:
+    """Stop the analysis of an LRZ run whose finished replicas are not downloaded yet."""
+    missing = unfetched(target)
+    if missing:
+        raise RuntimeError(f"LRZ run: {len(missing)} finished replica(s) not downloaded yet "
+                           f"({', '.join(r.name for r in missing[:4])}{', ...' if len(missing) > 4 else ''}); "
+                           "download the results first with fetch(run_dir)")

@@ -83,6 +83,11 @@ def _lrz(params: dict) -> bool:
     return params.get("executor", "local") == "lrz"
 
 
+def _on_lrz(path: Path) -> bool:
+    """A run or sweep built with executor="lrz" (the execution settings of a sweep's runs are shared)."""
+    return _lrz(_record(_runs(path)[0])["params"])
+
+
 def _n_parallel(params: dict, n_replicas: int | None = None) -> int:
     """Replicas running at once: max_parallel, else all cores (local) or all replicas (LRZ job array)."""
     if params["max_parallel"]:
@@ -94,7 +99,7 @@ def _n_parallel(params: dict, n_replicas: int | None = None) -> int:
 
 def _refresh(path: Path) -> None:
     """Runs on LRZ: fetch status files and logs from there first (at most every remote.SYNC_SECONDS)."""
-    if _lrz(_record(_runs(path)[0])["params"]):
+    if _on_lrz(path):
         remote.sync(path)
 
 
@@ -127,15 +132,19 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
         (rep / "pid").unlink(missing_ok=True)          # pid file = replica has started
     (run_dir / "launcher.pid").unlink(missing_ok=True)
     if _lrz(params):
+        p = Params.from_dict(params)
+        for rep in reps:              # logs of an earlier attempt: the new ones are fetched by appending
+            for name in ("log.lammps", "lammps.out"):
+                (rep / name).unlink(missing_ok=True)
         try:
-            job = remote.submit(run_dir)
+            job = remote.submit(run_dir, p)
         except Exception:
             for rep in reps:
                 _set_status(rep, "built")
             raise
         print(f"submitted to LRZ: Slurm job {job} ({len(reps)} replica(s) as a job array, "
               f"{params['mpi_procs']} MPI proc(s) each, {params['slurm_time']} limit): {run_dir}\n"
-              f"on LRZ: ~/{remote.remote_dir(run_dir, Params.from_dict(params))}\n"
+              f"on LRZ: ~/{remote.remote_dir(run_dir, p)}\n"
               "follow it with watch(run_dir); download the results with fetch(run_dir) when it is done")
         return
 
@@ -159,8 +168,8 @@ def stop(run_dir: str | Path) -> None:
     """Stop the launcher and all running replicas of a run or sweep. A single run inside a running
     sweep stops only its own replicas; the sweep continues with the others."""
     run_dir = Path(run_dir).expanduser()
-    if _lrz(_record(_runs(run_dir)[0])["params"]):
-        if remote.job_info(run_dir) is None:
+    if _on_lrz(run_dir):
+        if remote.job(run_dir) is None:
             print(f"not submitted to LRZ: {run_dir}")
             return
         remote.cancel(run_dir)
@@ -179,12 +188,11 @@ def fetch(run_dir: str | Path) -> None:
     looks like a local run (make_report etc. work as usual). Can be repeated; only changes are copied."""
     from .ensemble import update_index
     run_dir = Path(run_dir).expanduser()
-    params = _record(_runs(run_dir)[0])["params"]
-    if not _lrz(params):
+    if not _on_lrz(run_dir):
         print(f"{run_dir.name} runs locally (executor='local'): nothing to fetch")
         return
-    remote.fetch(run_dir)
-    update_index(params["data_dir"])
+    remote.sync(run_dir, force=True, everything=True)
+    update_index(_record(_runs(run_dir)[0])["params"]["data_dir"])
     s = summary(run_dir)
     size = sum(f.stat().st_size for f in run_dir.rglob("*") if f.is_file()) / 1e6
     print(f"fetched {run_dir} ({size:.0f} MB): {s['done']}/{s['replicas']} done, {s['failed']} failed, "
@@ -296,8 +304,9 @@ def summary(run_dir: str | Path) -> dict:
     n_par = _n_parallel(params, len(reps))
     slurm = None
     if _lrz(params):
-        job = remote.job_info(run_dir)
-        if job is not None:
+        found = remote.job(run_dir)
+        if found is not None:
+            job = found[0]
             started = started or datetime.fromisoformat(job["submitted"]).timestamp()
             states = [state for state, _ in remote.last_states(run_dir).values()]
             reasons = sorted({r for state, r in remote.last_states(run_dir).values() if state == "PENDING"})
@@ -375,7 +384,9 @@ def summary_lines(s: dict) -> list[str]:
 def watch(run_dir: str | Path, every: float = 10.0) -> None:
     """Live view of a run in the notebook, refreshed every `every` seconds until it has finished.
 
-    Interrupting (stop button) only stops the view; the run continues in the background.
+    Interrupting (stop button) only stops the view; the run continues in the background. Runs on LRZ:
+    the view ends with a notice if the ssh connection is lost (the run continues there); the results
+    are not downloaded (fetch).
     """
     from IPython.display import clear_output, display
 
@@ -393,3 +404,6 @@ def watch(run_dir: str | Path, every: float = 10.0) -> None:
             time.sleep(every)
     except KeyboardInterrupt:
         print("stopped watching; the run continues in the background")
+    except ConnectionError:
+        print("connection to LRZ lost; the run continues there. Log in again in a terminal with  "
+              f"ssh {remote.LRZ['host']}, then watch(run_dir)")

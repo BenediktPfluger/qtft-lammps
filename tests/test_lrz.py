@@ -8,7 +8,10 @@ import subprocess
 
 import pytest
 
-from qtft import Params, build_run, build_sweep, fetch, load_thermo, progress, start, stop, summary
+import pandas as pd
+
+from qtft import (Params, build_run, build_sweep, ensemble_stats, fetch, load_thermo, progress, start, stop,
+                  summary, watch)
 from qtft import remote
 from qtft.remote import LRZ, remote_dir
 
@@ -26,6 +29,10 @@ def test_lrz_params():
     assert not errors(executor="lrz", slurm_time="12:00:00")
     assert errors(executor="lrz", slurm_mem="4GB")
     assert not errors(executor="local", slurm_time="3d")                 # only checked for lrz
+    warnings = lambda **kw: [m for lvl, m in Params(**kw).check() if lvl == "WARNING" and "LRZ" in m]
+    assert warnings(executor="lrz", n_replicas=10, max_parallel=4) == [
+        "on LRZ only 4 of 10 replicas run at once (max_parallel); max_parallel=None runs all at once"]
+    assert not warnings(executor="lrz", n_replicas=10) and not warnings(executor="local", n_replicas=10, max_parallel=4)
     old = {k: v for k, v in Params().to_dict().items() if k not in ("executor", "slurm_time", "slurm_mem")}
     assert Params.from_dict(old).executor == "local"                     # params.json of older runs
     with pytest.raises(ValueError, match="execution settings"):
@@ -66,7 +73,8 @@ def test_lrz_job_files(tmp_path):
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_job_script_runs_replicas(tmp_path):
     # job.slurm as Slurm would run it, for array tasks 1 and 2; module and srun are stand-ins, and
-    # $HOME/src/lammps/build/lmp points to the local lmp
+    # $HOME/src/lammps/build/lmp points to the local lmp. The only test of a replica that fails inside
+    # LAMMPS (the fake-LRZ tests below run the same script, all replicas succeed there)
     p = Params(executor="lrz", n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(500),
                output_every=250, traj_every=500, bond_break="longest", n_replicas=2,
                data_dir=str(tmp_path / "data"), run_name="job")
@@ -185,10 +193,43 @@ def test_lrz_start_watch_fetch(tmp_path, fake_lrz):
     table = progress(run)
     assert list(table["status"]) == ["done", "done"] and (table["step"] == 500).all()
     assert (run / "rep_01/pid").read_text() == "777\n" and not (run / "rep_01/traj.dump").exists()
+    for name in ("log.lammps", "lammps.out"):         # logs are fetched by appending: same bytes
+        assert (run / "rep_01" / name).read_bytes() == (there / "rep_01" / name).read_bytes()
+
+    # before fetch: analysis stops with a hint; quicklook works from the logs, without overlap
+    assert remote.unfetched(run) == [run / "rep_01", run / "rep_02"]
+    with pytest.raises(RuntimeError, match=r"fetch\(run_dir\)"):
+        ensemble_stats(run)
+    import matplotlib
+    matplotlib.use("Agg")
+    from qtft import quicklook
+    texts = [t.get_text() for ax in quicklook(run).axes for t in ax.texts]
+    assert texts.count("LRZ run: fetch(run_dir)\nfor the overlap") == 3
 
     fetch(run)                                         # everything
     assert (run / "rep_01/traj.dump").read_bytes() == (there / "rep_01/traj.dump").read_bytes()
     assert load_thermo(run / "rep_02")["Step"].iloc[-1] == 500
+    assert remote.unfetched(run) == [] and ensemble_stats(run)["replicas"] == ["rep_01", "rep_02"]
+    index = pd.read_csv(tmp_path / "data/index.csv")
+    assert index.loc[index["run"] == "e2e", "executor"].tolist() == ["lrz"]
+
+    # submitted again: the local logs of the first attempt are replaced, not appended to
+    before = (there / "rep_01/log.lammps").read_bytes()
+    start(run)
+    remote._last_sync.clear()
+    summary(run)
+    assert (run / "rep_01/log.lammps").read_bytes() == (there / "rep_01/log.lammps").read_bytes()
+    assert len((run / "rep_01/log.lammps").read_bytes()) == pytest.approx(len(before), rel=0.01)
+
+
+def test_lrz_watch_connection_lost(tmp_path, fake_lrz, monkeypatch, capsys):
+    monkeypatch.setenv("FAKE_SBATCH_HOLD", "1")
+    run = build_run(_small(tmp_path, run_name="w"))
+    start(run)
+    monkeypatch.setenv("FAKE_LRZ_DOWN", "1")
+    remote._last_sync.clear()
+    watch(run, every=0.1)                              # ends with a notice, no exception
+    assert "connection to LRZ lost; the run continues there" in capsys.readouterr().out
 
 
 def test_lrz_queue_lost_tasks_and_cancel(tmp_path, fake_lrz, monkeypatch):

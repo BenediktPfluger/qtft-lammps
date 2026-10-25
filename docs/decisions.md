@@ -85,8 +85,15 @@ pump-out (2.6·10⁸ steps); tests use small systems and short protocols.
   reason); a replica whose task left Slurm without writing its end status (time limit, node failure,
   `scancel` by hand) gets `failed` (cancelled: `stopped`) from `sacct`, locally and on LRZ; `stop` cancels
   the job (for a run inside a sweep only its array tasks); `fetch` downloads everything, after which the
-  folder is a normal run folder for the analysis. Checked 2026-10-25 with a 2-replica run (2 processes
-  each): done in 10 s, fetched results byte-identical to the same replicas run locally, `make_report` works.
+  folder is a normal run folder for the analysis. Nothing is copied back by itself (you decide when to
+  download, ≈ 360 MB per replica of the 3 µm run); the analysis functions that need the trajectory stop
+  with a hint until `fetch` (a finished replica without `final.data` here, which only `fetch` copies).
+  The logs are fetched by appending the new lines (`rsync --append-verify`; `start` removes the local logs
+  of an earlier attempt first), the status files in full. `max_parallel` limits the job array too
+  (`%N`); `None` runs all replicas at once, and `check()` warns for an LRZ run with fewer than
+  `n_replicas`. `index.csv` lists the `executor` of every run. Checked 2026-10-25 with a 2-replica run (2
+  processes each): done in 10 s, fetched results byte-identical to the same replicas run locally,
+  `make_report` works.
 - Notebooks are committed without outputs (`nbstripout`).
 - Commits are authored as Benedikt Pfluger <benedikt.pfluger@tum.de>; no co-author or
   "generated with" lines in commits.

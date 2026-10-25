@@ -41,7 +41,7 @@ runs/
 
 | File | Content | Created by |
 |---|---|---|
-| `index.csv` | One line per single, ensemble and sweep run: group (`single`/`ensemble`/`sweeps/<name>`), name, date, status counts, key parameters, parameters that differ from the defaults, git commit | Python, automatic: `build_run()` and whenever a replica finishes |
+| `index.csv` | One line per single, ensemble and sweep run: group (`single`/`ensemble`/`sweeps/<name>`), name, date, status counts, key parameters, `executor` (`local` or `lrz`; added 2026-10-25, runs from before read as `local`), parameters that differ from the defaults, git commit | Python, automatic: `build_run()`, whenever a replica finishes, and `fetch()` |
 
 The folder and its `single/` / `ensemble/` subfolders are created by `build_run()` if they do not
 exist. The subfolder follows from `n_replicas`; the `group` parameter overrides it.
@@ -69,7 +69,7 @@ and the boundary (`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_ca10-30-90s_periodic`,
 |---|---|---|
 | `in.lammps` | Generated LAMMPS input of this replica, all numbers filled in. Can be rerun by hand: `lmp -in in.lammps` | Python: `build_run()` |
 | `status` | One word: `built` → `queued` → `running` → `done` / `failed` / `stopped`. Its last change is the end time of the replica. LRZ: written there by `job.slurm` and fetched by `progress`/`watch`; a task that left Slurm without an end status (time limit, node failure) is set to `failed` (cancelled: `stopped`) | Python: updated at each stage; LRZ: `job.slurm` |
-| `pid` | Process ID of the running LAMMPS process, used by `stop()` (LRZ: the Slurm job ID); written when the replica starts, so its time is the start time | Python: when the replica starts; LRZ: `job.slurm` |
+| `pid` | Process ID of the running LAMMPS process, used by `stop()` (LRZ: the Slurm job ID of the replica's array task, not the ID of the array); written when the replica starts, so its time is the start time | Python: when the replica starts; LRZ: `job.slurm` |
 | `lammps.out` | Terminal output of LAMMPS/MPI (screen output is switched off, so usually almost empty). Check here first if a run fails | Python: output of the started process |
 
 ### LAMMPS output
