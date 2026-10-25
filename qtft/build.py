@@ -17,6 +17,7 @@ from .ensemble import update_index
 from .params import REPO_DIR, Params
 
 TEMPLATE = REPO_DIR / "template.lmp"
+JOB_TEMPLATE = REPO_DIR / "job_template.slurm"
 PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 PLUGIN = REPO_DIR / "lammps_plugins" / "bond_break_random" / "bondbreakrandom.so"
 SEED_NAMES = ("seed_place_qt", "seed_place_ft", "seed_bd_qt", "seed_bd_ft", "seed_bind", "seed_break")
@@ -43,8 +44,8 @@ def _lmp_help(lmp_command: str) -> str:
 
 def plugin_to_load(p: Params) -> Path | None:
     """The plugin with fix bond/break/random if the run needs it and lmp does not have the style built in
-    (build it with lammps_plugins/bond_break_random/build.sh)."""
-    if p.bond_break != "random" or "bond/break/random" in _lmp_help(p.lmp_command):
+    (build it with lammps_plugins/bond_break_random/build.sh). LAMMPS on LRZ has the style built in."""
+    if p.bond_break != "random" or p.executor == "lrz" or "bond/break/random" in _lmp_help(p.lmp_command):
         return None
     return PLUGIN
 
@@ -142,6 +143,8 @@ def build_run(p: Params, overwrite: bool = False) -> Path:
         rep.mkdir()
         (rep / "in.lammps").write_text(render(template_values(p, i, s)))
         (rep / "status").write_text("built\n")
+    if p.executor == "lrz":
+        write_job(run_dir, p, sorted(run_dir.glob("rep_*")))
 
     record = {
         "params": p.to_dict(),
@@ -154,6 +157,19 @@ def build_run(p: Params, overwrite: bool = False) -> Path:
     (run_dir / "params.json").write_text(json.dumps(record, indent=2, default=str))
     update_index(p.data_dir)
     return run_dir
+
+
+def write_job(target: Path, p: Params, reps: list[Path]) -> Path:
+    """job.slurm (from job_template.slurm) and replicas.txt for a run or sweep folder on LRZ: one task
+    of a Slurm job array per replica, at most max_parallel at once."""
+    from .remote import LRZ
+    (target / "replicas.txt").write_text("".join(f"{r.relative_to(target).as_posix()}\n" for r in reps))
+    values = {**LRZ, "job_name": target.name, "mpi_procs": p.mpi_procs, "slurm_mem": p.slurm_mem,
+              "slurm_time": p.slurm_time, "n_tasks": len(reps),
+              "array_limit": f"%{p.max_parallel}" if p.max_parallel else ""}
+    job = target / "job.slurm"
+    job.write_text(render(values, JOB_TEMPLATE.read_text()))
+    return job
 
 
 def _fmt(val) -> str:

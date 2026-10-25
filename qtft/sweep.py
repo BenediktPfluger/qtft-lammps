@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .build import build_run, git_info
+from .build import build_run, git_info, write_job
 from .ensemble import ensemble_stats
 from .params import EXECUTION_SETTINGS, Params, box_label, data_path
 RESULTS = ["final_frac_bound", "final_Bonds", "final_largest_frac", "final_mean_size",
@@ -69,6 +69,9 @@ def build_sweep_from(p: Params, overrides: list[dict], labels: list[str], group:
         "created": datetime.datetime.now().isoformat(timespec="seconds"),
     }
     (sweep_dir / "sweep.json").write_text(json.dumps(record, indent=2, default=str))
+    if p.executor == "lrz":                     # one job array over the replicas of all runs, replica-major
+        reps = [rep for q in variants for rep in sorted(q.run_dir.glob("rep_*"))]
+        write_job(sweep_dir, p, sorted(reps, key=lambda r: r.name))
     for q in variants:
         for lvl, msg in q.check():
             print(f"{q.run_name}: {lvl}: {msg}")

@@ -68,6 +68,25 @@ pump-out (2.6·10⁸ steps); tests use small systems and short protocols.
   the parameters rather than from noise. All replicas of a sweep run through one launcher and one queue, at
   most `max_parallel` at once, replica-major (replica 1 of every variant first), so every variant gives a
   first result early. The force-constant sweep (`alpha_sweep`) uses the same mechanism.
+- Runs on the LRZ Linux cluster (`executor = "lrz"`, an execution setting: not in the run name, old runs
+  read as `"local"`): the run is built here as usual and runs there as one Slurm job array (`job.slurm` from
+  `job_template.slurm`, one task per replica, `replicas.txt`; a sweep is one array over all its replicas,
+  replica-major, at most `max_parallel` at once) in `serial_long` (7 days, 1 node per job), `mpi_procs` MPI
+  tasks, `slurm_time` (default 3 days, ≈ 2 × the expected 35 h of the 3 µm run) and `slurm_mem` (default
+  4G) per replica, email at begin, end and failure (once per array). The job writes the same `status` /
+  `pid` files as the local launcher. LAMMPS on LRZ is the same version with `fix bond/break/random` compiled
+  in, so the input loads no plugin; otherwise the input is identical to a local one, and the results were
+  byte-identical (2 and 8 processes). The folder on LRZ mirrors the local one: `~/qtft-lammps/runs/<group>/
+  <name>/`. Setup and the LRZ-specific job settings: `docs/INSTALL.md`, section 9. From the notebook, over
+  the SSH connection opened once in a terminal (non-interactive `ssh`/`rsync`, so a closed connection fails
+  at once with a hint instead of waiting for 2FA): `start` copies the folder (rsync) and submits `job.slurm`
+  (job ID in `slurm_job.json`); `progress`/`summary`/`watch` first fetch `status`, `pid`, `log.lammps`,
+  `lammps.out` and `slurm-*.out` (at most every 30 s) and show the Slurm state (running/pending with the
+  reason); a replica whose task left Slurm without writing its end status (time limit, node failure,
+  `scancel` by hand) gets `failed` (cancelled: `stopped`) from `sacct`, locally and on LRZ; `stop` cancels
+  the job (for a run inside a sweep only its array tasks); `fetch` downloads everything, after which the
+  folder is a normal run folder for the analysis. Checked 2026-10-25 with a 2-replica run (2 processes
+  each): done in 10 s, fetched results byte-identical to the same replicas run locally, `make_report` works.
 - Notebooks are committed without outputs (`nbstripout`).
 - Commits are authored as Benedikt Pfluger <benedikt.pfluger@tum.de>; no co-author or
   "generated with" lines in commits.

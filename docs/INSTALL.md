@@ -140,14 +140,14 @@ mpirun -np 4 lmp -in in.lj                       # MPI run, check the "Performan
 python -c "from lammps import lammps; l = lammps(); print(l.version()); l.close()"
 ```
 
-This project needs the packages **BROWNIAN, EXTRA-PAIR, MOLECULE and MC**
-(all included in the `most.cmake` preset). Check them with:
+This project needs the packages **BPM, BROWNIAN, EXTRA-PAIR, MOLECULE and MC**
+(all included in the `most.cmake` preset; BPM provides `compute nbond/atom`). Check them with:
 
 ```bash
-lmp -h | grep -A 30 "Installed packages" | grep -o -w -E "BROWNIAN|EXTRA-PAIR|MOLECULE|MC" | sort -u
+lmp -h | grep -A 30 "Installed packages" | grep -o -w -E "BPM|BROWNIAN|EXTRA-PAIR|MOLECULE|MC" | sort -u
 ```
 
-All four names must be printed.
+All five names must be printed.
 
 ## 7. Project setup (once, after cloning)
 
@@ -181,6 +181,74 @@ must be the same LAMMPS version as `lmp` (it checks this). The result,
 5. In the integrated terminal, run `conda activate lammps` before calling
    `lmp` or `mpirun`.
 
+## 9. LRZ Linux cluster (CoolMUC-4), once
+
+Runs with `Params(executor="lrz")` are built here and run on LRZ as a Slurm job array (`job.slurm`, one
+task per replica, partition `serial_long`, max. 7 days). LAMMPS on LRZ is a minimal build of the same
+version with `fix bond/break/random` compiled in (no plugin). Settings (host, folders, modules, email):
+`LRZ` in `qtft/remote.py`.
+
+**SSH with one 2FA login.** In WSL, `~/.ssh/config` (then `chmod 600 ~/.ssh/config`):
+
+```
+Host lrz
+    HostName cool.hpc.lrz.de
+    User <LRZ user ID>
+    ForwardX11 yes
+    ForwardX11Trusted yes
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%r@%h:%p
+    ControlPersist 8h
+```
+
+`ssh lrz` asks for password and 2FA once; for the next 8 hours `ssh lrz` / `scp … lrz:` / `rsync` reuse
+that connection without asking.
+
+**Build LAMMPS on LRZ** (on the login node, ~4 min). Use `gcc/15.2.0`: the Spack GCC modules (12.4–14.2)
+cannot compile `#include <mutex>` (their `include-fixed/pthread.h` does not match the system headers).
+Without conda (`conda deactivate`, if conda is installed there):
+
+```bash
+module load gcc/15.2.0 intel-mpi/2021.12.0 cmake/3.30.0
+git clone -b stable_30Sep2026 --depth 1 https://github.com/lammps/lammps.git ~/src/lammps
+# from WSL: copy the fix into the LAMMPS source, so that it is compiled in
+#   scp lammps_plugins/bond_break_random/fix_bond_break_random.{h,cpp} lrz:src/lammps/src/
+cd ~/src/lammps
+cmake -S cmake -B build -D CMAKE_BUILD_TYPE=Release -D CMAKE_CXX_FLAGS="-march=x86-64-v3" \
+  -D BUILD_MPI=on -D BUILD_OMP=off \
+  -D PKG_BPM=on -D PKG_BROWNIAN=on -D PKG_EXTRA-PAIR=on -D PKG_MC=on -D PKG_MOLECULE=on
+cmake --build build -j 4
+```
+
+`-march=x86-64-v3` (AVX2) instead of `native`: the login and compute nodes may differ. Use the tag of the
+local LAMMPS version (`lmp -h`): with the same version, LRZ and local runs give the same results.
+
+**Check it** — LAMMPS starts only inside a Slurm job (on the login node even `lmp -h` aborts with
+`PMI2_Job_GetId returned 14`):
+
+```bash
+srun -p cm4_inter -n 1 -t 00:05:00 ~/src/lammps/build/lmp -h | grep -c bond/break/random   # 1
+```
+
+A small input built locally with `executor="lrz"` gave, on 2 and on 8 MPI processes (`cm4_inter`,
+`serial_long`), byte-identical dumps to the same LAMMPS version built locally (2026-10-25). Speed in
+`serial_long` (Xeon Platinum 8380, shared node): ≈ 0.68 × this PC per process (peak state of the 3 µm run,
+8 processes: ≈ 1735 vs 2550 steps/s), so the 3 µm run (24 h here) takes ≈ 35 h there.
+
+**What the job script needs on LRZ** (all in `job_template.slurm`): `--clusters=serial
+--partition=serial_long --qos=cm4_serial_long` (the default QOS `cm4_serial` is refused: "Invalid qos
+specification"); `#!/bin/bash -l` (LRZ's base setup with the Intel MPI settings runs only in a login shell);
+`--export=NONE` plus `export SLURM_EXPORT_ENV=ALL` (otherwise `srun` starts LAMMPS with an empty
+environment); `srun --mpi=pmi2` (the serial cluster starts no PMI by default); `--mem` (default 6.4 GB per
+CPU, i.e. 102 GB for 8 tasks with hyperthreads, the whole per-user limit of `serial_long`; LAMMPS needs
+~150 MB per process, `slurm_mem` = 4G). Per-user limits of `serial_long`: 1 node per job, 192 CPUs
+(hyperthreads: 8 MPI tasks count as 16) and ~100 GB in total, e.g. 10 replicas × 8 processes at once.
+
+**Use it from the notebook.** Open the connection once with `ssh lrz` in a terminal, set
+`executor="lrz"` in the parameter cell of `control.ipynb`, then as usual `build_run` → `start` → `watch`;
+`fetch(run_dir)` downloads the results when the run is done. The run folder on LRZ is
+`~/qtft-lammps/runs/<group>/<run name>/` (the same path below the repository as here).
+
 ## Running simulations
 
 ```bash
@@ -208,6 +276,9 @@ OMP_NUM_THREADS=2 mpirun -np 4 lmp -sf omp -in in.myscript   # hybrid MPI + Open
 | `ImportError` / `liblammps.so` not found in Python | Build with `BUILD_SHARED_LIBS=on`, then re-run the `install-python` target |
 | CMake error about conflicting files in `src/` | `cd ~/src/lammps/src && make no-all purge`, then reconfigure |
 | `LAMMPS plugin not found` from `start()`, or `plugin load` fails | Build (or rebuild after a LAMMPS update) with `lammps_plugins/bond_break_random/build.sh` |
+| LRZ: `cannot convert '<brace-enclosed initializer list>' to 'unsigned int'` when building | Use `module load gcc/15.2.0` (see section 9), delete `build/` and configure again |
+| LRZ: `Invalid qos specification` from `sbatch` | `--qos=cm4_serial_long` for `serial_long` (in `job_template.slurm`) |
+| LRZ: `PMI server not found` or `PMI2_Job_GetId returned 14` | LAMMPS was started outside Slurm, or `srun` without `--mpi=pmi2` |
 
 ## Updating LAMMPS
 

@@ -20,6 +20,7 @@ runs/
 │   └── <run name>/
 │       ├── params.json
 │       ├── launcher.log, launcher.pid
+│       ├── job.slurm, replicas.txt, slurm_job.json, slurm-*.out   only with executor = "lrz"
 │       ├── rep_01/ … rep_NN/      one folder per replica
 │       │   ├── in.lammps, status, pid, lammps.out
 │       │   ├── log.lammps
@@ -30,6 +31,7 @@ runs/
 ├── sweeps/                        only after build_sweep()
 │   └── <sweep name>/
 │       ├── sweep.json, launcher.log, launcher.pid, sweep_results.csv
+│       ├── job.slurm, replicas.txt, slurm_job.json   only with executor = "lrz" (one job array for the whole sweep)
 │       └── <label>/               one run folder per combination (structure as above)
 ├── benchmark/                     only after benchmark()
 └── tuning/                        only after alpha_sweep() (same structure as sweeps/)
@@ -54,6 +56,10 @@ and the boundary (`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_ca10-30-90s_periodic`,
 | `params.json` | **The record of the run**: all parameters (including `bond_break`, the unbinding method; a file from before 2026-10-24 has none and is read as `"longest"`), derived values (k_BT, γ, α, p, …), check results, seeds of every replica, git commit, creation time | Python: `build_run()` (control notebook, section 2) |
 | `launcher.log` | Log of the background launcher: header (replicas, parallel slots, command); start of every replica; end or failure with wall time and count done; every minute a summary (elapsed, done/running/queued, estimated end) and one line per running replica (phase, step, %, speed, bonds); final summary. Follow it live with `tail -f launcher.log` | Python: `start()` (section 3) |
 | `launcher.pid` | Process ID of the launcher, used by `stop()` | Python: `start()` (background runs only) |
+| `job.slurm` | Only with `executor = "lrz"`: Slurm job script for LRZ, one array task per replica (cluster/partition/QOS, `mpi_procs` tasks, `slurm_mem`, `slurm_time`, email; runs LAMMPS with `srun` and writes `status` and `pid` like the local launcher). Submit from the run folder on LRZ: `sbatch job.slurm` | Python: `build_run()` / `build_sweep()`, from `job_template.slurm` |
+| `replicas.txt` | Only with `executor = "lrz"`: the replica folders, one per line (relative; array task i runs line i) | Python: `build_run()` / `build_sweep()` |
+| `slurm_job.json` | Only with `executor = "lrz"`, after `start()`: Slurm job ID, cluster, folder on LRZ (relative to the LRZ home, `qtft-lammps/runs/<group>/<name>`) and submission time; used by `progress`, `watch`, `stop`, `fetch`. A run of a sweep started as a whole uses the sweep's file | Python: `start()` (`remote.submit`) |
+| `slurm-<job>_<task>.out` | Output of the job script of one array task (LAMMPS writes to `rep_XX/lammps.out`); fetched from LRZ with the status files | Slurm on LRZ |
 
 ## Replica folder `rep_XX/`
 
@@ -62,8 +68,8 @@ and the boundary (`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_ca10-30-90s_periodic`,
 | File | Content | Created by |
 |---|---|---|
 | `in.lammps` | Generated LAMMPS input of this replica, all numbers filled in. Can be rerun by hand: `lmp -in in.lammps` | Python: `build_run()` |
-| `status` | One word: `built` → `queued` → `running` → `done` / `failed` / `stopped`. Its last change is the end time of the replica | Python: updated at each stage |
-| `pid` | Process ID of the running LAMMPS process, used by `stop()`; written when the replica starts, so its time is the start time | Python: when the replica starts |
+| `status` | One word: `built` → `queued` → `running` → `done` / `failed` / `stopped`. Its last change is the end time of the replica. LRZ: written there by `job.slurm` and fetched by `progress`/`watch`; a task that left Slurm without an end status (time limit, node failure) is set to `failed` (cancelled: `stopped`) | Python: updated at each stage; LRZ: `job.slurm` |
+| `pid` | Process ID of the running LAMMPS process, used by `stop()` (LRZ: the Slurm job ID); written when the replica starts, so its time is the start time | Python: when the replica starts; LRZ: `job.slurm` |
 | `lammps.out` | Terminal output of LAMMPS/MPI (screen output is switched off, so usually almost empty). Check here first if a run fails | Python: output of the started process |
 
 ### LAMMPS output

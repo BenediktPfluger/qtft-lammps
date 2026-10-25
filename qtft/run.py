@@ -10,6 +10,10 @@ built -> queued -> running -> done | failed | stopped.
 
 All functions also take a sweep folder (with sweep.json, see sweep.py): its runs share one launcher
 and one queue, so at most `max_parallel` replicas of the whole sweep run at once.
+
+Runs built with executor="lrz" run on the LRZ Linux cluster instead (qtft/remote.py): start submits
+them as a Slurm job array, progress/summary/watch first fetch the status files and logs from there,
+stop cancels the job, fetch downloads all results.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from . import remote
 from .params import Params
 from .read import last_thermo
 from .sweep import is_sweep, sweep_runs
@@ -74,8 +79,23 @@ def _set_status(rep: Path, status: str) -> None:
     (rep / "status").write_text(status + "\n")
 
 
-def _n_parallel(params: dict) -> int:
-    return params["max_parallel"] or max(1, (os.cpu_count() or 1) // params["mpi_procs"])
+def _lrz(params: dict) -> bool:
+    return params.get("executor", "local") == "lrz"
+
+
+def _n_parallel(params: dict, n_replicas: int | None = None) -> int:
+    """Replicas running at once: max_parallel, else all cores (local) or all replicas (LRZ job array)."""
+    if params["max_parallel"]:
+        return params["max_parallel"]
+    if _lrz(params) and n_replicas:
+        return n_replicas
+    return max(1, (os.cpu_count() or 1) // params["mpi_procs"])
+
+
+def _refresh(path: Path) -> None:
+    """Runs on LRZ: fetch status files and logs from there first (at most every remote.SYNC_SECONDS)."""
+    if _lrz(_record(_runs(path)[0])["params"]):
+        remote.sync(path)
 
 
 def _command(params: dict) -> list[str]:
@@ -91,6 +111,8 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
     wait=True)."""
     run_dir = Path(run_dir).expanduser()
     params = _record(_runs(run_dir)[0])["params"]
+    if _lrz(params) and wait:
+        raise ValueError("wait=True runs only locally; follow an LRZ run with watch(run_dir)")
     reps = _all_replicas(run_dir)
     busy = [_rep_name(run_dir, r) for r in reps if _status(r) in ("queued", "running")]
     if busy:
@@ -104,6 +126,18 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
         _set_status(rep, "queued")
         (rep / "pid").unlink(missing_ok=True)          # pid file = replica has started
     (run_dir / "launcher.pid").unlink(missing_ok=True)
+    if _lrz(params):
+        try:
+            job = remote.submit(run_dir)
+        except Exception:
+            for rep in reps:
+                _set_status(rep, "built")
+            raise
+        print(f"submitted to LRZ: Slurm job {job} ({len(reps)} replica(s) as a job array, "
+              f"{params['mpi_procs']} MPI proc(s) each, {params['slurm_time']} limit): {run_dir}\n"
+              f"on LRZ: ~/{remote.remote_dir(run_dir, Params.from_dict(params))}\n"
+              "follow it with watch(run_dir); download the results with fetch(run_dir) when it is done")
+        return
 
     cmd = [sys.executable, "-m", "qtft.launcher", str(run_dir)]
     pkg_root = str(Path(__file__).resolve().parent.parent)
@@ -125,12 +159,36 @@ def stop(run_dir: str | Path) -> None:
     """Stop the launcher and all running replicas of a run or sweep. A single run inside a running
     sweep stops only its own replicas; the sweep continues with the others."""
     run_dir = Path(run_dir).expanduser()
+    if _lrz(_record(_runs(run_dir)[0])["params"]):
+        if remote.job_info(run_dir) is None:
+            print(f"not submitted to LRZ: {run_dir}")
+            return
+        remote.cancel(run_dir)
+        print(f"cancelled on LRZ: {run_dir}")
+        return
     _kill(run_dir / "launcher.pid")
     for rep in _all_replicas(run_dir):
         if _status(rep) in ("queued", "running"):
             _kill(rep / "pid")
             _set_status(rep, "stopped")
     print(f"stopped: {run_dir}")
+
+
+def fetch(run_dir: str | Path) -> None:
+    """Download all results of an LRZ run or sweep (dumps, logs, ...) into the local folder, which then
+    looks like a local run (make_report etc. work as usual). Can be repeated; only changes are copied."""
+    from .ensemble import update_index
+    run_dir = Path(run_dir).expanduser()
+    params = _record(_runs(run_dir)[0])["params"]
+    if not _lrz(params):
+        print(f"{run_dir.name} runs locally (executor='local'): nothing to fetch")
+        return
+    remote.fetch(run_dir)
+    update_index(params["data_dir"])
+    s = summary(run_dir)
+    size = sum(f.stat().st_size for f in run_dir.rglob("*") if f.is_file()) / 1e6
+    print(f"fetched {run_dir} ({size:.0f} MB): {s['done']}/{s['replicas']} done, {s['failed']} failed, "
+          f"{s['running']} running, {s['queued']} queued")
 
 
 def _kill(pid_file: Path) -> None:
@@ -149,8 +207,13 @@ def progress(run_dir: str | Path) -> pd.DataFrame:
     (setup, particle insertion). For a sweep: one table with a (run, replica) index.
     """
     run_dir = Path(run_dir).expanduser()
+    _refresh(run_dir)
+    return _progress(run_dir)
+
+
+def _progress(run_dir: Path) -> pd.DataFrame:
     if is_sweep(run_dir):
-        return pd.concat({r.name: progress(r) for r in _runs(run_dir)}, names=["run", "replica"])
+        return pd.concat({r.name: _progress(r) for r in _runs(run_dir)}, names=["run", "replica"])
     params = _record(run_dir)["params"]
     rows = []
     for rep in _replicas(run_dir):
@@ -219,6 +282,7 @@ def summary(run_dir: str | Path) -> dict:
     and fills the parallel slots with the queued replicas.
     """
     run_dir = Path(run_dir).expanduser()
+    _refresh(run_dir)
     runs = _runs(run_dir)
     params = _record(runs[0])["params"]
     run_params = {r: _record(r)["params"] for r in runs}
@@ -229,6 +293,16 @@ def summary(run_dir: str | Path) -> dict:
     starts = [(rep / "pid").stat().st_mtime for rep in reps if (rep / "pid").exists()]
     launcher_pid = _launcher_pid(run_dir)
     started = launcher_pid.stat().st_mtime if launcher_pid.exists() else min(starts, default=None)
+    n_par = _n_parallel(params, len(reps))
+    slurm = None
+    if _lrz(params):
+        job = remote.job_info(run_dir)
+        if job is not None:
+            started = started or datetime.fromisoformat(job["submitted"]).timestamp()
+            states = [state for state, _ in remote.last_states(run_dir).values()]
+            reasons = sorted({r for state, r in remote.last_states(run_dir).values() if state == "PENDING"})
+            slurm = {"job": job["job"], "running": states.count("RUNNING"), "pending": states.count("PENDING"),
+                     "reasons": reasons}
 
     finished = [(rep / "status").stat().st_mtime - (rep / "pid").stat().st_mtime
                 for rep in reps if status[rep] == "done" and (rep / "pid").exists()]
@@ -247,7 +321,7 @@ def summary(run_dir: str | Path) -> dict:
     eta = None
     if duration is not None:
         slots = [duration if t is None else t for t in left_running]
-        slots += [0.0] * max(0, _n_parallel(params) - len(slots))
+        slots += [0.0] * max(0, n_par - len(slots))
         for _ in range(counts["queued"]):
             i = slots.index(min(slots))
             slots[i] += duration
@@ -258,10 +332,11 @@ def summary(run_dir: str | Path) -> dict:
     return {
         "run": run_dir.name, "group": run_dir.parent.name, "sweep": is_sweep(run_dir),
         "runs": len(runs), "replicas": len(reps),
-        "parallel": _n_parallel(params), "mpi_procs": params["mpi_procs"], **counts,
+        "parallel": n_par, "mpi_procs": params["mpi_procs"], **counts,
         "started": started, "elapsed": ((end or now) - started) if started else None,
         "eta": eta if active else None, "finished": not active, "end": end,
-        "launcher_alive": _alive(launcher_pid),
+        "launcher_alive": None if _lrz(params) else _alive(launcher_pid),
+        "slurm": slurm,
     }
 
 
@@ -278,6 +353,10 @@ def summary_lines(s: dict) -> list[str]:
     if s["stopped"]:
         state += f" · {s['stopped']} stopped"
     lines.append(state)
+    if s.get("slurm") and not s["finished"] and s["slurm"]["running"] + s["slurm"]["pending"]:
+        sl = s["slurm"]
+        why = f" ({', '.join(sl['reasons'])})" if sl["reasons"] else ""
+        lines.append(f"LRZ Slurm job {sl['job']}: {sl['running']} running, {sl['pending']} pending{why}")
     if s["finished"]:
         lines.append(f"finished {clock(s['end'])}: {s['done']} done, {s['failed']} failed"
                      + (f", {s['stopped']} stopped" if s["stopped"] else "")
@@ -308,6 +387,8 @@ def watch(run_dir: str | Path, every: float = 10.0) -> None:
             print("\n".join(summary_lines(s)) + "\n")
             display(progress(run_dir))
             if s["finished"] or s["launcher_alive"] is False:
+                if s.get("slurm"):
+                    print("download the results with fetch(run_dir)")
                 return
             time.sleep(every)
     except KeyboardInterrupt:

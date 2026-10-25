@@ -16,6 +16,7 @@ import json
 import math
 import numbers
 import os
+import re
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
@@ -30,7 +31,18 @@ REPO_DIR = Path(__file__).resolve().parent.parent
 # settings that do not change the physics: shared by all runs of a sweep (not sweepable) and
 # ignored when listing or labelling parameter differences
 EXECUTION_SETTINGS = {"n_replicas", "mpi_procs", "max_parallel", "master_seed", "data_dir", "group",
-                      "run_name", "lmp_command", "mpirun_command"}
+                      "run_name", "lmp_command", "mpirun_command", "executor", "slurm_time", "slurm_mem"}
+EXECUTORS = ("local", "lrz")
+SLURM_MAX_DAYS = 7      # time limit of the LRZ partition serial_long
+
+
+def slurm_days(time: str) -> float | None:
+    """A Slurm time limit "D-HH:MM:SS" or "HH:MM:SS" in days; None if it has another form."""
+    m = re.fullmatch(r"(?:(\d+)-)?(\d+):(\d\d):(\d\d)", time)
+    if not m:
+        return None
+    d, h, mi, sec = (int(x or 0) for x in m.groups())
+    return d + (h + (mi + sec / 60) / 60) / 24
 
 
 def data_path(data_dir: str | Path = "runs") -> Path:
@@ -117,6 +129,9 @@ class Params:
     run_name: str | None = None      # None -> generated from the parameters
     lmp_command: str = "lmp"
     mpirun_command: str = "mpirun --bind-to none"   # no core pinning: replicas run side by side
+    executor: str = "local"          # "local": this computer; "lrz": Slurm job on the LRZ Linux cluster (qtft/remote.py)
+    slurm_time: str = "3-00:00:00"   # lrz: time limit per replica [D-HH:MM:SS], at most 7 days
+    slurm_mem: str = "4G"            # lrz: memory per replica (~150 MB per MPI process are used)
 
     # ---------------------------------------------------------------- derived
     @property
@@ -339,6 +354,15 @@ class Params:
             return [("ERROR", "k_off values must be >= 0 and break_every >= 1")]
         if self.bond_break not in ("random", "longest"):
             return [("ERROR", f"bond_break '{self.bond_break}' unknown: use 'random' or 'longest'")]
+        if self.executor not in EXECUTORS:
+            return [("ERROR", f"executor '{self.executor}' unknown: use 'local' or 'lrz'")]
+        if self.executor == "lrz":
+            days = slurm_days(self.slurm_time)
+            if days is None or not 0 < days <= SLURM_MAX_DAYS:
+                return [("ERROR", f"slurm_time '{self.slurm_time}' must be D-HH:MM:SS or HH:MM:SS, "
+                                  f"at most {SLURM_MAX_DAYS} days")]
+            if not re.fullmatch(r"\d+[KMGT]?", self.slurm_mem):
+                return [("ERROR", f"slurm_mem '{self.slurm_mem}' must be a number with K, M, G or T, e.g. 4G")]
         if self.boundary not in ("periodic", "reflect", "harmonic"):
             return [("ERROR", f"boundary '{self.boundary}' unknown: use 'periodic', 'reflect' or 'harmonic'")]
         if not self.periodic and min(self.box) <= 2 * max(self.radius_qt, self.radius_ft):

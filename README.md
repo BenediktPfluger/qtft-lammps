@@ -45,6 +45,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `qtft/params.py` | all parameters with defaults, derived values (γ = k_BT/D, α, p, …) and checks |
 | `qtft/build.py` | fills the template → `rep_XX/in.lammps`, writes `params.json`, derives seeds |
 | `qtft/run.py`, `qtft/launcher.py` | start runs or whole sweeps in the background (one queue, at most `max_parallel` replicas at once), live progress (`watch`, `launcher.log`), stop |
+| `qtft/remote.py`, `job_template.slurm` | runs on the LRZ Linux cluster (`Params(executor="lrz")`): LRZ settings (host, folders, Slurm partition, modules, email), the Slurm job script (one array task per replica), and submit / sync / cancel / `fetch` over SSH, used by `start`, `watch`, `stop` (setup: `docs/INSTALL.md`, section 9) |
 | `qtft/read.py` | readers for `log.lammps` (YAML thermo), dumps, `rdf.dat`, histograms |
 | `qtft/quicklook.py` | quick overview plot of a run: thermo time series, potential energy, virial pressure, mean overlap per pair family |
 | `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, association rate k_a (`binding_rate`, measured and Collins–Kimball; needs a calcium step), bond formation and breaking rates and apparent k_a over time (`bond_rates`, any protocol), `index.csv` of all runs, comparison of runs |
