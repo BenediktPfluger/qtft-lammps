@@ -194,6 +194,12 @@ class Params:
         return self.t_baseline_s + self.t_influx_s
 
     @property
+    def influx_end_step(self) -> int:
+        """Production step at the end of the influx, where the agglomerates are analysed (cluster size,
+        volume and coordination distributions); the run end if there is no influx."""
+        return sum(self.phase_steps[:2]) if self.t_influx_s > 0 else self.prod_steps
+
+    @property
     def ca_rate_on_per_s(self) -> float:
         """Relaxation rate of the rise, lambda_on = ln(100) / ca_rise_s [1/s] (inf for a step)."""
         return math.log(100) / self.ca_rise_s if self.ca_rise_s > 0 else math.inf
@@ -380,6 +386,9 @@ class Params:
                                    "the rate updates do not resolve the rise"))
         if self.t_baseline_s > 0 and self.t_influx_s > 0 and self.phase_steps[0] % self.traj_every:
             out.append(("WARNING", "the influx start is not a traj_every step: binding_rate needs a frame there"))
+        if self.t_influx_s > 0 and self.influx_end_step % self.traj_every:
+            out.append(("WARNING", "the influx end is not a traj_every step: the cluster distributions use the "
+                                   "last frame before it"))
         if self.traj_every % self.output_every:
             out.append(("ERROR", "traj_every must be a multiple of output_every"))
         elif self.prod_steps % self.traj_every:

@@ -18,11 +18,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import MultipleLocator, NullFormatter
 
 from .ensemble import TO_PER_M_S, binding_rate, bond_rates, cached_stats, ensemble_stats
 from .params import Params
 from .read import read_histo
+from .structure import CLUSTER_MIN, cluster_volumes_run
 
 MM = 1 / 25.4
 SINGLE, DOUBLE, MAX_HEIGHT = 89 * MM, 183 * MM, 170 * MM
@@ -56,8 +57,9 @@ class RunData:
     p: Params
     stats: dict
     structure: pd.DataFrame | None = None
-    coord_final: dict = field(default_factory=dict)    # {"Qt": Series, "Ft": Series} mean count per replica
+    coord_stim: dict = field(default_factory=dict)     # {"Qt": Series, "Ft": Series} mean count per replica, end of influx
     overlap: pd.DataFrame | None = None
+    clusters: pd.DataFrame | None = None               # clusters_influx_end.csv (sizes and volumes)
 
     @property
     def n_total(self) -> int:
@@ -78,11 +80,19 @@ def load_run(run_dir: str | Path, label: str | None = None, color: str | None = 
         overlap = pd.read_csv(analysis / "overlap_timeseries.csv")
     coord = {}
     for species, fname in (("Qt", "coord_qt.hist"), ("Ft", "coord_ft.hist")):
-        finals = [read_histo(run_dir / rep / fname).iloc[-1] for rep in stats["replicas"]
-                  if (run_dir / rep / fname).exists()]
-        if finals:
-            coord[species] = sum(finals) / len(finals)
-    return RunData(run_dir, label or run_dir.name, color or RUN_COLORS[0], p, stats, structure, coord, overlap)
+        rows = []
+        for rep in stats["replicas"]:
+            if (run_dir / rep / fname).exists():
+                h = read_histo(run_dir / rep / fname)
+                rows.append(h[h.index <= p.influx_end_step].iloc[-1])     # last row at or before the influx end
+        if rows:
+            coord[species] = sum(rows) / len(rows)
+    clusters = None
+    if (analysis / "clusters_influx_end.csv").exists():
+        clusters = pd.read_csv(analysis / "clusters_influx_end.csv")
+        clusters["spans"] = clusters["spans"].fillna("")                    # "" = spans no axis
+    return RunData(run_dir, label or run_dir.name, color or RUN_COLORS[0], p, stats, structure, coord, overlap,
+                   clusters)
 
 
 def load_runs(run_dirs, labels=None) -> list[RunData]:
@@ -285,12 +295,12 @@ def p_coordination(ax, runs, traces=False):
 
 def p_coord_dist(ax, runs, traces=False):
     r = runs[0]
-    if not r.coord_final:
+    if not r.coord_stim:
         _no_data(ax, "no histogram files")
         return
     width, highest = 0.4, 1
     for i, name in enumerate(("Qt", "Ft")):
-        h = r.coord_final.get(name)
+        h = r.coord_stim.get(name)
         if h is None:
             continue
         h = h[h.index >= 1]                                       # bound particles only
@@ -299,9 +309,36 @@ def p_coord_dist(ax, runs, traces=False):
         ax.bar(h.index + (i - 0.5) * width, h.to_numpy(), width=width,
                color=SPECIES["QtC" if name == "Qt" else "FtC"], label=f"{name}C", lw=0)
     ax.set_xlim(0.3, highest + 0.7)
-    ax.set_xlabel("bonds per particle (final)")
+    ax.set_xlabel("bonds per particle")
     ax.set_ylabel("particles per replica")
     ax.legend()
+
+
+def _cluster_hist(column, xlabel):
+    """Histogram (log bins) of one column of the clusters at the end of the influx, clusters per replica."""
+    def panel(ax, runs, traces=False):
+        r = runs[0]
+        if r.clusters is None:
+            _no_data(ax, "run make_report")
+            return
+        values = r.clusters[column].dropna().to_numpy(dtype=float)
+        if not len(values):
+            _no_data(ax, f"no agglomerates of ≥ {CLUSTER_MIN} particles")
+            return
+        lo, hi = values.min(), values.max()
+        bins = np.geomspace(lo, hi, 21) if hi > lo else np.array([lo / 1.1, hi * 1.1])
+        n_rep = r.clusters["replica"].nunique()
+        ax.hist(values, bins=bins, weights=np.full(len(values), 1 / n_rep), color=r.color, lw=0)
+        ax.set_xscale("log")
+        ax.xaxis.set_minor_formatter(NullFormatter())                   # labels at the decades only
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("agglomerates per replica")
+    return panel
+
+
+p_cluster_size = _cluster_hist("size", "particles per agglomerate")
+p_volume_solid = _cluster_hist("v_solid_um3", "solid volume (µm³)")
+p_volume_envelope = _cluster_hist("v_envelope_um3", "envelope volume (µm³)")
 
 
 def p_overlap(ax, runs, traces=False):
@@ -452,7 +489,7 @@ OVERVIEW = [
     ("largest agglomerate", p_largest, True), ("size categories", p_categories, True),
     ("mean Rg", p_rg, True),
     ("Qt fraction", p_qt_fraction, True), ("coordination", p_coordination, True),
-    ("final coordination", p_coord_dist, False),
+    ("coordination", p_coord_dist, False),             # title completed by stim_label in fig_overview
 ]
 
 COMPARISON = [
@@ -465,9 +502,26 @@ COMPARISON = [
 ]
 
 
+def stim_label(p: Params) -> str:
+    """Name of the frame of the agglomerate distributions (Params.influx_end_step)."""
+    return "end of influx" if p.t_influx_s > 0 else "final"
+
+
 def fig_overview(run: RunData, out_dir: Path | None = None, traces=False):
     """4 x 3 metrics overview of one run (183 mm); panels also alone in overview/."""
-    return _panel_figure("overview", OVERVIEW, [run], out_dir, 4, 3, DOUBLE, MAX_HEIGHT, traces=traces)
+    panels = [(f"{t} at {stim_label(run.p)}" if f is p_coord_dist else t, f, is_time) for t, f, is_time in OVERVIEW]
+    return _panel_figure("overview", panels, [run], out_dir, 4, 3, DOUBLE, MAX_HEIGHT, traces=traces)
+
+
+CLUSTERS = [("agglomerate size", p_cluster_size), ("solid volume", p_volume_solid),
+            ("envelope volume", p_volume_envelope)]
+
+
+def fig_clusters(run: RunData, out_dir: Path | None = None):
+    """Distributions of agglomerate size, solid and envelope volume (agglomerates of >= CLUSTER_MIN
+    particles) at the end of the influx, 1 x 3 (183 mm); panels also alone in clusters/."""
+    panels = [(f"{t} at {stim_label(run.p)}", f, False) for t, f in CLUSTERS]
+    return _panel_figure("clusters", panels, [run], out_dir, 1, 3, DOUBLE, 60 * MM)
 
 
 def fig_comparison(runs: list[RunData], out_dir: Path | None = None):
@@ -687,12 +741,13 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     if overlap_analysis:
         from .overlap import overlap_ensemble
         overlap_ensemble(run_dir, every=every)
+    cluster_volumes_run(run_dir)                                     # clusters_influx_end.csv
     run = load_run(run_dir)
 
     figs = out / "figures"
     rate = [fig_binding_rate(run, figs, rate=binding_rate(run_dir))] if run.p.t_influx_s > 0 and run.p.ca_rise_s == 0 else []  # + csv
     rates = bond_rates(run_dir)                                                                  # + csv
-    for f in (fig_calcium(run, figs, traces, rates), fig_overview(run, figs, traces=traces),
+    for f in (fig_calcium(run, figs, traces, rates), fig_overview(run, figs, traces=traces), fig_clusters(run, figs),
               fig_kinetics([run], figs, traces=traces), fig_large_count([run], figs, traces=traces),
               fig_overlap(run, figs), *rate):
         plt.close(f)

@@ -10,6 +10,12 @@ least one axis. Periodic box: the cluster wraps around the box, i.e. a closed bo
 whole box length (unwrapping it along a spanning tree leaves a bond that disagrees with its minimum
 image by a multiple of L). Walls: the cluster touches both opposite walls (a particle surface within
 WALL_TOUCH of the face).
+
+Cluster volumes (`cluster_volumes`, numpy/scipy only), for comparison with confocal (lattice SIM)
+volumes: the particle spheres of a cluster (Qt and Ft) are drawn on a voxel grid; the solid volume is
+their union, the envelope volume the morphological closing of it with an ellipsoidal probe (radii
+probe_xy, probe_z, about half the lateral and axial resolution), which fills the gaps the microscope
+cannot resolve. Clusters of >= CLUSTER_MIN particles, in the frame at the end of the influx.
 """
 
 from __future__ import annotations
@@ -19,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy import sparse
+from scipy import ndimage, sparse
 from scipy.sparse.csgraph import breadth_first_order, connected_components
 from scipy.spatial import cKDTree
 
@@ -28,6 +34,9 @@ from .read import TYPE_IDS, dump_steps, read_bonds, read_dump
 
 PACKING = 0.64          # random close packing, for the ideal compact sphere (Rg_ideal)
 WALL_TOUCH = 5.0        # [nm] a particle surface this close to a wall touches it (percolation with walls)
+CLUSTER_MIN = 3         # particles of a cluster for the size and volume distributions
+PROBE_XY_NM, PROBE_Z_NM = 60.0, 150.0      # envelope probe: half the lattice-SIM resolution (~120 / 300 nm)
+VOXEL_NM = 10.0         # voxel edge of the volume grid [nm]
 
 
 def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True, last_only: bool = False):
@@ -186,21 +195,23 @@ def structure_ensemble(run_dir: str | Path, every: int = 10, save: bool = True) 
 
 
 # ------------------------------------------------------------------ percolation (box-spanning cluster)
-def spanning_axes(atoms: pd.DataFrame, bonds: np.ndarray, p: Params) -> str:
-    """Axes ("x", "y", "z") along which a single cluster spans the box in one frame, e.g. "" or "xz".
-    `atoms` from read_dump, `bonds` (atom ID pairs) from read_bonds."""
+def unwrap_clusters(atoms: pd.DataFrame, bonds: np.ndarray, p: Params):
+    """Clusters of the bond graph in one frame: (label, positions, spans). `label` is the cluster of
+    every particle (0 ... n_clusters - 1), `positions` are unwrapped per cluster in a periodic box (with
+    walls the dumped ones), `spans` (n_clusters x 3, bool) marks the axes along which a cluster spans
+    the box. `atoms` from read_dump, `bonds` (atom ID pairs) from read_bonds."""
     ids = atoms["id"].to_numpy()
     pos = atoms[["x", "y", "z"]].to_numpy(dtype=float)
     box = np.array(p.box)
     n = len(ids)
-    if not len(bonds):
-        return ""
     index = np.empty(ids.max() + 1, dtype=np.int64)
     index[ids] = np.arange(n)
-    i, j = index[bonds[:, 0]], index[bonds[:, 1]]
+    i, j = (index[bonds[:, 0]], index[bonds[:, 1]]) if len(bonds) else (np.empty(0, int), np.empty(0, int))
     graph = sparse.coo_matrix((np.ones(len(i)), (i, j)), shape=(n, n)).tocsr()
     n_comp, label = connected_components(graph, directed=False)
     spans = np.zeros((n_comp, 3), dtype=bool)
+    if not len(bonds):
+        return label, pos, spans
 
     if p.periodic:
         def mic(d):
@@ -222,13 +233,21 @@ def spanning_axes(atoms: pd.DataFrame, bonds: np.ndarray, p: Params) -> str:
         # a bond that disagrees with its minimum image by a box length closes a path around the box
         wraps = np.abs(np.round(((u[j] - u[i]) - mic(pos[j] - pos[i])) / box)) > 0
         np.logical_or.at(spans, label[i], wraps)
-    else:
-        radius = np.where(atoms["type"].to_numpy() == 1, p.radius_qt, p.radius_ft)[:, None]
-        lo = np.zeros((n_comp, 3), dtype=bool)
-        hi = np.zeros((n_comp, 3), dtype=bool)
-        np.logical_or.at(lo, label, pos - radius <= WALL_TOUCH)
-        np.logical_or.at(hi, label, box - pos - radius <= WALL_TOUCH)
-        spans = lo & hi
+        return label, u, spans
+    radius = np.where(atoms["type"].to_numpy() == 1, p.radius_qt, p.radius_ft)[:, None]
+    lo = np.zeros((n_comp, 3), dtype=bool)
+    hi = np.zeros((n_comp, 3), dtype=bool)
+    np.logical_or.at(lo, label, pos - radius <= WALL_TOUCH)
+    np.logical_or.at(hi, label, box - pos - radius <= WALL_TOUCH)
+    return label, pos, lo & hi
+
+
+def spanning_axes(atoms: pd.DataFrame, bonds: np.ndarray, p: Params) -> str:
+    """Axes ("x", "y", "z") along which a single cluster spans the box in one frame, e.g. "" or "xz".
+    `atoms` from read_dump, `bonds` (atom ID pairs) from read_bonds."""
+    if not len(bonds):
+        return ""
+    spans = unwrap_clusters(atoms, bonds, p)[2]
     return "".join(axis for axis, s in zip("xyz", spans.any(axis=0)) if s)
 
 
@@ -254,3 +273,84 @@ def percolation(rep_dir: str | Path) -> pd.DataFrame:
         cache.parent.mkdir(exist_ok=True)
         df.to_csv(cache, index=False)
     return df
+
+
+# ------------------------------------------------------------------ cluster volumes (confocal comparison)
+def _cluster_volume(pos: np.ndarray, radius: np.ndarray, probe: np.ndarray, voxel: float) -> tuple[float, float]:
+    """Solid and envelope volume [nm^3] of one cluster: union of the spheres (pos, radius) on a voxel
+    grid, and its closing with an ellipsoid of radii `probe` (x, y, z)."""
+    pad = probe + 2 * voxel                                 # room for the dilation inside the grid
+    lo = np.floor(((pos - radius[:, None]).min(axis=0) - pad) / voxel) * voxel    # grid anchored at 0
+    shape = np.ceil(((pos + radius[:, None]).max(axis=0) + pad - lo) / voxel).astype(int)
+    solid = np.zeros(shape, dtype=bool)
+    for x, r in zip(pos, radius):                           # voxel centres inside the sphere
+        i0 = np.maximum(np.floor((x - r - lo) / voxel - 0.5).astype(int), 0)
+        i1 = np.minimum(np.ceil((x + r - lo) / voxel - 0.5).astype(int) + 1, shape)
+        c = [lo[k] + (np.arange(i0[k], i1[k]) + 0.5) * voxel - x[k] for k in range(3)]
+        inside = c[0][:, None, None] ** 2 + c[1][None, :, None] ** 2 + c[2][None, None, :] ** 2 <= r * r
+        solid[i0[0]:i1[0], i0[1]:i1[1], i0[2]:i1[2]] |= inside
+    # distances in units of the probe radii: the ellipsoid becomes the unit sphere
+    sampling = voxel / probe
+    dilated = ndimage.distance_transform_edt(~solid, sampling=sampling) <= 1
+    closed = (ndimage.distance_transform_edt(dilated, sampling=sampling) > 1) | solid
+    return solid.sum() * voxel**3, closed.sum() * voxel**3
+
+
+def cluster_volumes(atoms: pd.DataFrame, bonds: np.ndarray, p: Params, probe_xy_nm: float = PROBE_XY_NM,
+                    probe_z_nm: float = PROBE_Z_NM, voxel_nm: float = VOXEL_NM) -> pd.DataFrame:
+    """One row per cluster of >= CLUSTER_MIN particles (largest first): size, composition, bonds, the
+    axes it spans and its solid and envelope volume [um^3]. A cluster that wraps around the periodic
+    box has no defined volume (NaN)."""
+    label, pos, spans = unwrap_clusters(atoms, bonds, p)
+    is_qt = atoms["type"].to_numpy() == 1
+    radius = np.where(is_qt, p.radius_qt, p.radius_ft)
+    size = np.bincount(label)
+    n_qt = np.bincount(label, weights=is_qt, minlength=len(size)).astype(int)
+    index = np.empty(atoms["id"].max() + 1, dtype=np.int64)
+    index[atoms["id"].to_numpy()] = np.arange(len(atoms))
+    n_bonds = np.bincount(label[index[bonds[:, 0]]], minlength=len(size)) if len(bonds) else np.zeros(len(size), int)
+    probe = np.array([probe_xy_nm, probe_xy_nm, probe_z_nm])
+    rows = []
+    for c in np.argsort(-size, kind="stable"):
+        if size[c] < CLUSTER_MIN:
+            break
+        axes = "".join(a for a, s in zip("xyz", spans[c]) if s)
+        v_solid = v_env = np.nan
+        if not (axes and p.periodic):
+            members = label == c
+            v_solid, v_env = _cluster_volume(pos[members], radius[members], probe, voxel_nm)
+        rows.append({"size": size[c], "n_qt": n_qt[c], "n_ft": size[c] - n_qt[c], "n_bonds": n_bonds[c],
+                     "spans": axes, "v_solid_um3": v_solid * 1e-9, "v_envelope_um3": v_env * 1e-9})
+    columns = ["size", "n_qt", "n_ft", "n_bonds", "spans", "v_solid_um3", "v_envelope_um3"]
+    return pd.DataFrame(rows, columns=columns)
+
+
+def cluster_volumes_run(run_dir: str | Path, probe_xy_nm: float = PROBE_XY_NM, probe_z_nm: float = PROBE_Z_NM,
+                        voxel_nm: float = VOXEL_NM, save: bool = True) -> pd.DataFrame:
+    """Cluster sizes and volumes of all finished replicas in the traj.dump frame at the end of the
+    influx (the last frame at or before it; the last frame without an influx). Saved to
+    <run>/analysis/clusters_influx_end.csv."""
+    run_dir = Path(run_dir).expanduser()
+    p = Params.load(run_dir / "params.json")
+    tables = []
+    for rep in sorted(run_dir.glob("rep_*")):
+        if not ((rep / "status").exists() and (rep / "status").read_text().strip() == "done"):
+            continue
+        step = max(s for s in dump_steps(rep / "traj.dump") if s <= p.influx_end_step)
+        _, atoms = next(read_dump(rep / "traj.dump", start=step))
+        b_step, bonds = next(read_bonds(rep / "bonds.dump", start=step))
+        if b_step != step:
+            raise ValueError(f"step {step} missing in {rep / 'bonds.dump'}")
+        table = cluster_volumes(atoms, bonds, p, probe_xy_nm, probe_z_nm, voxel_nm)
+        tables.append(table.assign(replica=rep.name, step=step, time_s=step * p.timestep * 1e-9,
+                                   cluster=np.arange(1, len(table) + 1)))
+    if not tables:
+        raise ValueError(f"no finished replicas in {run_dir}")
+    result = pd.concat(tables, ignore_index=True).assign(probe_xy_nm=probe_xy_nm, probe_z_nm=probe_z_nm,
+                                                         voxel_nm=voxel_nm)
+    result = result[["replica", "step", "time_s", "cluster", *tables[0].columns[:-4], "probe_xy_nm",
+                     "probe_z_nm", "voxel_nm"]]
+    if save:
+        (run_dir / "analysis").mkdir(exist_ok=True)
+        result.to_csv(run_dir / "analysis" / "clusters_influx_end.csv", index=False)
+    return result
