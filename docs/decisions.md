@@ -308,7 +308,13 @@ at 1 / 2 / 4 MPI processes (`"longest"` 0.06); with binding and breaking in the 
 unchanged after rebuilding the special lists, bonds = created − broken, `bonds.dump` = thermo, no duplicates; the
 `"longest"` input reproduces the former one bit for bit. **Calibration:** with `"random"` k_off is the real rate
 per bond; runs with `"longest"` (all runs before 2026-10-24) had an effective k_off of ≈ 0.1 × the set value
-(coordination dependent), so `k_off_ca_per_s` and `k_off_free_per_s` must be recalibrated. Old `params.json` files
+(coordination dependent), so `k_off_ca_per_s` and `k_off_free_per_s` must be recalibrated. Calibration 2026-10-25
+against the 3 µm `"longest"` run (675 Qt / 2700 Ft, harmonic walls, 10/30/90 s, k_off 10⁻³ / 1 s⁻¹): broken bonds /
+∫ bonds · k_off dt = 0.098 over the whole run (0.075–0.09 at 15–80 s with large clusters, 0.12–0.19 at 100–130 s while
+they dissolve), so `control.ipynb` uses k_off × 0.098 = 9.8·10⁻⁵ / 0.098 s⁻¹ with `"random"`, `break_every` = 10.
+1 s restarts from that run's states: broken new / old = 1.26 ± 0.09 at 51.5 s (peak, 7905 bonds; bond count and
+largest cluster unchanged) and 0.99 ± 0.06 at 100 s (pump-out, 4640 bonds); whether the deagglomeration half-times
+match needs a full run. The `Params` defaults stay at the literature values (table above). Old `params.json` files
 (without `bond_break`) are read as `"longest"`.
 
 **Analysis.** `ensemble_stats` adds per replica the peaks of the bond count and the largest cluster and the
