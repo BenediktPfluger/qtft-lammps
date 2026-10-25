@@ -11,7 +11,8 @@ from qtft import Params, build_run, read_bonds, read_dump, start
 
 from conftest import influx
 
-pytestmark = pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
+pytestmark = [pytest.mark.slow,
+              pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")]
 ovito = pytest.importorskip("ovito")
 
 import matplotlib  # noqa: E402

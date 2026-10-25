@@ -9,7 +9,8 @@ from qtft import Params, build_run, load_thermo, read_bonds, read_dump, read_his
 from qtft.read import dump_steps
 from conftest import influx
 
-pytestmark = pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
+pytestmark = [pytest.mark.slow,
+              pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")]
 
 
 def _clusters_from_bonds(ids, bonds):

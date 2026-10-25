@@ -64,6 +64,7 @@ def test_summary_and_progress_of_sweep(tmp_path):
     assert table.loc[(b.name, "rep_01"), "status"] == "running"
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_sweep_end_to_end(tmp_path):
     p = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(2000),

@@ -156,7 +156,7 @@ cd ~/projects/qtft-lammps
 conda activate lammps
 nbstripout --install      # strips notebook outputs automatically on every commit
 lammps_plugins/bond_break_random/build.sh   # unbinding plugin fix bond/break/random (needs ~/src/lammps)
-pytest -q                 # quick self-test of the Python helpers
+pytest -q                 # self-test incl. short LAMMPS runs (~2.5 min); -m "not slow": without them (~2 s)
 ```
 
 `build.sh` compiles the plugin against the headers in `~/src/lammps` (or the folder given as argument), which

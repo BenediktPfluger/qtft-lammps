@@ -21,6 +21,7 @@ def test_predicted_overlap():
         {"Qt-Qt": 0.697, "Ft-Ft": 0.943, "Qt-Ft": 0.974}, abs=1e-3)
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_sweep_end_to_end(tmp_path):
     base = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(2000),

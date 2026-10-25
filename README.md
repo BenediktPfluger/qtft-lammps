@@ -55,7 +55,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `qtft/sweep.py` | parameter sweeps: one run per combination of listed values (grid), same seeds for all variants, results table per variant |
 | `qtft/tuning.py` | force-constant sweep: constants for a target α, predicted vs measured overlap per pair family, binding kinetics |
 | `qtft/benchmark.py` | performance measurement (MPI processes per replica, replicas in parallel) and sizing of `extra_special` |
-| `tests/` | quick checks (`pytest`); includes a short end-to-end LAMMPS run |
+| `tests/` | checks (`pytest`); the tests marked `slow` run short LAMMPS simulations, `pytest -m "not slow"` skips them |
 
 ## Output
 

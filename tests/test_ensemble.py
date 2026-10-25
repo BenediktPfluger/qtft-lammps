@@ -33,6 +33,7 @@ def test_update_index_lists_built_runs(tmp_path):
     assert update_index(tmp_path)["status"].tolist() == ["built:1", "built:1"]
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_ensemble_of_tiny_runs(tmp_path):
     common = dict(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(2000),
@@ -85,6 +86,7 @@ def test_ensemble_of_tiny_runs(tmp_path):
     assert load_stats(runs[0])["replicas"] == ["rep_01", "rep_02"]          # and saved again
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_binding_rate_needs_frames(tmp_path):
     p = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(500), output_every=500,

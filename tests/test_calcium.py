@@ -128,6 +128,7 @@ def test_bond_break_toggle(tmp_path, monkeypatch):
     assert (run / "rep_01" / "status").read_text().strip() == "built"
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 @pytest.mark.parametrize("rise, method", [(0.0, "random"), (2e-3, "random"), (0.0, "longest")])
 def test_compressed_protocol_run(tmp_path, rise, method):

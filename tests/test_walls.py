@@ -41,6 +41,7 @@ def test_wall_inputs(tmp_path):
     assert "wall/harmonic xlo EDGE 6 0.0 13 xhi EDGE 6 0.0 13" in text["harmonic"]
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 @pytest.mark.parametrize("boundary", ["reflect", "harmonic"])
 def test_wall_run(tmp_path, boundary):

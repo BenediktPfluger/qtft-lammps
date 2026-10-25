@@ -37,6 +37,7 @@ def test_box_in_input_and_sweep_label(tmp_path):
     assert [r.name for r in sweep_runs(sweep)] == ["box_length928.3", "box_length800x900x1200"]
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_rectangular_box_run(tmp_path):
     from qtft.overlap import overlap_frame
