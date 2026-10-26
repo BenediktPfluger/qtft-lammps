@@ -20,7 +20,8 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import MultipleLocator, NullFormatter
 
-from .ensemble import TO_PER_M_S, binding_rate, bond_rates, cached_stats, ensemble_stats
+from .ensemble import (LARGE_MIN, TO_PER_M_S, _thresholds, binding_rate, bond_rates, cached_stats, ensemble_stats,
+                       large_counts)
 from .params import Params
 from .read import read_histo
 from .structure import CLUSTER_MIN, cluster_volumes_run
@@ -208,7 +209,6 @@ p_mean_size = _species_panel("mean_size", "mean agglomerate size")
 p_mean_size_n = _simple("mean_size", "mean size / N", scale_by_n=True)
 p_largest = _species_panel("largest", "largest agglomerate")
 p_largest_n = _simple("largest", "largest / N", scale_by_n=True)
-p_large_count = _simple("n_large", "agglomerates ≥ N_min")
 
 
 def p_counts(ax, runs, traces=False):
@@ -540,19 +540,58 @@ def fig_kinetics(runs: list[RunData], out_dir: Path | None = None, traces=False)
                          titles=False, sharex=True, legend_below=True)
 
 
-def fig_large_count(runs: list[RunData], out_dir: Path | None = None, traces=False):
-    """Number of agglomerates with >= N_min particles over time (89 mm)."""
+# line styles of the thresholds in fig_large_count with several runs
+LARGE_STYLES = ["-", "--", ":", "-.", (0, (5, 1, 1, 1, 1, 1)), (0, (8, 2))]
+
+
+def fig_large_count(runs: list[RunData], out_dir: Path | None = None, traces=False, n_min=LARGE_MIN,
+                    density: bool = False):
+    """Number of agglomerates with >= n particles over time, one line per n in `n_min` (one number or a
+    list; counted in the traj.dump frames by large_counts), in the box or per 1000 um^3 of box volume
+    (`density`) (89 mm). One run: one line per n, dark (smallest n) to light; several runs: one colour per
+    run, one line style per n (at most 6). Saved as large_agglomerates.* (density:
+    large_agglomerates_density.*)."""
+    ns = _thresholds(n_min)
+    if len(runs) > 1 and len(ns) > len(LARGE_STYLES):
+        raise ValueError(f"several runs show at most {len(LARGE_STYLES)} thresholds (one line style each), "
+                         f"not {len(ns)}")
+    column = "per_1000um3" if density else "count"
+    shades = plt.cm.Blues(np.linspace(0.95, 0.45, len(ns))) if len(ns) > 1 else [runs[0].color]
     with plt.rc_context(STYLE):
         fig = _figure(SINGLE, 60 * MM)
         ax = fig.add_subplot()
-        p_large_count(ax, runs, traces=traces)
-        ax.set_ylabel(f"agglomerates ≥ {runs[0].p.large_cluster_min}")
+        values = []
+        for r in runs:
+            table = large_counts(r.run_dir, ns)
+            reps = [c for c in table.columns if c.startswith("count_") and c not in ("count_mean", "count_sd")]
+            scale = 1000 / (math.prod(r.p.box) * 1e-9) if density else 1.0      # replica traces as plotted
+            for i, n in enumerate(ns):
+                d = table[table["n_min"] == n]
+                tr = d[reps].to_numpy().T * scale
+                if len(runs) > 1:
+                    color, ls = r.color, LARGE_STYLES[i]
+                    label = r.label if i == 0 else None
+                else:
+                    color, ls, label = shades[i], "-", f"≥ {n}" if len(ns) > 1 else None
+                band(ax, d["time_s"].to_numpy() * 1e3, d[f"{column}_mean"].to_numpy(),
+                     d[f"{column}_sd"].to_numpy(), color, label, ls=ls, traces=tr if traces else None)
+                values.append(d[f"{column}_mean"].to_numpy())
+        k = _thousands(ax, np.concatenate(values))
+        size = f" ≥ {ns[0]}" if len(ns) == 1 else ""
+        ax.set_ylabel(f"agglomerates{size} " + ("per 1000 µm³" if density else "in the box")
+                      + (" (×10³)" if k else ""))
         phase_lines(ax, runs)
         _time_axis(ax, _t_end(runs))
-        if len(runs) > 1:
-            ax.legend()
+        handles, labels = ax.get_legend_handles_labels()
+        if len(runs) > 1:                                    # runs below the axes, thresholds in the corner
+            fig.legend(handles, labels, loc="outside lower center", ncol=min(len(runs), 4))
+            if len(ns) > 1:
+                ax.legend([plt.Line2D([], [], color="0.3", ls=LARGE_STYLES[i]) for i in range(len(ns))],
+                          [f"≥ {n}" for n in ns], ncol=2, handlelength=3)
+        elif handles:
+            ax.legend(handles, labels)
         if out_dir:
-            save(fig, out_dir / "large_agglomerates")
+            save(fig, out_dir / ("large_agglomerates_density" if density else "large_agglomerates"))
     return fig
 
 
@@ -749,6 +788,7 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     rates = bond_rates(run_dir)                                                                  # + csv
     for f in (fig_calcium(run, figs, traces, rates), fig_overview(run, figs, traces=traces), fig_clusters(run, figs),
               fig_kinetics([run], figs, traces=traces), fig_large_count([run], figs, traces=traces),
+              fig_large_count([run], figs, traces=traces, density=True),
               fig_overlap(run, figs), *rate):
         plt.close(f)
 
@@ -768,7 +808,8 @@ def compare_report(run_dirs, out_dir: str | Path, labels=None) -> Path:
     from .ensemble import compare, differing_labels
     out_dir = Path(out_dir).expanduser()
     runs = load_runs(run_dirs, labels or differing_labels(run_dirs)[0])
-    for f in (fig_comparison(runs, out_dir), fig_kinetics(runs, out_dir), fig_large_count(runs, out_dir)):
+    for f in (fig_comparison(runs, out_dir), fig_kinetics(runs, out_dir),
+              fig_large_count(runs, out_dir, density=True)):
         plt.close(f)
     table = compare(run_dirs)
     table.to_csv(out_dir / "comparison_table.csv")

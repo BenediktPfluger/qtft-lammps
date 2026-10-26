@@ -26,7 +26,8 @@ runs/
 │       │   ├── log.lammps
 │       │   ├── traj.dump, bonds.dump, rdf.dat, coord_qt.hist, coord_ft.hist, final.data
 │       │   ├── analysis/          percolation.csv, after the first ensemble_stats()
-│       │   └── fibsem/            only after the FIB-SEM export
+│       │   ├── fibsem/            only after the FIB-SEM export
+│       │   └── animation/         only after animate()
 │       └── analysis/              only after the analysis
 ├── sweeps/                        only after build_sweep()
 │   └── <sweep name>/
@@ -134,6 +135,15 @@ Only after `fibsem_export_run(run_dir)` (analysis notebook, section 6).
 | `sim_metadata.json` | Counts, cluster-size histogram, box and applied offset, frame description, bond check, all parameters; `boundary` (`periodic`/`reflect`/`harmonic`), `wall_stiffness` (harmonic: k of Qt and Ft in zJ/nm², otherwise null), `wall_leaks` (walls: encapsulin spheres sticking out of the box and the largest depth, otherwise null) | Python: `fibsem_export()` |
 | `check_xy.png` | x–y scatter of the encapsulins coloured by cluster, with the periodic box or the walls as dashed outline | Python: `fibsem_export()` |
 
+## Animation `rep_XX/animation/`
+
+Only after `animate(run)` (animation notebook).
+
+| File | Content | Created by |
+|---|---|---|
+| `animation.mp4` | Video, 1920 × 1080 × `scale` (default 2: 3840 × 2160), H.264 (`yuv420p`, CRF 14), one frame per `traj.dump` frame (every `every`-th) at `fps` frames per second: header (title, calcium phase, production time, calcium in µM), the whole box in 3D and from the front with the magnified region outlined, the fixed central magnification, calcium (µM) and calmodulin loading f over time, the average cluster size (all, Qt, Ft: thermo `mean_size`, `mean_size_qt`, `mean_size_ft`), both graphs with the current time, legend, statistics of the frame (bonds, Qt in the cluster with the most Qt, % of Qt in clusters with ≥ 2 Qt), timeline of the protocol. Written as `animation.partial.mp4` and renamed when complete | Python: `animate()` (needs ffmpeg) |
+| `still_<t>s.png` | Optional: the frame nearest to production time t [s] as PNG (same layout and size), for every t in `stills`; `video=False` writes only these | Python: `animate()` |
+
 ## Replica analysis `rep_XX/analysis/`
 
 | File | Content | Created by |
@@ -158,13 +168,14 @@ regenerated from the replica files at any time.
 | `overlap_final.csv` | The same, pooled over the last frames | Python: `overlap_ensemble()` |
 | `binding_rate.csv` | Columns `value, unit, 1/(M s)`. Rows: `k_a measured` (+ `SD`) from the start of the bond curve in the calcium influx (frames up to 10 % more bound, mean and SD over replicas); `k_a predicted` (+ `SD`), Collins–Kimball with the Qt–Ft contact pairs counted in the frame at the influx start; `kappa`, `k_D`; `k_a continuum estimate` (analytical, too high when the step is comparable to the overlap layer); `contact volume counted` and `contact volume continuum` in nm³ | Python: `binding_rate()`, also `make_report()` (only with a calcium step, `ca_rise_s = 0`) |
 | `bond_rates.csv` | Columns `time_ms` (bin centre), `formed_per_s`, `broken_per_s` (bonds per second), `k_a_per_M_s` (apparent association rate constant, formed per second · V / (N_Qt N_Ft), 1/(M s)), each as `_mean` and `_sd` over replicas; one row per calcium segment (`rate_update_every`) or per `bin_s` | Python: `bond_rates()`, also `make_report()` (default bins) |
+| `large_agglomerates.csv` | Number of agglomerates with ≥ n particles over time, counted in every `traj.dump` frame (resolution `traj_every`; a free particle is a cluster of 1), one row per frame and threshold: `step, time_s, n_min, replicas`, `count_mean`, `count_sd` (in the box), `per_1000um3_mean`, `per_1000um3_sd` (density: count · 1000 / V_box in µm³, V_box = Lx·Ly·Lz, also with walls), and `count_<replica>` per replica. Reused while it holds the requested thresholds and the same replicas and is newer than the dumps; new thresholds are added | Python: `large_counts()`, also `make_report()` and `compare_report()` via `fig_large_count()` (default n = 5, 20, 60, 80, 100, 150) |
 | `final_table.csv`, `final_table.tex` | Final-state table (bonds, clusters, sizes, fraction bound, half-time, Rg, Qt fraction) as CSV and LaTeX | Python: `make_report()` |
 | `bonds_timeseries.csv` | Bond count over time: step, time (µs, ms), mean, SD | Python: `make_report()` |
 | `report.json` | Settings used for the report | Python: `make_report()` |
-| `figures/` | All figures as PDF + SVG + PNG: `calcium` (3 × 2: calcium and loading f; rate constants k_on per contact pair and k_off per bond; binding and unbinding rates in bonds/s; apparent k_a on a log scale; bonds and broken bonds; fraction bound), `overview` (its coordination histogram at the end of the influx: panel `coordination_at_end_of_influx`), `clusters` (1 × 3 at the end of the influx: agglomerate size, solid volume, envelope volume; log bins, agglomerates per replica), `kinetics`, `large_agglomerates`, `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx and a calcium step, `ca_rise_s = 0`); every figure with several panels (`calcium`, `overview`, `clusters`, `kinetics`) also has each panel alone (89 mm) in `figures/<figure>/<panel>.*`. Largest and mean cluster size (in `overview`) are drawn for all particles, Qt only and Ft only (one run). `fig_bond_rates()` draws the two rate panels alone, e.g. with coarser bins (`bond_rates(run_dir, bin_s=…)`); `make_report()` doesn't save it. Dotted vertical lines mark the start and end of the calcium influx in every time panel. Time axes in ms, in s for runs of ≥ 10 s (also in `quicklook`) | Python: `make_report()` |
+| `figures/` | All figures as PDF + SVG + PNG: `calcium` (3 × 2: calcium and loading f; rate constants k_on per contact pair and k_off per bond; binding and unbinding rates in bonds/s; apparent k_a on a log scale; bonds and broken bonds; fraction bound), `overview` (its coordination histogram at the end of the influx: panel `coordination_at_end_of_influx`), `clusters` (1 × 3 at the end of the influx: agglomerate size, solid volume, envelope volume; log bins, agglomerates per replica), `kinetics`, `large_agglomerates` (agglomerates with ≥ 5, 20, 60, 80, 100, 150 particles in the box over time, one line each, from `large_agglomerates.csv`), `large_agglomerates_density` (the same per 1000 µm³), `overlap`, `binding_rate` (bonds formed since the influx start with the fitted k_a and the Collins–Kimball prediction from the counted contact pairs; only with an influx and a calcium step, `ca_rise_s = 0`); every figure with several panels (`calcium`, `overview`, `clusters`, `kinetics`) also has each panel alone (89 mm) in `figures/<figure>/<panel>.*`. Largest and mean cluster size (in `overview`) are drawn for all particles, Qt only and Ft only (one run). `fig_bond_rates()` draws the two rate panels alone, e.g. with coarser bins (`bond_rates(run_dir, bin_s=…)`); `make_report()` doesn't save it. Dotted vertical lines mark the start and end of the calcium influx in every time panel. Time axes in ms, in s for runs of ≥ 10 s (also in `quicklook`) | Python: `make_report()` |
 
 Comparisons of several runs (`compare_report(runs, out_dir)`) are written to the chosen `out_dir`:
-`comparison`, `kinetics`, `large_agglomerates` (PDF/SVG/PNG), the single panels in `comparison/` and `kinetics/`
+`comparison`, `kinetics`, `large_agglomerates_density` (per 1000 µm³, so runs with different boxes compare; colour per run, line style per threshold, at most 6) (PDF/SVG/PNG), the single panels in `comparison/` and `kinetics/`
 (cluster sizes for all particles only; phase lines only if all runs have the same phase times), and
 `comparison_table.csv` / `.tex`.
 

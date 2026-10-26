@@ -45,8 +45,10 @@ pump-out (2.6·10⁸ steps); tests use small systems and short protocols.
 | Rg (centres, equal weights), compactness Rg/Rg,ideal (Rg,ideal = √(3/5) R of a solid sphere holding the cluster's particle volumes n_Qt V_Qt + n_Ft V_Ft at random close packing 0.64), cluster centres, nearest-neighbour distances, composition (need unwrapping across the periodic box; none with walls) | OVITO Python module, `qtft/structure.py` |
 | agglomerate size and volume distributions and the coordination histogram at the end of the influx (`Params.influx_end_step`, the last `traj.dump` frame at or before it; the run end without an influx), where the agglomerates are largest, not at the run end where they have dissolved again; agglomerates = clusters of ≥ 3 particles. Volumes for comparison with confocal volumes (lattice SIM, Zeiss Elyra 7; only Ft fluorescent, but the volume counts Qt and Ft): all particle spheres of a cluster on a 10 nm grid (anchored at 0, so the voxel errors average out: single Ft 1.00 ± 0.10 × V); **solid volume** = their union; **envelope volume** = its morphological closing with an ellipsoidal probe, r_xy = 60 nm, r_z = 150 nm (half the lattice-SIM resolution, ~120 / 300 nm): gaps and concavities narrower than the probe, which the microscope does not resolve, are filled; enclosed cavities wider than the probe stay empty (they would look hollow). Probe only, no PSF blur, no volume cutoff. A cluster that wraps around the periodic box has no volume (NaN). Probe and voxel are arguments, not `Params` (they describe the microscope, not the simulation). 3 µm run at t = 40 s: 34 agglomerates, envelope/solid median 1.44, 1 s per frame | `qtft/structure.py` (`cluster_volumes`, `cluster_volumes_run`, numpy/scipy: unwrapping as for percolation, `distance_transform_edt` with anisotropic sampling), called by `make_report` |
 | overlap diagnostics | `qtft/overlap.py` (from `traj.dump`) |
+| agglomerates with ≥ n particles for several n (default 5, 20, 60, 80, 100, 150; in the 3 µm run n ≈ 60–90 peaks at the end of the influx, smaller n earlier, larger n later): counted in every `traj.dump` frame from the `cluster` column (resolution `traj_every`; equal to the thermo `n_large` for n = `large_cluster_min`), in the box or as a density per 1000 µm³ = count · 1000 / V_box (V_box = Lx·Ly·Lz in µm³, the full box also with walls, like the concentrations). The density is the box count scaled up, not a count in a real 1000 µm³ volume: one agglomerate in a 3 µm box (27 µm³) is already 37 per 1000 µm³, so small counts give a coarse, noisy density | `qtft/ensemble.py` (`large_counts`), figure `fig_large_count` |
 | figures, tables | `qtft/figures.py` (Nature style as in the handover) |
 | FIB-SEM export (periodic: clusters unwrapped and shifted to the origin; walls: positions in the box frame, walls at 0 and L) | `qtft/fibsem.py` |
+| animation (video of one replica, see below) | `qtft/animation.py` |
 
 `ke`, `temp` and `etotal` are meaningless in overdamped dynamics and are not logged.
 
@@ -99,6 +101,43 @@ pump-out (2.6·10⁸ steps); tests use small systems and short protocols.
   "generated with" lines in commits.
 - All work is committed directly on `main`; no feature branches or pull requests.
 - LAMMPS documentation is the reference for every command (docs.lammps.org).
+
+## Animation
+
+`animate(run)` (animation notebook) renders one replica as a video (layout from the animation handover, kept
+locally): black background, Arial regular (taken from Windows and copied to matplotlib's cache folder:
+read from `/mnt/c`, text draws ~10× slower).
+
+- **Resolution:** the layout is defined at 1920 × 1080; `scale` (default 2) multiplies it (2 = 3840 × 2160, 4K):
+  text and lines scale, and the spheres are rendered at the full resolution, which they need: at 1080p an Ft
+  sphere is only ~3 px wide in the whole-box views (4K: ~7 px; magnification ~20 px). H.264 with CRF 14 and
+  `yuv420p` (plays everywhere; 4:2:0 halves the colour resolution, which 4K makes up for). The frame size must be
+  even (scale 1, 1.5, 2, 3, ...).
+- **Frames:** one video frame per `traj.dump` frame, no interpolation (it would invent Brownian motion and bond
+  states). The speed follows from `traj_every` and `fps`: 0.1 s per frame at 30 fps runs 3× faster than real
+  time (3 µm run: 1300 frames, 43 s of video); `animate` prints the factor. Rendering takes ≈0.25 s per frame at scale 1
+  and ≈0.3 s at scale 2 (3375 particles, without the encoding).
+- **Particles:** shaded spheres at physical size (Lambert shading, highlight at the top left), coloured by type
+  and bonded (`nbonds > 0`): Qt green / blue, Ft orange / red; painted back to front, the farthest 35 % darker.
+  A small numpy renderer pastes one pre-shaded sprite per colour and pixel radius (matplotlib cannot shade
+  spheres; OVITO's renderers are slow or need a display).
+- **Views:** 3D perspective from a fixed camera (elevation 20°, azimuth 30°, 2.5 box diagonals away), 12 box
+  edges (the three at the farthest corner behind the particles); front view orthographic along y (x right, z up)
+  over the full depth; magnification of a **central box of a third of every edge**, chosen instead of the full
+  depth behind the outlined region, which would stack many particles: particles whose centre lies inside it in
+  depth and whose sphere reaches into it in x and z. Periodic runs show wrapped positions (an agglomerate across
+  a face appears on both sides).
+- **Graph:** the average cluster size of the analysis figures (`p_mean_size`): all particles / clusters, Qt per
+  cluster with Qt, Ft per cluster with Ft, free particles counted as clusters of 1; from the thermo table
+  (`output_every`), so finer than the frames. Right of the magnification: calcium and calmodulin loading f over
+  time (`Params.calcium`, `Params.loading`: the formulas of `template.lmp`), which shows why the agglomerates
+  dissolve only slowly after the influx (calcium decays with `ca_tau_s`). Both graphs shade the influx period
+  and mark the current time.
+- **Statistics** of the shown frame: bonds = Σ nbonds / 2; Qt in the cluster with the most Qt; % of the Qt in
+  clusters with ≥ 2 Qt.
+- **Header and timeline:** phases and their times from `params.json` (calcium off / on / off at the baseline,
+  influx and pump-out); the calcium readout is `Params.calcium(t)`, the formula of `template.lmp`, so it shows
+  the rise over `ca_rise_s` and the decay with `ca_tau_s`.
 
 ## Status
 
@@ -338,7 +377,12 @@ per bond; runs with `"longest"` (all runs before 2026-10-24) had an effective k_
 (coordination dependent), so `k_off_ca_per_s` and `k_off_free_per_s` must be recalibrated. Calibration 2026-10-25
 against the 3 µm `"longest"` run (675 Qt / 2700 Ft, harmonic walls, 10/30/90 s, k_off 10⁻³ / 1 s⁻¹): broken bonds /
 ∫ bonds · k_off dt = 0.098 over the whole run (0.075–0.09 at 15–80 s with large clusters, 0.12–0.19 at 100–130 s while
-they dissolve), so `control.ipynb` uses k_off × 0.098 = 9.8·10⁻⁵ / 0.098 s⁻¹ with `"random"`, `break_every` = 10.
+they dissolve). `control.ipynb` used k_off × 0.098 = 9.8·10⁻⁵ / 0.098 s⁻¹ with `"random"` up to and including the
+130 s 3 µm run, to stay comparable with the older `"longest"` runs. **Since 2026-10-26 it uses the unscaled
+literature values 10⁻³ / 1 s⁻¹** (`break_every` = 10): with `"random"` k_off is the true per-bond rate, so the
+0.098 only reproduced an artifact of the superseded method. Runs before and after this change are therefore not
+directly comparable in their deagglomeration kinetics (unbinding is ≈ 10× faster now). The literature basis for
+the two values is in `docs/calmodulin_rs20_literature.md`.
 1 s restarts from that run's states: broken new / old = 1.26 ± 0.09 at 51.5 s (peak, 7905 bonds; bond count and
 largest cluster unchanged) and 0.99 ± 0.06 at 100 s (pump-out, 4640 bonds); whether the deagglomeration half-times
 match needs a full run. The `Params` defaults stay at the literature values (table above). Old `params.json` files

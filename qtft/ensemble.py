@@ -360,6 +360,77 @@ def bond_rates(run_dir: str | Path, bin_s: float | None = None, save: bool = Tru
     return result
 
 
+LARGE_MIN = (5, 20, 60, 80, 100, 150)     # default thresholds [particles] of large_counts
+
+
+def _thresholds(n_min) -> list[int]:
+    """One number or a list of agglomerate sizes -> sorted distinct positive integers."""
+    values = np.atleast_1d(n_min).ravel()
+    if len(values) == 0 or any(v != int(v) or v < 1 for v in values):
+        raise ValueError(f"n_min must be one positive integer or a list of them, not {n_min!r}")
+    return sorted({int(v) for v in values})
+
+
+def large_counts(run_dir: str | Path, n_min=LARGE_MIN, save: bool = True) -> pd.DataFrame:
+    """Number of agglomerates with >= n particles over time, for every n in `n_min` (one number or a
+    list), from the cluster column of the traj.dump frames of every finished replica (resolution
+    traj_every; a free particle is a cluster of 1). Also as a density per 1000 um^3 of the full box
+    volume Lx Ly Lz: the box count scaled up, so one agglomerate in the box is 1000 / V_box[um^3].
+
+    Returns one row per frame and threshold: step, time_s, n_min, replicas, count_mean, count_sd,
+    per_1000um3_mean, per_1000um3_sd (mean +- SD over replicas; SD NaN with one replica) and the count
+    of every replica (count_<replica>). With `save`, written to <run>/analysis/large_agglomerates.csv and
+    reused while it holds every requested threshold, the same replicas and is newer than their dumps
+    (otherwise recomputed for the requested and the saved thresholds).
+    """
+    run_dir = Path(run_dir).expanduser()
+    require_fetched(run_dir)
+    p = Params.load(run_dir / "params.json")
+    ns = _thresholds(n_min)
+    reps = list(replica_series(run_dir, names_only=True))
+    if not reps:
+        raise ValueError(f"no finished replicas in {run_dir}")
+    dumps = [run_dir / rep / "traj.dump" for rep in reps]
+    path = run_dir / "analysis" / "large_agglomerates.csv"
+    if save and path.exists():
+        cached = pd.read_csv(path)
+        cached_reps = [c[len("count_"):] for c in cached.columns
+                       if c.startswith("count_") and c not in ("count_mean", "count_sd")]
+        if cached_reps == reps:
+            fresh = path.stat().st_mtime >= max(d.stat().st_mtime for d in dumps)
+            if fresh and set(ns) <= set(cached["n_min"]):
+                return cached[cached["n_min"].isin(ns)].reset_index(drop=True)
+            if fresh:
+                ns = sorted(set(ns) | set(cached["n_min"]))
+
+    per_rep = {}                                                        # replica -> {step: counts per n}
+    for rep, dump in zip(reps, dumps):
+        counts = {}
+        for step, atoms in read_dump(dump):
+            sizes = np.bincount(atoms["cluster"].to_numpy(dtype=int))
+            sizes = sizes[sizes > 0]
+            counts[step] = [(sizes >= n).sum() for n in ns]
+        per_rep[rep] = counts
+    steps = sorted(set.intersection(*(set(c) for c in per_rep.values())))      # frames of all replicas
+    to_density = 1000 / (math.prod(p.box) * 1e-9)                       # box count -> per 1000 um^3
+    rows = []
+    for i, n in enumerate(ns):
+        values = np.array([[per_rep[rep][s][i] for s in steps] for rep in reps], dtype=float)
+        sd = values.std(axis=0, ddof=1) if len(reps) > 1 else np.full(len(steps), np.nan)
+        table = pd.DataFrame({"step": steps, "time_s": np.array(steps) * p.timestep * 1e-9, "n_min": n,
+                              "replicas": len(reps), "count_mean": values.mean(axis=0), "count_sd": sd,
+                              "per_1000um3_mean": values.mean(axis=0) * to_density,
+                              "per_1000um3_sd": sd * to_density})
+        for rep, row in zip(reps, values):
+            table[f"count_{rep}"] = row
+        rows.append(table)
+    result = pd.concat(rows, ignore_index=True)
+    if save:
+        path.parent.mkdir(exist_ok=True)
+        result.to_csv(path, index=False)
+    return result[result["n_min"].isin(_thresholds(n_min))].reset_index(drop=True)
+
+
 # ------------------------------------------------------------------ index of all runs
 INDEX_PARAMS = ("n_qt", "n_ft", "box_length", "boundary", "k_qq", "k_ff", "k_qf", "bond_k", "k_on",
                 "k_off_ca_per_s", "k_off_free_per_s", "timestep", "t_baseline_s", "t_influx_s", "t_pumpout_s",

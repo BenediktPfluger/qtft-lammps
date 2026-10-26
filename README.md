@@ -26,6 +26,7 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 2. `conda activate lammps`, open the repo in VS Code.
 3. Open `control.ipynb`: set the parameters, check the derived values, build and run. For a parameter
    study, list values per parameter in section 4 (`build_sweep`): one run per combination.
+4. Analyse finished runs in `analysis.ipynb`; render a video of a run in `animation.ipynb` (needs ffmpeg).
 
 Simulation output is written to `runs/` inside the repository (gitignored, never committed):
 `runs/single/` for runs with one replica, `runs/ensemble/` for runs with several,
@@ -38,6 +39,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 |---|---|
 | `control.ipynb` | set all parameters, build the LAMMPS input, run, monitor |
 | `analysis.ipynb` | ensemble statistics, structure and overlap analysis, figures and tables, comparison of runs, FIB-SEM export |
+| `animation.ipynb` | video of one replica: set the run folder name, `animate` writes `rep_XX/animation/animation.mp4` |
 | `docs/decisions.md` | model and project decisions with reasons, status of the implementation |
 | `docs/outputs.md` | every output file: content and what creates it |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
@@ -48,11 +50,12 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `qtft/remote.py`, `job_template.slurm` | runs on the LRZ Linux cluster (`Params(executor="lrz")`): LRZ settings (host, folders, Slurm partition, modules, email), the Slurm job script (one array task per replica), and submit / sync / cancel / `fetch` over SSH, used by `start`, `watch`, `stop` (setup: `docs/INSTALL.md`, section 9) |
 | `qtft/read.py` | readers for `log.lammps` (YAML thermo), dumps, `rdf.dat`, histograms |
 | `qtft/quicklook.py` | quick overview plot of a run: thermo time series, potential energy, virial pressure, mean overlap per pair family |
-| `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, association rate k_a (`binding_rate`, measured and Collins–Kimball; needs a calcium step), bond formation and breaking rates and apparent k_a over time (`bond_rates`, any protocol), `index.csv` of all runs, comparison of runs |
+| `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, association rate k_a (`binding_rate`, measured and Collins–Kimball; needs a calcium step), bond formation and breaking rates and apparent k_a over time (`bond_rates`, any protocol), number of agglomerates ≥ n over time for several n, in the box or per 1000 µm³ (`large_counts`, from `traj.dump`), `index.csv` of all runs, comparison of runs |
 | `qtft/structure.py` | cluster geometry with OVITO (clusters from bonds, unwrapped across the periodic box; not needed with walls): Rg, compactness, centres, nearest-neighbour distances, composition; percolation (a cluster spanning the box); solid and envelope volume of every agglomerate at the end of the influx (for confocal volumes; numpy/scipy) |
 | `qtft/overlap.py` | interpenetration diagnostics per pair family (with walls also particle–wall) |
-| `qtft/figures.py` | Nature-style figures (calcium, bond rates, binding rate, overview, agglomerate size and volume distributions, kinetics, large agglomerates, overlap, comparison; multi-panel figures also as single panels, phase lines), final-state table (CSV + LaTeX), `make_report` |
+| `qtft/figures.py` | Nature-style figures (calcium, bond rates, binding rate, overview, agglomerate size and volume distributions, kinetics, large agglomerates (several size thresholds, count or per 1000 µm³), overlap, comparison; multi-panel figures also as single panels, phase lines), final-state table (CSV + LaTeX), `make_report` |
 | `qtft/fibsem.py` | export of the final frame in the FIB-SEM segmentation schema (encapsulins, clusters from bonds; periodic box unwrapped, walls in the box frame) |
+| `qtft/animation.py` | video of one replica (H.264 via ffmpeg, 1920 × 1080 × `scale`, default 2 = 4K): whole box in 3D and from the front, fixed central magnification, calcium and calmodulin loading and average cluster size over time, statistics, calcium protocol; shaded spheres by a small numpy renderer, layout with matplotlib |
 | `qtft/sweep.py` | parameter sweeps: one run per combination of listed values (grid), same seeds for all variants, results table per variant |
 | `qtft/tuning.py` | force-constant sweep: constants for a target α, predicted vs measured overlap per pair family, binding kinetics |
 | `qtft/benchmark.py` | performance measurement (MPI processes per replica, replicas in parallel) and sizing of `extra_special` |

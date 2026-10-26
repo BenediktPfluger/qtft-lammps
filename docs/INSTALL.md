@@ -159,6 +159,10 @@ lammps_plugins/bond_break_random/build.sh   # unbinding plugin fix bond/break/ra
 pytest -q                 # self-test incl. short LAMMPS runs (~2.5 min); -m "not slow": without them (~2 s)
 ```
 
+The animation (`animation.ipynb`) writes the video with **ffmpeg**, which `environment.yml` includes; in an
+environment created before, install it with `conda install -c conda-forge ffmpeg`. Without it only the
+stills (PNG) work, and the video test is skipped.
+
 `build.sh` compiles the plugin against the headers in `~/src/lammps` (or the folder given as argument), which
 must be the same LAMMPS version as `lmp` (it checks this). The result,
 `lammps_plugins/bond_break_random/bondbreakrandom.so`, is loaded by every run with `bond_break="random"`;
