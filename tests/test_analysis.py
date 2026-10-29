@@ -122,6 +122,9 @@ def test_report_and_comparison(runs, tmp_path):
     assert {d.name: len(list(d.glob("*.pdf"))) for d in (out / "figures").iterdir() if d.is_dir()} == panels
     assert not (out / "figures" / "journal").exists() and not (out / "figures" / "bond_rates.pdf").exists()
     assert not (out / "figures" / "large_agglomerates.pdf").exists()              # replaced by _by_species
+    reps = sorted(d.name for d in runs[0].glob("rep_*"))
+    assert all((out / f"percolation_{rep}.csv").exists() for rep in reps)        # one analysis/ folder per run
+    assert not any((runs[0] / rep / "analysis").exists() for rep in reps)
     table = pd.read_csv(out / "final_table.csv", index_col=0)
     assert "mean Rg (nm)" in table.index
 

@@ -254,10 +254,10 @@ def spanning_axes(atoms: pd.DataFrame, bonds: np.ndarray, p: Params) -> str:
 
 
 def percolation(rep_dir: str | Path) -> pd.DataFrame:
-    """Spanning axes of every traj.dump frame of a replica (columns Step, time_ms, axes). Cached in
-    rep_XX/analysis/percolation.csv once the replica is done."""
+    """Spanning axes of every traj.dump frame of a replica (columns Step, time_ms, axes). Cached in the
+    run's analysis/percolation_rep_XX.csv once the replica is done."""
     rep_dir = Path(rep_dir)
-    cache = rep_dir / "analysis" / "percolation.csv"
+    cache = rep_dir.parent / "analysis" / f"percolation_{rep_dir.name}.csv"
     if cache.exists():
         return pd.read_csv(cache, keep_default_na=False)
     p = Params.load(rep_dir.parent / "params.json")

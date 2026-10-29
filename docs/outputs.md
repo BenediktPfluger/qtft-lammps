@@ -25,7 +25,6 @@ runs/
 │       │   ├── in.lammps, status, pid, lammps.out
 │       │   ├── log.lammps
 │       │   ├── traj.dump, bonds.dump, rdf.dat, coord_qt.hist, coord_ft.hist, final.data
-│       │   ├── analysis/          percolation.csv, after the first ensemble_stats()
 │       │   ├── fibsem/            only after the FIB-SEM export
 │       │   └── animation/         only after animate()
 │       └── analysis/              only after the analysis
@@ -144,12 +143,6 @@ Only after `animate(run)` (animation notebook).
 | `animation.mp4` | Video, 1920 × 1080 × `scale` (default 2: 3840 × 2160), H.264 (`yuv420p`, CRF 14), one frame per `traj.dump` frame (every `every`-th) at `fps` frames per second: header (title, calcium phase, production time, calcium in µM), the whole box in 3D and from the front with the magnified region outlined, the fixed central magnification, calcium (µM) and calmodulin loading f over time, the average cluster size (all, Qt, Ft: thermo `mean_size`, `mean_size_qt`, `mean_size_ft`), both graphs with the current time, legend, statistics of the frame (bonds, Qt in the cluster with the most Qt, % of Qt in clusters with ≥ 2 Qt), timeline of the protocol. Written as `animation.partial.mp4` and renamed when complete | Python: `animate()` (needs ffmpeg) |
 | `still_<t>s.png` | Optional: the frame nearest to production time t [s] as PNG (same layout and size), for every t in `stills`; `video=False` writes only these | Python: `animate()` |
 
-## Replica analysis `rep_XX/analysis/`
-
-| File | Content | Created by |
-|---|---|---|
-| `percolation.csv` | Per `traj.dump` frame: `Step, time_ms, axes` = the axes along which one cluster spans the box (`""` = none, e.g. `xz`); written once the replica is done and reused afterwards (delete it to recompute) | Python: `structure.percolation()`, called by `ensemble_stats()` |
-
 ## Analysis folder `<run name>/analysis/`
 
 Only after `ensemble_stats()` or `make_report()` (analysis notebook). Everything here can be
@@ -158,6 +151,7 @@ regenerated from the replica files at any time.
 | File | Content | Created by |
 |---|---|---|
 | `ensemble_stats.json` | Mean, SD (sample SD, ddof = 1) and per-replica traces of all logged quantities on a common time grid; half-times, percolation (`percolated`: a cluster spans the box in the last frame, `t_percolation_ms`: first frame with a spanning cluster), final values per replica | Python: `ensemble_stats()` |
+| `percolation_rep_XX.csv` | One per replica, per `traj.dump` frame: `Step, time_ms, axes` = the axes along which one cluster spans the box (`""` = none, e.g. `xz`); written once the replica is done and reused afterwards (delete it to recompute) | Python: `structure.percolation()`, called by `ensemble_stats()` |
 | `ensemble_timeseries.csv` | The same time series as a table (`<quantity>_mean`, `<quantity>_sd`) | Python: `ensemble_stats()` |
 | `final_state.csv` | Final values per quantity (at the end of the calcium protocol): mean, SD, number of replicas (row `percolated`: mean = fraction of percolated replicas); rows `bonds_peak`, `t_bonds_peak_ms`, `largest_peak`, `t_largest_peak_ms`, `t_half_unbind_bonds_ms`, `t_half_unbind_largest_ms` (deagglomeration half-times after the end of the influx) | Python: `ensemble_stats()` |
 | `structure_timeseries.csv` | Per analysed frame, mean/SD over replicas: Rg, Rg/Rg_ideal, inter- and intra-cluster nearest-neighbour distances, Qt fraction per cluster | Python + OVITO: `structure_ensemble()` |
