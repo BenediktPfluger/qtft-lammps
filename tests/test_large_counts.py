@@ -10,7 +10,8 @@ import pandas as pd
 import pytest
 
 from qtft import Params, large_counts
-from qtft.figures import RunData, fig_large_count
+from qtft.ensemble import large_counts_species
+from qtft.figures import RunData, fig_large_by_species, fig_large_count
 
 STEPS = (0, 1000, 2000)
 # cluster sizes per replica and frame (a free particle is a cluster of 1)
@@ -41,6 +42,17 @@ def _run(root, box=(600, 600, 600), sizes=SIZES):
 
 def _hand(rep, n):
     return [sum(s >= n for s in frame) for frame in SIZES[rep]]
+
+
+def _hand_species(rep, n, species):
+    """Agglomerates with >= n Qt (atoms 1-20) or Ft (the rest), as _run lays out the atoms."""
+    counts = []
+    for frame in SIZES[rep]:
+        cluster = np.repeat(np.arange(len(frame)), frame)
+        qt = np.arange(len(cluster)) < 20
+        members = cluster[qt] if species == "qt" else cluster[~qt]
+        counts.append(int((np.bincount(members) >= n).sum()))
+    return counts
 
 
 def test_counts_for_several_thresholds(tmp_path):
@@ -129,4 +141,47 @@ def test_figure_several_runs(tmp_path):
     assert {("#1f4e79", "-"), ("#1f4e79", "--"), ("#c0392b", "-"), ("#c0392b", "--")} <= styles
     with pytest.raises(ValueError, match="at most 6"):
         fig_large_count(runs, n_min=[2, 5, 10, 20, 50, 80, 100])
+    plt.close("all")
+
+
+def test_counts_by_species(tmp_path):
+    run, _ = _run(tmp_path)
+    tables = large_counts_species(run, {"all": [5, 20], "qt": [2, 5], "ft": [5, 20]})
+    for sp in ("qt", "ft"):
+        for n in tables[sp]["n_min"].unique():
+            d = tables[sp][tables[sp]["n_min"] == n]
+            for rep in ("rep_01", "rep_02"):
+                np.testing.assert_array_equal(d[f"count_{rep}"], _hand_species(rep, n, sp))
+    for n in (5, 20):                                                   # n Qt or n Ft are also >= n particles
+        total = tables["all"][tables["all"]["n_min"] == n]["count_mean"].to_numpy()
+        for sp in ("qt", "ft"):
+            d = tables[sp][tables[sp]["n_min"] == n]
+            if len(d):
+                assert (d["count_mean"].to_numpy() <= total).all()
+    assert _hand_species("rep_01", 5, "qt") != _hand("rep_01", 5)           # the fixture tells them apart
+    for name in ("large_agglomerates.csv", "large_agglomerates_qt.csv", "large_agglomerates_ft.csv"):
+        assert (run / "analysis" / name).exists()
+    single = large_counts(run, [2, 5], species="qt")                     # from the CSV, same table
+    pd.testing.assert_frame_equal(single, tables["qt"])
+    total = pd.read_csv(run / "analysis" / "large_agglomerates.csv")   # total file keeps its own columns
+    assert list(total.columns[:8]) == ["step", "time_s", "n_min", "replicas", "count_mean", "count_sd",
+                                       "per_1000um3_mean", "per_1000um3_sd"]
+    with pytest.raises(ValueError, match="species"):
+        large_counts(run, 5, species="QtC", save=False)
+
+
+def test_figure_by_species(tmp_path):
+    run, p = _run(tmp_path)
+    fig = fig_large_by_species(_rundata(run, p), tmp_path / "figs", n_min=[5, 20], n_min_qt=[2, 5], n_min_ft=5)
+    axes = fig.axes
+    assert len(axes) == 6
+    assert [ax.get_title(loc="left") for ax in axes] == ["all particles, number", "all particles, density", "Qt, number",
+                                               "Qt, density", "Ft, number", "Ft, density"]
+    assert [l.get_text() for l in axes[2].get_legend().get_texts()] == ["≥ 2 Qt", "≥ 5 Qt"]
+    assert axes[4].get_legend() is None and axes[4].get_ylabel() == "agglomerates ≥ 5 Ft in the box"
+    mean = [l for l in axes[2].lines if len(l.get_xdata()) == len(STEPS)]
+    np.testing.assert_allclose(mean[0].get_ydata(),
+                               np.mean([_hand_species("rep_01", 2, "qt"), _hand_species("rep_02", 2, "qt")], axis=0))
+    assert (tmp_path / "figs" / "large_agglomerates_by_species.png").exists()
+    assert len(list((tmp_path / "figs" / "large_agglomerates_by_species").glob("*.png"))) == 6
     plt.close("all")

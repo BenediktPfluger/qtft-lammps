@@ -20,8 +20,8 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import MultipleLocator, NullFormatter
 
-from .ensemble import (LARGE_MIN, TO_PER_M_S, _thresholds, binding_rate, bond_rates, cached_stats, ensemble_stats,
-                       large_counts)
+from .ensemble import (LARGE_MIN, LARGE_MIN_QT, TO_PER_M_S, _thresholds, binding_rate, bond_rates, cached_stats,
+                       ensemble_stats, large_counts, large_counts_species)
 from .params import Params
 from .read import read_histo
 from .structure import CLUSTER_MIN, cluster_volumes_run
@@ -542,6 +542,56 @@ def fig_kinetics(runs: list[RunData], out_dir: Path | None = None, traces=False)
 
 # line styles of the thresholds in fig_large_count with several runs
 LARGE_STYLES = ["-", "--", ":", "-.", (0, (5, 1, 1, 1, 1, 1)), (0, (8, 2))]
+LARGE_UNIT = {"all": "", "qt": " Qt", "ft": " Ft"}     # what the thresholds count, in labels
+
+
+def _draw_large(ax, runs, ns, density, traces, species="all"):
+    """Agglomerates with >= n (particles, Qt or Ft: `species`) over time, one line per n, with y label.
+    One run: dark (smallest n) to light; several runs: one colour per run, one line style per n."""
+    column = "per_1000um3" if density else "count"
+    shades = plt.cm.Blues(np.linspace(0.95, 0.45, len(ns))) if len(ns) > 1 else [runs[0].color]
+    unit = LARGE_UNIT[species]
+    values = []
+    for r in runs:
+        table = large_counts(r.run_dir, ns, species=species)
+        reps = [c for c in table.columns if c.startswith("count_") and c not in ("count_mean", "count_sd")]
+        scale = 1000 / (math.prod(r.p.box) * 1e-9) if density else 1.0      # replica traces as plotted
+        for i, n in enumerate(ns):
+            d = table[table["n_min"] == n]
+            tr = d[reps].to_numpy().T * scale
+            if len(runs) > 1:
+                color, ls = r.color, LARGE_STYLES[i]
+                label = r.label if i == 0 else None
+            else:
+                color, ls, label = shades[i], "-", f"≥ {n}{unit}" if len(ns) > 1 else None
+            band(ax, d["time_s"].to_numpy() * 1e3, d[f"{column}_mean"].to_numpy(),
+                 d[f"{column}_sd"].to_numpy(), color, label, ls=ls, traces=tr if traces else None)
+            values.append(d[f"{column}_mean"].to_numpy())
+    k = _thousands(ax, np.concatenate(values))
+    size = f" ≥ {ns[0]}{unit}" if len(ns) == 1 else ""
+    ax.set_ylabel(f"agglomerates{size} " + ("per 1000 µm³" if density else "in the box")
+                  + (" (×10³)" if k else ""))
+
+
+def fig_large_by_species(run: RunData, out_dir: Path | None = None, traces=False, n_min=LARGE_MIN,
+                         n_min_qt=LARGE_MIN_QT, n_min_ft=LARGE_MIN):
+    """Number of agglomerates with >= n particles (top), >= n Qt (middle) and >= n Ft (bottom) over time,
+    in the box (left) and per 1000 um^3 of box volume (right), one line per threshold, 3 x 2 (183 mm).
+    Saved as large_agglomerates_by_species.*; panels also alone in large_agglomerates_by_species/."""
+    ns = {"all": _thresholds(n_min), "qt": _thresholds(n_min_qt), "ft": _thresholds(n_min_ft)}
+    large_counts_species(run.run_dir, ns)                     # all three from one pass over the dumps (cached)
+    names = {"all": "all particles", "qt": "Qt", "ft": "Ft"}
+
+    def panel(species, density):
+        def draw(ax, runs, traces=False):
+            _draw_large(ax, runs, ns[species], density, traces, species)
+            if len(ns[species]) > 1:
+                ax.legend(ncol=2)
+        return f"{names[species]}, {'density' if density else 'number'}", draw, True
+
+    panels = [panel(sp, density) for sp in ns for density in (False, True)]
+    return _panel_figure("large_agglomerates_by_species", panels, [run], out_dir, 3, 2, DOUBLE, 150 * MM,
+                         traces=traces)
 
 
 def fig_large_count(runs: list[RunData], out_dir: Path | None = None, traces=False, n_min=LARGE_MIN,
@@ -555,31 +605,10 @@ def fig_large_count(runs: list[RunData], out_dir: Path | None = None, traces=Fal
     if len(runs) > 1 and len(ns) > len(LARGE_STYLES):
         raise ValueError(f"several runs show at most {len(LARGE_STYLES)} thresholds (one line style each), "
                          f"not {len(ns)}")
-    column = "per_1000um3" if density else "count"
-    shades = plt.cm.Blues(np.linspace(0.95, 0.45, len(ns))) if len(ns) > 1 else [runs[0].color]
     with plt.rc_context(STYLE):
         fig = _figure(SINGLE, 60 * MM)
         ax = fig.add_subplot()
-        values = []
-        for r in runs:
-            table = large_counts(r.run_dir, ns)
-            reps = [c for c in table.columns if c.startswith("count_") and c not in ("count_mean", "count_sd")]
-            scale = 1000 / (math.prod(r.p.box) * 1e-9) if density else 1.0      # replica traces as plotted
-            for i, n in enumerate(ns):
-                d = table[table["n_min"] == n]
-                tr = d[reps].to_numpy().T * scale
-                if len(runs) > 1:
-                    color, ls = r.color, LARGE_STYLES[i]
-                    label = r.label if i == 0 else None
-                else:
-                    color, ls, label = shades[i], "-", f"≥ {n}" if len(ns) > 1 else None
-                band(ax, d["time_s"].to_numpy() * 1e3, d[f"{column}_mean"].to_numpy(),
-                     d[f"{column}_sd"].to_numpy(), color, label, ls=ls, traces=tr if traces else None)
-                values.append(d[f"{column}_mean"].to_numpy())
-        k = _thousands(ax, np.concatenate(values))
-        size = f" ≥ {ns[0]}" if len(ns) == 1 else ""
-        ax.set_ylabel(f"agglomerates{size} " + ("per 1000 µm³" if density else "in the box")
-                      + (" (×10³)" if k else ""))
+        _draw_large(ax, runs, ns, density, traces)
         phase_lines(ax, runs)
         _time_axis(ax, _t_end(runs))
         handles, labels = ax.get_legend_handles_labels()
@@ -787,8 +816,7 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     rate = [fig_binding_rate(run, figs, rate=binding_rate(run_dir))] if run.p.t_influx_s > 0 and run.p.ca_rise_s == 0 else []  # + csv
     rates = bond_rates(run_dir)                                                                  # + csv
     for f in (fig_calcium(run, figs, traces, rates), fig_overview(run, figs, traces=traces), fig_clusters(run, figs),
-              fig_kinetics([run], figs, traces=traces), fig_large_count([run], figs, traces=traces),
-              fig_large_count([run], figs, traces=traces, density=True),
+              fig_kinetics([run], figs, traces=traces), fig_large_by_species(run, figs, traces=traces),
               fig_overlap(run, figs), *rate):
         plt.close(f)
 

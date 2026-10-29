@@ -109,15 +109,19 @@ def test_report_and_comparison(runs, tmp_path):
 
     out = make_report(runs[0], every=2)
     for name in ("final_table.csv", "final_table.tex", "bonds_timeseries.csv", "structure_timeseries.csv",
-                 "clusters_final.csv", "overlap_final.csv", "binding_rate.csv", "clusters_influx_end.csv"):
+                 "clusters_final.csv", "overlap_final.csv", "binding_rate.csv", "clusters_influx_end.csv",
+                 "large_agglomerates.csv", "large_agglomerates_qt.csv", "large_agglomerates_ft.csv"):
         assert (out / name).exists(), name
-    for name in ("calcium", "overview", "clusters", "kinetics", "large_agglomerates", "overlap", "binding_rate"):
+    for name in ("calcium", "overview", "clusters", "kinetics", "large_agglomerates_by_species", "overlap",
+                 "binding_rate"):
         for ext in ("pdf", "svg", "png"):
             assert (out / "figures" / f"{name}.{ext}").exists(), f"{name}.{ext}"
-    panels = {"overview": 12, "calcium": 6, "kinetics": 3, "clusters": 3}         # every panel alone
+    panels = {"overview": 12, "calcium": 6, "kinetics": 3, "clusters": 3,         # every panel alone
+              "large_agglomerates_by_species": 6}
     assert (out / "figures" / "overview" / "coordination_at_end_of_influx.pdf").exists()
     assert {d.name: len(list(d.glob("*.pdf"))) for d in (out / "figures").iterdir() if d.is_dir()} == panels
     assert not (out / "figures" / "journal").exists() and not (out / "figures" / "bond_rates.pdf").exists()
+    assert not (out / "figures" / "large_agglomerates.pdf").exists()              # replaced by _by_species
     table = pd.read_csv(out / "final_table.csv", index_col=0)
     assert "mean Rg (nm)" in table.index
 
