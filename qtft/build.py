@@ -166,7 +166,9 @@ def write_job(target: Path, p: Params, reps: list[Path]) -> Path:
     (target / "replicas.txt").write_text("".join(f"{r.relative_to(target).as_posix()}\n" for r in reps))
     values = {**LRZ, "job_name": target.name, "mpi_procs": p.mpi_procs, "slurm_mem": p.slurm_mem,
               "slurm_time": p.slurm_time, "n_tasks": len(reps),
-              "array_limit": f"%{p.max_parallel}" if p.max_parallel else ""}
+              "array_limit": f"%{p.max_parallel}" if p.max_parallel else "",
+              "mail": (f"#SBATCH --mail-type={LRZ['mail_type']}\n#SBATCH --mail-user={LRZ['mail_user']}"
+                       if LRZ["mail_user"] else "#SBATCH --mail-type=NONE")}       # address from lrz_local.json
     job = target / "job.slurm"
     job.write_text(render(values, JOB_TEMPLATE.read_text()))
     return job

@@ -192,6 +192,14 @@ task per replica, partition `serial_long`, max. 7 days). LAMMPS on LRZ is a mini
 version with `fix bond/break/random` compiled in (no plugin). Settings (host, folders, modules, email):
 `LRZ` in `qtft/remote.py`.
 
+**Email for Slurm (personal, not in git).** Create `lrz_local.json` in the repository root (gitignored):
+
+```json
+{"mail_user": "<your email>"}
+```
+
+It may set any key of `LRZ`. Without the file, jobs are submitted with `--mail-type=NONE` (no email).
+
 **SSH with one 2FA login.** In WSL, `~/.ssh/config` (then `chmod 600 ~/.ssh/config`):
 
 ```

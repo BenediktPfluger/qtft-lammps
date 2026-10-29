@@ -11,8 +11,7 @@
 #SBATCH --time={{slurm_time}}
 #SBATCH --array=1-{{n_tasks}}{{array_limit}}
 #SBATCH --output=slurm-%A_%a.out
-#SBATCH --mail-type={{mail_type}}
-#SBATCH --mail-user={{mail_user}}
+{{mail}}
 #SBATCH --export=NONE
 
 # login shell (-l): LRZ's base setup provides module and the Intel MPI settings

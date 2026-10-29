@@ -75,7 +75,8 @@ pump-out (2.6·10⁸ steps); tests use small systems and short protocols.
   `job_template.slurm`, one task per replica, `replicas.txt`; a sweep is one array over all its replicas,
   replica-major, at most `max_parallel` at once) in `serial_long` (7 days, 1 node per job), `mpi_procs` MPI
   tasks, `slurm_time` (default 3 days, ≈ 2 × the expected 35 h of the 3 µm run) and `slurm_mem` (default
-  4G) per replica, email at begin, end and failure (once per array). The job writes the same `status` /
+  4G) per replica, email at begin, end and failure (once per array) to the address in the gitignored
+  `lrz_local.json` (personal data stays out of the repository; without it no email). The job writes the same `status` /
   `pid` files as the local launcher. LAMMPS on LRZ is the same version with `fix bond/break/random` compiled
   in, so the input loads no plugin; otherwise the input is identical to a local one, and the results were
   byte-identical (2 and 8 processes). The folder on LRZ mirrors the local one: `~/qtft-lammps/runs/<group>/
@@ -97,7 +98,8 @@ pump-out (2.6·10⁸ steps); tests use small systems and short protocols.
   processes each): done in 10 s, fetched results byte-identical to the same replicas run locally,
   `make_report` works.
 - Notebooks are committed without outputs (`nbstripout`).
-- Commits are authored as Benedikt Pfluger <benedikt.pfluger@tum.de>; no co-author or
+- Commits are authored as Benedikt Pfluger (address from the local git config, never written in
+  repository files); no co-author or
   "generated with" lines in commits.
 - All work is committed directly on `main`; no feature branches or pull requests.
 - LAMMPS documentation is the reference for every command (docs.lammps.org).

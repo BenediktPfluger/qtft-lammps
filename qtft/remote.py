@@ -32,9 +32,25 @@ LRZ = {
     "qos": "cm4_serial_long",                      # ... and the QOS it requires
     "modules": "gcc/15.2.0 intel-mpi/2021.12.0",   # the Spack gcc modules cannot compile <mutex>
     "lmp": "$HOME/src/lammps/build/lmp",           # built with the fix compiled in
-    "mail_user": "benedikt.pfluger@tum.de",
+    "mail_user": "",                               # email for Slurm; set in lrz_local.json, never in git
     "mail_type": "BEGIN,END,FAIL",                 # for a job array: once for the whole array
 }
+LOCAL_SETTINGS = Path(__file__).resolve().parent.parent / "lrz_local.json"   # personal settings, gitignored
+
+
+def load_local_settings(path: Path = LOCAL_SETTINGS) -> None:
+    """Personal LRZ settings (e.g. {"mail_user": "name@example.org"}) from a gitignored JSON file into LRZ,
+    so that they never appear in the repository. A missing file keeps the defaults (no email)."""
+    if not path.exists():
+        return
+    values = json.loads(path.read_text())
+    unknown = set(values) - set(LRZ)
+    if unknown:
+        raise ValueError(f"{path.name}: unknown LRZ settings {sorted(unknown)}; known: {list(LRZ)}")
+    LRZ.update(values)
+
+
+load_local_settings()
 SSH_OPTIONS = ["-x", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20"]   # no X11, never ask for a password
 STATUS_FILES = ("status", "pid")                                         # progress/watch fetch these ...
 LOG_FILES = ("log.lammps", "lammps.out", "slurm-*.out")                  # ... and the new lines of these

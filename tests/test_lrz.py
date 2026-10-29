@@ -39,13 +39,29 @@ def test_lrz_params():
         build_sweep(Params(), {"executor": ["local", "lrz"]}, "x")
 
 
+def test_lrz_mail_from_local_settings(tmp_path, monkeypatch):
+    monkeypatch.setitem(LRZ, "mail_user", "")
+    common = dict(n_replicas=1, data_dir=str(tmp_path), executor="lrz")
+    job = (build_run(Params(run_name="none", **common)) / "job.slurm").read_text()
+    assert "#SBATCH --mail-type=NONE\n" in job and "--mail-user" not in job          # no address: no email
+    settings = tmp_path / "lrz_local.json"
+    settings.write_text(json.dumps({"mail_user": "someone@example.org"}))
+    remote.load_local_settings(settings)
+    job = (build_run(Params(run_name="mail", **common)) / "job.slurm").read_text()
+    assert "#SBATCH --mail-type=BEGIN,END,FAIL\n#SBATCH --mail-user=someone@example.org\n" in job
+    settings.write_text(json.dumps({"mail": "x"}))
+    with pytest.raises(ValueError, match="unknown LRZ settings"):
+        remote.load_local_settings(settings)
+    remote.load_local_settings(tmp_path / "missing.json")                     # no file: nothing changes
+    assert LRZ["mail_user"] == "someone@example.org"
+
+
 def test_lrz_job_files(tmp_path):
     common = dict(n_replicas=3, mpi_procs=8, data_dir=str(tmp_path), run_name="r")
     run = build_run(Params(executor="lrz", **common))
     job = (run / "job.slurm").read_text()
     for line in ("#SBATCH --clusters=serial", "#SBATCH --partition=serial_long", "#SBATCH --qos=cm4_serial_long",
                  "#SBATCH --ntasks=8", "#SBATCH --mem=4G", "#SBATCH --time=3-00:00:00", "#SBATCH --array=1-3\n",
-                 "#SBATCH --mail-type=BEGIN,END,FAIL", f"#SBATCH --mail-user={LRZ['mail_user']}",
                  "#SBATCH --export=NONE", "export SLURM_EXPORT_ENV=ALL", f"module load {LRZ['modules']}",
                  f"srun --mpi=pmi2 {LRZ['lmp']} -in in.lammps"):
         assert line in job, line
