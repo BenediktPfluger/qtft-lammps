@@ -11,11 +11,12 @@ whole box length (unwrapping it along a spanning tree leaves a bond that disagre
 image by a multiple of L). Walls: the cluster touches both opposite walls (a particle surface within
 WALL_TOUCH of the face).
 
-Cluster volumes (`cluster_volumes`, numpy/scipy only), for comparison with confocal (lattice SIM)
-volumes: the particle spheres of a cluster (Qt and Ft) are drawn on a voxel grid; the solid volume is
+Agglomerate volumes (`agglomerate_volumes`, numpy/scipy only), for comparison with confocal (lattice
+SIM) volumes: the particle spheres of an agglomerate (Qt and Ft) are drawn on a voxel grid; the solid volume is
 their union, the envelope volume the morphological closing of it with an ellipsoidal probe (radii
 probe_xy, probe_z, about half the lateral and axial resolution), which fills the gaps the microscope
-cannot resolve. Clusters of >= CLUSTER_MIN particles, in the frame at the end of the influx.
+cannot resolve. Agglomerates (clusters of >= AGGLOMERATE_MIN particles), in the frame at the end of the
+influx.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ from .remote import require_fetched
 
 PACKING = 0.64          # random close packing, for the ideal compact sphere (Rg_ideal)
 WALL_TOUCH = 5.0        # [nm] a particle surface this close to a wall touches it (percolation with walls)
-CLUSTER_MIN = 3         # particles of a cluster for the size and volume distributions
+AGGLOMERATE_MIN = 3     # agglomerate = cluster of at least this many particles (size and volume distributions)
 PROBE_XY_NM, PROBE_Z_NM = 60.0, 150.0      # envelope probe: half the lattice-SIM resolution (~120 / 300 nm)
 VOXEL_NM = 10.0         # voxel edge of the volume grid [nm]
 
@@ -277,9 +278,9 @@ def percolation(rep_dir: str | Path) -> pd.DataFrame:
     return df
 
 
-# ------------------------------------------------------------------ cluster volumes (confocal comparison)
-def _cluster_volume(pos: np.ndarray, radius: np.ndarray, probe: np.ndarray, voxel: float) -> tuple[float, float]:
-    """Solid and envelope volume [nm^3] of one cluster: union of the spheres (pos, radius) on a voxel
+# ------------------------------------------------------------------ agglomerate volumes (confocal comparison)
+def _agglomerate_volume(pos: np.ndarray, radius: np.ndarray, probe: np.ndarray, voxel: float) -> tuple[float, float]:
+    """Solid and envelope volume [nm^3] of one agglomerate: union of the spheres (pos, radius) on a voxel
     grid, and its closing with an ellipsoid of radii `probe` (x, y, z)."""
     pad = probe + 2 * voxel                                 # room for the dilation inside the grid
     lo = np.floor(((pos - radius[:, None]).min(axis=0) - pad) / voxel) * voxel    # grid anchored at 0
@@ -298,11 +299,11 @@ def _cluster_volume(pos: np.ndarray, radius: np.ndarray, probe: np.ndarray, voxe
     return solid.sum() * voxel**3, closed.sum() * voxel**3
 
 
-def cluster_volumes(atoms: pd.DataFrame, bonds: np.ndarray, p: Params, probe_xy_nm: float = PROBE_XY_NM,
-                    probe_z_nm: float = PROBE_Z_NM, voxel_nm: float = VOXEL_NM) -> pd.DataFrame:
-    """One row per cluster of >= CLUSTER_MIN particles (largest first): size, composition, bonds, the
-    axes it spans and its solid and envelope volume [um^3]. A cluster that wraps around the periodic
-    box has no defined volume (NaN)."""
+def agglomerate_volumes(atoms: pd.DataFrame, bonds: np.ndarray, p: Params, probe_xy_nm: float = PROBE_XY_NM,
+                        probe_z_nm: float = PROBE_Z_NM, voxel_nm: float = VOXEL_NM) -> pd.DataFrame:
+    """One row per agglomerate (cluster of >= AGGLOMERATE_MIN particles, largest first): size,
+    composition, bonds, the axes it spans and its solid and envelope volume [um^3]. An agglomerate that
+    wraps around the periodic box has no defined volume (NaN)."""
     label, pos, spans = unwrap_clusters(atoms, bonds, p)
     is_qt = atoms["type"].to_numpy() == 1
     radius = np.where(is_qt, p.radius_qt, p.radius_ft)
@@ -314,24 +315,24 @@ def cluster_volumes(atoms: pd.DataFrame, bonds: np.ndarray, p: Params, probe_xy_
     probe = np.array([probe_xy_nm, probe_xy_nm, probe_z_nm])
     rows = []
     for c in np.argsort(-size, kind="stable"):
-        if size[c] < CLUSTER_MIN:
+        if size[c] < AGGLOMERATE_MIN:
             break
         axes = "".join(a for a, s in zip("xyz", spans[c]) if s)
         v_solid = v_env = np.nan
         if not (axes and p.periodic):
             members = label == c
-            v_solid, v_env = _cluster_volume(pos[members], radius[members], probe, voxel_nm)
+            v_solid, v_env = _agglomerate_volume(pos[members], radius[members], probe, voxel_nm)
         rows.append({"size": size[c], "n_qt": n_qt[c], "n_ft": size[c] - n_qt[c], "n_bonds": n_bonds[c],
                      "spans": axes, "v_solid_um3": v_solid * 1e-9, "v_envelope_um3": v_env * 1e-9})
     columns = ["size", "n_qt", "n_ft", "n_bonds", "spans", "v_solid_um3", "v_envelope_um3"]
     return pd.DataFrame(rows, columns=columns)
 
 
-def cluster_volumes_run(run_dir: str | Path, probe_xy_nm: float = PROBE_XY_NM, probe_z_nm: float = PROBE_Z_NM,
-                        voxel_nm: float = VOXEL_NM, save: bool = True) -> pd.DataFrame:
-    """Cluster sizes and volumes of all finished replicas in the traj.dump frame at the end of the
+def agglomerate_volumes_run(run_dir: str | Path, probe_xy_nm: float = PROBE_XY_NM, probe_z_nm: float = PROBE_Z_NM,
+                            voxel_nm: float = VOXEL_NM, save: bool = True) -> pd.DataFrame:
+    """Agglomerate sizes and volumes of all finished replicas in the traj.dump frame at the end of the
     influx (the last frame at or before it; the last frame without an influx). Saved to
-    <run>/analysis/clusters_influx_end.csv."""
+    <run>/analysis/agglomerates_influx_end.csv."""
     run_dir = Path(run_dir).expanduser()
     require_fetched(run_dir)
     p = Params.load(run_dir / "params.json")
@@ -344,16 +345,16 @@ def cluster_volumes_run(run_dir: str | Path, probe_xy_nm: float = PROBE_XY_NM, p
         b_step, bonds = next(read_bonds(rep / "bonds.dump", start=step))
         if b_step != step:
             raise ValueError(f"step {step} missing in {rep / 'bonds.dump'}")
-        table = cluster_volumes(atoms, bonds, p, probe_xy_nm, probe_z_nm, voxel_nm)
+        table = agglomerate_volumes(atoms, bonds, p, probe_xy_nm, probe_z_nm, voxel_nm)
         tables.append(table.assign(replica=rep.name, step=step, time_s=step * p.timestep * 1e-9,
-                                   cluster=np.arange(1, len(table) + 1)))
+                                   agglomerate=np.arange(1, len(table) + 1)))
     if not tables:
         raise ValueError(f"no finished replicas in {run_dir}")
     result = pd.concat(tables, ignore_index=True).assign(probe_xy_nm=probe_xy_nm, probe_z_nm=probe_z_nm,
                                                          voxel_nm=voxel_nm)
-    result = result[["replica", "step", "time_s", "cluster", *tables[0].columns[:-4], "probe_xy_nm",
+    result = result[["replica", "step", "time_s", "agglomerate", *tables[0].columns[:-4], "probe_xy_nm",
                      "probe_z_nm", "voxel_nm"]]
     if save:
         (run_dir / "analysis").mkdir(exist_ok=True)
-        result.to_csv(run_dir / "analysis" / "clusters_influx_end.csv", index=False)
+        result.to_csv(run_dir / "analysis" / "agglomerates_influx_end.csv", index=False)
     return result

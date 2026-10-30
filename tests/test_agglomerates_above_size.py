@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from qtft import Params, large_counts
-from qtft.ensemble import large_counts_species
-from qtft.figures import RunData, fig_large_by_species, fig_large_count
+from qtft import Params, agglomerates_above_size
+from qtft.ensemble import _agglomerates_above_size_species
+from qtft.figures import RunData, fig_agglomerates_above_size, fig_agglomerates_above_size_total
 
 STEPS = (0, 1000, 2000)
 # cluster sizes per replica and frame (a free particle is a cluster of 1)
@@ -57,7 +57,7 @@ def _hand_species(rep, n, species):
 
 def test_counts_for_several_thresholds(tmp_path):
     run, p = _run(tmp_path)
-    t = large_counts(run, [10, 5, 20])
+    t = agglomerates_above_size(run, [10, 5, 20])
     assert sorted(t["n_min"].unique()) == [5, 10, 20]
     for n in (5, 10, 20):
         d = t[t["n_min"] == n]
@@ -73,31 +73,31 @@ def test_counts_for_several_thresholds(tmp_path):
 
 def test_single_threshold_and_validation(tmp_path):
     run, _ = _run(tmp_path)
-    t = large_counts(run, 5, save=False)
+    t = agglomerates_above_size(run, 5, save=False)
     assert list(t["n_min"].unique()) == [5]
     assert list(t["count_rep_01"]) == _hand("rep_01", 5)
     for bad in (0, 2.5, [], [5, -1]):
         with pytest.raises(ValueError, match="n_min"):
-            large_counts(run, bad, save=False)
+            agglomerates_above_size(run, bad, save=False)
 
 
 def test_density_of_a_rectangular_box_and_one_replica(tmp_path):
     run, _ = _run(tmp_path, box=(400, 500, 1000), sizes={"rep_01": SIZES["rep_01"]})
-    d = large_counts(run, 5)
+    d = agglomerates_above_size(run, 5)
     np.testing.assert_allclose(d["per_1000um3_mean"], np.array(_hand("rep_01", 5)) * 1000 / 0.2)
     assert d["count_sd"].isna().all()
 
 
 def test_csv_is_reused_and_extended(tmp_path):
     run, _ = _run(tmp_path)
-    large_counts(run, [5, 10])
-    path = run / "analysis" / "large_agglomerates.csv"
+    agglomerates_above_size(run, [5, 10])
+    path = run / "analysis" / "agglomerates_above_size.csv"
     for rep in ("rep_01", "rep_02"):                                    # make the cache visibly newer
         os.utime(run / rep / "traj.dump", (0, 0))
     first = path.stat().st_mtime_ns
-    assert list(large_counts(run, 10)["n_min"].unique()) == [10]
+    assert list(agglomerates_above_size(run, 10)["n_min"].unique()) == [10]
     assert path.stat().st_mtime_ns == first                             # read from the CSV, not rewritten
-    t = large_counts(run, 20)                                           # new threshold: recomputed, saved n kept
+    t = agglomerates_above_size(run, 20)                       # new threshold: recomputed, saved n kept
     assert list(t["n_min"].unique()) == [20]
     assert sorted(pd.read_csv(path)["n_min"].unique()) == [5, 10, 20]
 
@@ -109,11 +109,11 @@ def _rundata(run, p, label="run", color="#1f4e79"):
 def test_figure_count_and_density(tmp_path):
     run, p = _run(tmp_path)
     r = _rundata(run, p)
-    fig = fig_large_count([r], tmp_path / "figs")
+    fig = fig_agglomerates_above_size_total([r], tmp_path / "figs")
     ax = fig.axes[0]
     assert [l.get_text() for l in ax.get_legend().get_texts()] == ["≥ 5", "≥ 20", "≥ 60", "≥ 80", "≥ 100", "≥ 150"]
     assert ax.get_ylabel() == "agglomerates in the box"
-    fig = fig_large_count([r], tmp_path / "figs", n_min=5, density=True, traces=True)
+    fig = fig_agglomerates_above_size_total([r], tmp_path / "figs", n_min=5, density=True, traces=True)
     ax = fig.axes[0]
     assert ax.get_ylabel() == "agglomerates ≥ 5 per 1000 µm³ (×10³)"            # up to 13900: in thousands
     assert ax.get_legend() is None
@@ -122,8 +122,8 @@ def test_figure_count_and_density(tmp_path):
     assert len(traces) == 2 and len(mean) == 1
     np.testing.assert_allclose(mean[0].get_ydata(), np.mean([_hand("rep_01", 5), _hand("rep_02", 5)], axis=0)
                                * 1000 / 0.216)
-    assert sorted(f.name for f in (tmp_path / "figs").glob("*.png")) == ["large_agglomerates.png",
-                                                                        "large_agglomerates_density.png"]
+    assert sorted(f.name for f in (tmp_path / "figs").glob("*.png")) == ["agglomerates_above_size_total.png",
+                                                                        "agglomerates_above_size_total_density.png"]
     plt.close("all")
 
 
@@ -133,20 +133,20 @@ def test_figure_several_runs(tmp_path):
     ra, pa = _run(tmp_path / "a")
     rb, pb = _run(tmp_path / "b", box=(400, 500, 1000))
     runs = [_rundata(ra, pa, "A", "#1f4e79"), _rundata(rb, pb, "B", "#c0392b")]
-    fig = fig_large_count(runs, n_min=[5, 20], density=True)
+    fig = fig_agglomerates_above_size_total(runs, n_min=[5, 20], density=True)
     ax = fig.axes[0]
     assert [l.get_text() for l in fig.legends[0].get_texts()] == ["A", "B"]          # runs below the axes
     assert [l.get_text() for l in ax.get_legend().get_texts()] == ["≥ 5", "≥ 20"]     # thresholds in the axes
     styles = {(l.get_color(), l.get_linestyle()) for l in ax.lines}
     assert {("#1f4e79", "-"), ("#1f4e79", "--"), ("#c0392b", "-"), ("#c0392b", "--")} <= styles
     with pytest.raises(ValueError, match="at most 6"):
-        fig_large_count(runs, n_min=[2, 5, 10, 20, 50, 80, 100])
+        fig_agglomerates_above_size_total(runs, n_min=[2, 5, 10, 20, 50, 80, 100])
     plt.close("all")
 
 
 def test_counts_by_species(tmp_path):
     run, _ = _run(tmp_path)
-    tables = large_counts_species(run, {"all": [5, 20], "qt": [2, 5], "ft": [5, 20]})
+    tables = _agglomerates_above_size_species(run, {"all": [5, 20], "qt": [2, 5], "ft": [5, 20]})
     for sp in ("qt", "ft"):
         for n in tables[sp]["n_min"].unique():
             d = tables[sp][tables[sp]["n_min"] == n]
@@ -159,20 +159,20 @@ def test_counts_by_species(tmp_path):
             if len(d):
                 assert (d["count_mean"].to_numpy() <= total).all()
     assert _hand_species("rep_01", 5, "qt") != _hand("rep_01", 5)           # the fixture tells them apart
-    for name in ("large_agglomerates.csv", "large_agglomerates_qt.csv", "large_agglomerates_ft.csv"):
+    for name in ("agglomerates_above_size.csv", "agglomerates_above_size_qt.csv", "agglomerates_above_size_ft.csv"):
         assert (run / "analysis" / name).exists()
-    single = large_counts(run, [2, 5], species="qt")                     # from the CSV, same table
+    single = agglomerates_above_size(run, [2, 5], species="qt")                     # from the CSV, same table
     pd.testing.assert_frame_equal(single, tables["qt"])
-    total = pd.read_csv(run / "analysis" / "large_agglomerates.csv")   # total file keeps its own columns
+    total = pd.read_csv(run / "analysis" / "agglomerates_above_size.csv")   # total file keeps its own columns
     assert list(total.columns[:8]) == ["step", "time_s", "n_min", "replicas", "count_mean", "count_sd",
                                        "per_1000um3_mean", "per_1000um3_sd"]
     with pytest.raises(ValueError, match="species"):
-        large_counts(run, 5, species="QtC", save=False)
+        agglomerates_above_size(run, 5, species="QtC", save=False)
 
 
 def test_figure_by_species(tmp_path):
     run, p = _run(tmp_path)
-    fig = fig_large_by_species(_rundata(run, p), tmp_path / "figs", n_min=[5, 20], n_min_qt=[2, 5], n_min_ft=5)
+    fig = fig_agglomerates_above_size(_rundata(run, p), tmp_path / "figs", n_min=[5, 20], n_min_qt=[2, 5], n_min_ft=5)
     axes = fig.axes
     assert len(axes) == 6
     assert [ax.get_title(loc="left") for ax in axes] == ["all particles, number", "all particles, density", "Qt, number",
@@ -182,6 +182,6 @@ def test_figure_by_species(tmp_path):
     mean = [l for l in axes[2].lines if len(l.get_xdata()) == len(STEPS)]
     np.testing.assert_allclose(mean[0].get_ydata(),
                                np.mean([_hand_species("rep_01", 2, "qt"), _hand_species("rep_02", 2, "qt")], axis=0))
-    assert (tmp_path / "figs" / "large_agglomerates_by_species.png").exists()
-    assert len(list((tmp_path / "figs" / "large_agglomerates_by_species").glob("*.png"))) == 6
+    assert (tmp_path / "figs" / "agglomerates_above_size.png").exists()
+    assert len(list((tmp_path / "figs" / "agglomerates_above_size").glob("*.png"))) == 6
     plt.close("all")

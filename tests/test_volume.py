@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from qtft import Params
-from qtft.structure import _cluster_volume, cluster_volumes
+from qtft.structure import _agglomerate_volume, agglomerate_volumes
 
 PROBE = np.array([60.0, 60.0, 150.0])
 
@@ -26,7 +26,7 @@ def _chain(n, first=1):
 def test_solid_volume_of_one_sphere():
     rng = np.random.default_rng(0)
     for r in (13.0, 27.5):
-        v = [_cluster_volume(rng.random((1, 3)) * 1000, np.array([r]), PROBE, 10.0)[0] for _ in range(200)]
+        v = [_agglomerate_volume(rng.random((1, 3)) * 1000, np.array([r]), PROBE, 10.0)[0] for _ in range(200)]
         assert np.mean(v) == pytest.approx(4 / 3 * math.pi * r**3, rel=0.03)    # unbiased on average
 
 
@@ -40,12 +40,12 @@ def _shell(n, radius):
 
 def test_envelope_fills_cavities_smaller_than_the_probe():
     # 80 Ft on a sphere of radius 60 nm (touching): the cavity (radius ~47 nm) is smaller than the probe
-    solid, envelope = _cluster_volume(_shell(80, 60.0), np.full(80, 13.0), PROBE, 5.0)
+    solid, envelope = _agglomerate_volume(_shell(80, 60.0), np.full(80, 13.0), PROBE, 5.0)
     assert 4 / 3 * math.pi * 60**3 < envelope < 4 / 3 * math.pi * 73**3    # filled: more than the ball through the centres
     assert envelope > 1.5 * solid
     # the same shell at radius 300 nm (1600 Ft): the cavity is wider than the probe and stays empty,
     # as it would look hollow in the microscope
-    solid, envelope = _cluster_volume(_shell(1600, 300.0), np.full(1600, 13.0), PROBE, 10.0)
+    solid, envelope = _agglomerate_volume(_shell(1600, 300.0), np.full(1600, 13.0), PROBE, 10.0)
     assert solid == pytest.approx(1600 * 4 / 3 * math.pi * 13**3, rel=0.05)
     assert envelope < 0.3 * 4 / 3 * math.pi * 300**3
 
@@ -56,14 +56,14 @@ def test_envelope_bridges_axial_gaps_only():
     z = np.vstack([np.c_[grid, np.zeros(16)], np.c_[grid, np.full(16, 252.0)]])
     x = z[:, [2, 0, 1]]
     radius = np.full(32, 13.0)
-    solid_z, env_z = _cluster_volume(z, radius, PROBE, 5.0)
-    solid_x, env_x = _cluster_volume(x, radius, PROBE, 5.0)
+    solid_z, env_z = _agglomerate_volume(z, radius, PROBE, 5.0)
+    solid_x, env_x = _agglomerate_volume(x, radius, PROBE, 5.0)
     assert solid_z == pytest.approx(solid_x, rel=0.02)
     assert env_z > 3 * solid_z                                       # the gap between the layers is filled
     assert env_x < 1.5 * solid_x
 
 
-def test_cluster_volumes_table_and_periodic_box():
+def test_agglomerate_volumes_table_and_periodic_box():
     p = Params(box_length=1000.0)
     # a 5-particle Qt-Ft chain in the middle, the same chain across the x boundary, a pair (too small)
     # and a ring of 10 Ft that wraps around the box along y
@@ -74,7 +74,7 @@ def test_cluster_volumes_table_and_periodic_box():
     types = [1, 2, 2, 2, 2] * 2 + [2, 2] + [2] * 10
     atoms = _atoms(chain + across + pair + ring, types)
     bonds = np.vstack([_chain(5), _chain(5, 6), [[11, 12]], _chain(10, 13), [[22, 13]]])
-    table = cluster_volumes(atoms, bonds, p)
+    table = agglomerate_volumes(atoms, bonds, p)
 
     assert list(table["size"]) == [10, 5, 5]                         # >= 3 particles, largest first
     ring_row, a, b = table.iloc[0], table.iloc[1], table.iloc[2]

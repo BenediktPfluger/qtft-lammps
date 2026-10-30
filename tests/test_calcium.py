@@ -180,11 +180,12 @@ def test_compressed_protocol_run(tmp_path, rise, method):
     from qtft import read_histo
     from qtft.figures import load_run
     assert p.influx_end_step == 12_000 < p.prod_steps
-    clusters = pd.read_csv(out / "clusters_influx_end.csv")
-    assert (clusters["step"] == p.influx_end_step).all() and (clusters["size"] >= 3).all()
-    measured = clusters.dropna(subset=["v_solid_um3"])             # clusters wrapping the small box have none
+    agglomerates = pd.read_csv(out / "agglomerates_influx_end.csv")
+    assert agglomerates["agglomerate"].min() == 1                    # numbered per replica, 1 = largest
+    assert (agglomerates["step"] == p.influx_end_step).all() and (agglomerates["size"] >= 3).all()
+    measured = agglomerates.dropna(subset=["v_solid_um3"])         # agglomerates wrapping the small box have none
     assert len(measured) and (measured["v_envelope_um3"] >= measured["v_solid_um3"]).all()
-    assert clusters.loc[clusters["v_solid_um3"].isna(), "spans"].notna().all()
+    assert agglomerates.loc[agglomerates["v_solid_um3"].isna(), "spans"].notna().all()
     coord = load_run(run).coord_stim["Qt"]
     assert coord.equals(read_histo(rep / "coord_qt.hist").loc[p.influx_end_step])
-    assert (out / "figures" / "clusters.pdf").exists()
+    assert (out / "figures" / "agglomerate_distributions.pdf").exists()

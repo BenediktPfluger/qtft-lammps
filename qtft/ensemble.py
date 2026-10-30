@@ -360,10 +360,10 @@ def bond_rates(run_dir: str | Path, bin_s: float | None = None, save: bool = Tru
     return result
 
 
-LARGE_MIN = (5, 20, 60, 80, 100, 150)     # default thresholds [particles] of large_counts
-LARGE_MIN_QT = (5, 10, 20, 50, 70)        # default thresholds [Qt per agglomerate] (about 4x fewer Qt than Ft)
-# what the size of an agglomerate counts -> suffix of analysis/large_agglomerates<suffix>.csv
-LARGE_SPECIES = {"all": "", "qt": "_qt", "ft": "_ft"}
+SIZE_THRESHOLDS = (5, 20, 60, 80, 100, 150)     # default thresholds [particles] of agglomerates_above_size
+SIZE_THRESHOLDS_QT = (5, 10, 20, 50, 70)        # default thresholds [Qt per agglomerate] (about 4x fewer Qt than Ft)
+# what the size of an agglomerate counts -> suffix of analysis/agglomerates_above_size<suffix>.csv
+SPECIES_SUFFIX = {"all": "", "qt": "_qt", "ft": "_ft"}
 SPECIES_TYPE = {"qt": 1, "ft": 2}
 
 
@@ -375,7 +375,8 @@ def _thresholds(n_min) -> list[int]:
     return sorted({int(v) for v in values})
 
 
-def large_counts(run_dir: str | Path, n_min=LARGE_MIN, save: bool = True, species: str = "all") -> pd.DataFrame:
+def agglomerates_above_size(run_dir: str | Path, n_min=SIZE_THRESHOLDS, save: bool = True,
+                            species: str = "all") -> pd.DataFrame:
     """Number of agglomerates with >= n particles over time, for every n in `n_min` (one number or a
     list), from the cluster column of the traj.dump frames of every finished replica (resolution
     traj_every; a free particle is a cluster of 1). Also as a density per 1000 um^3 of the full box
@@ -385,29 +386,29 @@ def large_counts(run_dir: str | Path, n_min=LARGE_MIN, save: bool = True, specie
 
     Returns one row per frame and threshold: step, time_s, n_min, replicas, count_mean, count_sd,
     per_1000um3_mean, per_1000um3_sd (mean +- SD over replicas; SD NaN with one replica) and the count
-    of every replica (count_<replica>). With `save`, written to <run>/analysis/large_agglomerates.csv
-    (species "qt" / "ft": large_agglomerates_qt.csv / _ft.csv) and reused while it holds every requested
+    of every replica (count_<replica>). With `save`, written to <run>/analysis/agglomerates_above_size.csv
+    (species "qt" / "ft": agglomerates_above_size_qt.csv / _ft.csv) and reused while it holds every requested
     threshold, the same replicas and is newer than their dumps (otherwise recomputed for the requested
     and the saved thresholds).
     """
-    return large_counts_species(run_dir, {species: n_min}, save)[species]
+    return _agglomerates_above_size_species(run_dir, {species: n_min}, save)[species]
 
 
-def large_counts_species(run_dir: str | Path, n_min: dict, save: bool = True) -> dict[str, pd.DataFrame]:
-    """large_counts for several species at once, n_min = {species: thresholds}; the traj.dump frames are
+def _agglomerates_above_size_species(run_dir: str | Path, n_min: dict, save: bool = True) -> dict[str, pd.DataFrame]:
+    """agglomerates_above_size for several species at once, n_min = {species: thresholds}; the traj.dump frames are
     read once for all species that are not cached. Returns {species: table}."""
     run_dir = Path(run_dir).expanduser()
     require_fetched(run_dir)
     p = Params.load(run_dir / "params.json")
-    bad = set(n_min) - set(LARGE_SPECIES)
+    bad = set(n_min) - set(SPECIES_SUFFIX)
     if bad:
-        raise ValueError(f"species must be one of {list(LARGE_SPECIES)}, not {sorted(bad)}")
+        raise ValueError(f"species must be one of {list(SPECIES_SUFFIX)}, not {sorted(bad)}")
     wanted = {sp: _thresholds(n) for sp, n in n_min.items()}
     reps = list(replica_series(run_dir, names_only=True))
     if not reps:
         raise ValueError(f"no finished replicas in {run_dir}")
     dumps = [run_dir / rep / "traj.dump" for rep in reps]
-    paths = {sp: run_dir / "analysis" / f"large_agglomerates{LARGE_SPECIES[sp]}.csv" for sp in wanted}
+    paths = {sp: run_dir / "analysis" / f"agglomerates_above_size{SPECIES_SUFFIX[sp]}.csv" for sp in wanted}
     result, todo = {}, {}
     for sp, ns in wanted.items():
         if save and paths[sp].exists():
