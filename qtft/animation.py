@@ -5,8 +5,9 @@ Every saved traj.dump frame becomes one video frame (fps sets the speed: with tr
 30 fps the video runs 3x faster than the simulation). Four panels: the whole box in perspective, the
 whole box seen from the front (orthographic along y, x to the right, z up) with the magnified region
 outlined, the magnification (a central box of a third of every edge: the particles whose centre lies
-inside it in depth and whose sphere reaches into it in x and z), and the mean agglomerate size of the
-analysis figures (thermo columns mean_size, mean_size_qt, mean_size_ft) with a moving time line.
+inside it in depth and whose sphere reaches into it in x and z), and the mean cluster size (free
+particles included) of the analysis figures (thermo columns mean_size, mean_size_qt, mean_size_ft) with
+a moving time line.
 Header: title, phase (calcium on/off, from the protocol in params.json), production time, calcium
 (Params.calcium, the formula of template.lmp). Right column: legend and per-frame statistics of the
 dumped frame (bonds, Qt in the cluster with the most Qt, Qt in clusters with >= 2 Qt). Bottom: the

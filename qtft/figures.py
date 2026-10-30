@@ -205,7 +205,7 @@ def _species_panel(key, ylabel):
 
 p_bonds = _simple("Bonds", "bonds")
 p_clusters = _simple("n_clusters", "agglomerates + free particles")
-p_mean_size = _species_panel("mean_size", "mean agglomerate size")
+p_mean_size = _species_panel("mean_size", "mean cluster size")
 p_mean_size_n = _simple("mean_size", "mean size / N", scale_by_n=True)
 p_largest = _species_panel("largest", "largest agglomerate")
 p_largest_n = _simple("largest", "largest / N", scale_by_n=True)
@@ -485,7 +485,7 @@ def _panel_figure(name, panels, runs, out_dir, nrows, ncols, width, height, trac
 OVERVIEW = [
     ("potential energy", p_energy, True), ("pressure", p_pressure, True), ("bonds", p_bonds, True),
     ("particle counts", p_counts, True), ("agglomerates + free", p_clusters, True),
-    ("mean agglomerate size", p_mean_size, True),
+    ("mean cluster size", p_mean_size, True),
     ("largest agglomerate", p_largest, True), ("size categories", p_categories, True),
     ("mean Rg", p_rg, True),
     ("Qt fraction", p_qt_fraction, True), ("coordination", p_coordination, True),
@@ -531,11 +531,11 @@ def fig_comparison(runs: list[RunData], out_dir: Path | None = None):
 
 
 KINETICS = [("bonds", p_bonds, True), ("fraction bound", p_fraction_bound, True),
-            ("mean agglomerate size", p_mean_size, True)]
+            ("mean cluster size", p_mean_size, True)]
 
 
 def fig_kinetics(runs: list[RunData], out_dir: Path | None = None, traces=False):
-    """Bonds, fraction bound (Qt, Ft) and mean agglomerate size on one time axis (89 mm); panels also
+    """Bonds, fraction bound (Qt, Ft) and mean cluster size on one time axis (89 mm); panels also
     alone in kinetics/."""
     return _panel_figure("kinetics", KINETICS, runs, out_dir, 3, 1, SINGLE, 120 * MM, traces=traces,
                          titles=False, sharex=True, legend_below=True)

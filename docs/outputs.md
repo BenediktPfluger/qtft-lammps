@@ -150,7 +150,9 @@ regenerated from the replica files at any time.
 
 Renamed on 2026-10-29 (old files were deleted; they are regenerated under the new names):
 `large_agglomerates*.csv` → `agglomerates_above_size*.csv`, `clusters_influx_end.csv` → `agglomerates_influx_end.csv` (column `cluster` → `agglomerate`), figures `clusters` → `agglomerate_distributions`, `large_agglomerates_by_species` → `agglomerates_above_size`, `large_agglomerates(_density)` → `agglomerates_above_size_total(_density)`. Renamed on 2026-10-30:
-`final_table.csv/.tex` → `summary_table.csv/.tex` (same content).
+`final_table.csv/.tex` → `summary_table.csv/.tex` (same content); single panels
+`overview/` and `kinetics/` `mean_agglomerate_size.*` → `mean_cluster_size.*` (thermo `mean_size` counts free
+particles as clusters of one).
 
 | File | Content | Created by |
 |---|---|---|
