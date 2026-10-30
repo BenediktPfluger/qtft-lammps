@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 
 from .ensemble import ensemble_stats
-from .overlap import overlap_ensemble
+from .overlap import overlap_run
 from .params import Params
 from .sweep import build_sweep_from, is_sweep, sweep_runs
 
@@ -76,7 +76,7 @@ def sweep_table(sweep, every: int = 5, last_frames: int = 10) -> pd.DataFrame:
     rows = []
     for run_dir in run_dirs:
         p = Params.load(run_dir / "params.json")
-        measured = overlap_ensemble(run_dir, every=every, last_frames=last_frames)["final"]
+        measured = overlap_run(run_dir, every=every, last_frames=last_frames)["final"]
         final = ensemble_stats(run_dir)["final"]["mean"]
         predicted = predicted_overlap(p)
         k = {"Qt-Qt": p.k_qq, "Ft-Ft": p.k_ff, "Qt-Ft": p.bond_k}

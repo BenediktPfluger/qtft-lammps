@@ -93,7 +93,7 @@ def overlap_series(rep_dir: str | Path, every: int = 10) -> pd.DataFrame:
     return pd.concat(out, ignore_index=True)
 
 
-def overlap_ensemble(run_dir: str | Path, every: int = 10, last_frames: int = 5, save: bool = True) -> dict:
+def overlap_run(run_dir: str | Path, every: int = 10, last_frames: int = 5, save: bool = True) -> dict:
     """Time series (mean over replicas) and pooled statistics of the last `last_frames` analysed
     frames of all finished replicas. Saved to <run>/analysis/overlap_*.csv."""
     run_dir = Path(run_dir).expanduser()

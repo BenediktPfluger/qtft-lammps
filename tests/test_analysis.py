@@ -108,7 +108,7 @@ def test_report_and_comparison(runs, tmp_path):
     from qtft.figures import compare_report, make_report
 
     out = make_report(runs[0], every=2, n_min_qt=[2, 5])
-    for name in ("final_table.csv", "final_table.tex", "bonds_timeseries.csv", "structure_timeseries.csv",
+    for name in ("summary_table.csv", "summary_table.tex", "bonds_timeseries.csv", "structure_timeseries.csv",
                  "clusters_final.csv", "overlap_final.csv", "binding_rate.csv", "agglomerates_influx_end.csv",
                  "agglomerates_above_size.csv", "agglomerates_above_size_qt.csv", "agglomerates_above_size_ft.csv"):
         assert (out / name).exists(), name
@@ -127,7 +127,7 @@ def test_report_and_comparison(runs, tmp_path):
     reps = sorted(d.name for d in runs[0].glob("rep_*"))
     assert all((out / f"percolation_{rep}.csv").exists() for rep in reps)        # one analysis/ folder per run
     assert not any((runs[0] / rep / "analysis").exists() for rep in reps)
-    table = pd.read_csv(out / "final_table.csv", index_col=0)
+    table = pd.read_csv(out / "summary_table.csv", index_col=0)
     assert "mean Rg (nm)" in table.index
 
     cmp_dir = compare_report(runs, tmp_path / "cmp")

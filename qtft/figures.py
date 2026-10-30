@@ -21,14 +21,14 @@ import pandas as pd
 from matplotlib.ticker import MultipleLocator, NullFormatter
 
 from .ensemble import (SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, TO_PER_M_S, _agglomerates_above_size_species, _thresholds,
-                       agglomerates_above_size, binding_rate, bond_rates, cached_stats, ensemble_stats)
+                       agglomerates_above_size, binding_rate, bond_rates, ensemble_stats, ensemble_stats_cached)
 from .params import Params
 from .read import read_histo
 from .structure import AGGLOMERATE_MIN, agglomerate_volumes_run
 
 MM = 1 / 25.4
 SINGLE, DOUBLE, MAX_HEIGHT = 89 * MM, 183 * MM, 170 * MM
-SPECIES = {"Qt": "#54aa00", "Ft": "#fea900", "Qt bound": "#55aaff", "Ft bound": "#fe0000"}
+SPECIES_COLORS = {"Qt": "#54aa00", "Ft": "#fea900", "Qt bound": "#55aaff", "Ft bound": "#fe0000"}
 LINE = {"Qt": "#54aa00", "Ft": "#fe0000"}          # line plots per species
 RUN_COLORS = ["#1f4e79", "#c0392b", "#2e8b57", "#8e44ad", "#d35400", "#16a085", "#7f8c8d"]
 CATEGORY_COLORS = ["#bdbdbd", "#9ecae1", "#4292c6", "#08519c", "#08306b"]
@@ -58,7 +58,7 @@ class RunData:
     p: Params
     stats: dict
     structure: pd.DataFrame | None = None
-    coord_stim: dict = field(default_factory=dict)     # {"Qt": Series, "Ft": Series} mean count per replica, end of influx
+    coord_influx_end: dict = field(default_factory=dict)  # {"Qt"/"Ft": Series} mean count per replica, end of influx
     overlap: pd.DataFrame | None = None
     agglomerates: pd.DataFrame | None = None           # agglomerates_influx_end.csv (sizes and volumes)
 
@@ -72,7 +72,7 @@ def load_run(run_dir: str | Path, label: str | None = None, color: str | None = 
     run_dir = Path(run_dir).expanduser()
     p = Params.load(run_dir / "params.json")
     analysis = run_dir / "analysis"
-    stats = cached_stats(run_dir)
+    stats = ensemble_stats_cached(run_dir)
     structure = None
     if (analysis / "structure_timeseries.csv").exists():
         structure = pd.read_csv(analysis / "structure_timeseries.csv")
@@ -220,7 +220,7 @@ def p_counts(ax, runs, traces=False):
               "Qt bound": (mean["n_qt_bound"], sd["n_qt_bound"]),
               "Ft bound": (mean["n_ft_bound"], sd["n_ft_bound"])}
     for name, (m, s) in curves.items():
-        band(ax, t, m, s, SPECIES[name], name if "bound" in name else f"{name} free")
+        band(ax, t, m, s, SPECIES_COLORS[name], name if "bound" in name else f"{name} free")
     k = _thousands(ax, np.concatenate([c[0] for c in curves.values()]))
     ax.set_ylabel("particles" + (" (×10³)" if k else ""))
     ax.legend(ncol=2, loc="best")
@@ -293,21 +293,21 @@ def p_coordination(ax, runs, traces=False):
         ax.legend()
 
 
-def p_coord_dist(ax, runs, traces=False):
+def p_coordination_hist(ax, runs, traces=False):
     r = runs[0]
-    if not r.coord_stim:
+    if not r.coord_influx_end:
         _no_data(ax, "no histogram files")
         return
     width, highest = 0.4, 1
     for i, name in enumerate(("Qt", "Ft")):
-        h = r.coord_stim.get(name)
+        h = r.coord_influx_end.get(name)
         if h is None:
             continue
         h = h[h.index >= 1]                                       # bound particles only
         if (h > 0).any():
             highest = max(highest, h.index[h > 0].max())
         ax.bar(h.index + (i - 0.5) * width, h.to_numpy(), width=width,
-               color=SPECIES[f"{name} bound"], label=f"{name} bound", lw=0)
+               color=SPECIES_COLORS[f"{name} bound"], label=f"{name} bound", lw=0)
     ax.set_xlim(0.3, highest + 0.7)
     ax.set_xlabel("bonds per particle")
     ax.set_ylabel("particles per replica")
@@ -346,8 +346,8 @@ def p_overlap(ax, runs, traces=False):
     if r.overlap is None:
         _no_data(ax, "run overlap analysis")
         return
-    colors = {"Qt-Qt": SPECIES["Qt"], "Ft-Ft": SPECIES["Ft"], "Qt-Ft": "#555555",
-              "Qt-wall": SPECIES["Qt"], "Ft-wall": SPECIES["Ft"]}            # wall rows only with walls
+    colors = {"Qt-Qt": SPECIES_COLORS["Qt"], "Ft-Ft": SPECIES_COLORS["Ft"], "Qt-Ft": "#555555",
+              "Qt-wall": SPECIES_COLORS["Qt"], "Ft-wall": SPECIES_COLORS["Ft"]}  # wall rows only with walls
     for family, df in r.overlap.groupby("family"):
         ax.plot(df["time_ms"], df["n overlapping"].clip(lower=0.5), color=colors[family], label=family,
                 ls="--" if family.endswith("wall") else "-")
@@ -489,7 +489,7 @@ OVERVIEW = [
     ("largest agglomerate", p_largest, True), ("size categories", p_categories, True),
     ("mean Rg", p_rg, True),
     ("Qt fraction", p_qt_fraction, True), ("coordination", p_coordination, True),
-    ("coordination", p_coord_dist, False),             # title completed by stim_label in fig_overview
+    ("coordination", p_coordination_hist, False),      # title completed by influx_end_label in fig_overview
 ]
 
 COMPARISON = [
@@ -502,14 +502,15 @@ COMPARISON = [
 ]
 
 
-def stim_label(p: Params) -> str:
+def influx_end_label(p: Params) -> str:
     """Name of the frame of the agglomerate distributions (Params.influx_end_step)."""
     return "end of influx" if p.t_influx_s > 0 else "final"
 
 
 def fig_overview(run: RunData, out_dir: Path | None = None, traces=False):
     """4 x 3 metrics overview of one run (183 mm); panels also alone in overview/."""
-    panels = [(f"{t} at {stim_label(run.p)}" if f is p_coord_dist else t, f, is_time) for t, f, is_time in OVERVIEW]
+    panels = [(f"{t} at {influx_end_label(run.p)}" if f is p_coordination_hist else t, f, is_time)
+              for t, f, is_time in OVERVIEW]
     return _panel_figure("overview", panels, [run], out_dir, 4, 3, DOUBLE, MAX_HEIGHT, traces=traces)
 
 
@@ -520,7 +521,7 @@ AGGLOMERATE_DISTRIBUTIONS = [("agglomerate size", p_agglomerate_size), ("solid v
 def fig_agglomerate_distributions(run: RunData, out_dir: Path | None = None):
     """Distributions of agglomerate size, solid and envelope volume (agglomerates of >= AGGLOMERATE_MIN
     particles) at the end of the influx, 1 x 3 (183 mm); panels also alone in agglomerate_distributions/."""
-    panels = [(f"{t} at {stim_label(run.p)}", f, False) for t, f in AGGLOMERATE_DISTRIBUTIONS]
+    panels = [(f"{t} at {influx_end_label(run.p)}", f, False) for t, f in AGGLOMERATE_DISTRIBUTIONS]
     return _panel_figure("agglomerate_distributions", panels, [run], out_dir, 1, 3, DOUBLE, 60 * MM)
 
 
@@ -717,7 +718,7 @@ SWEEP_LABELS = {
 }
 
 
-def sweep_plot(results: pd.DataFrame, y: str = "final_frac_bound", x: str | None = None,
+def fig_sweep(results: pd.DataFrame, y: str = "final_frac_bound", x: str | None = None,
                out_dir: Path | None = None):
     """A result of `sweep_results` (mean +- SD over replicas) against one swept parameter (default: the
     first); one line per combination of the other swept parameters (89 mm)."""
@@ -745,7 +746,7 @@ def sweep_plot(results: pd.DataFrame, y: str = "final_frac_bound", x: str | None
 
 
 # ---------------------------------------------------------------------------- tables
-def final_table(run: RunData) -> pd.DataFrame:
+def summary_table(run: RunData) -> pd.DataFrame:
     """Final-state table (handover 6.8): one row per metric, mean +- SD over replicas."""
     f = run.stats["final"]
     n = run.n_total
@@ -806,11 +807,11 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     out = run_dir / "analysis"
     stats = ensemble_stats(run_dir)
     if structure_analysis:
-        from .structure import structure_ensemble
-        structure_ensemble(run_dir, every=every)
+        from .structure import structure_run
+        structure_run(run_dir, every=every)
     if overlap_analysis:
-        from .overlap import overlap_ensemble
-        overlap_ensemble(run_dir, every=every)
+        from .overlap import overlap_run
+        overlap_run(run_dir, every=every)
     agglomerate_volumes_run(run_dir)                         # agglomerates_influx_end.csv
     run = load_run(run_dir)
 
@@ -822,9 +823,9 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
               fig_agglomerates_above_size(run, figs, traces, n_min, n_min_qt, n_min_ft), fig_overlap(run, figs), *rate):
         plt.close(f)
 
-    table = final_table(run)
-    table.to_csv(out / "final_table.csv")
-    (out / "final_table.tex").write_text(to_latex(table, run.label))
+    table = summary_table(run)
+    table.to_csv(out / "summary_table.csv")
+    (out / "summary_table.tex").write_text(to_latex(table, run.label))
     t = stats["time_ms"]
     pd.DataFrame({"Step": np.round(t / (run.p.timestep * 1e-6)).astype(int), "time_us": t * 1e3,
                   "time_ms": t, "bonds_mean": stats["mean"]["Bonds"], "bonds_sd": stats["sd"]["Bonds"]}

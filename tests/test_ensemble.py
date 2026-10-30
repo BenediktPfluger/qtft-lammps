@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from qtft import Params, build_run, read_dump, start
-from qtft.ensemble import (binding_rate, cached_stats, common_grid, compare, contact_pairs, ensemble_stats,
+from qtft.ensemble import (binding_rate, common_grid, compare, contact_pairs, ensemble_stats, ensemble_stats_cached,
                            half_time, load_stats, update_index)
 from conftest import influx
 
@@ -80,9 +80,9 @@ def test_ensemble_of_tiny_runs(tmp_path):
     assert per_rep.loc["rep_01", "contact pairs"] == contact_pairs(atoms, np.empty((0, 2), int), p)
 
     # the saved stats are reused only while they cover exactly the finished replicas
-    assert cached_stats(runs[0])["replicas"] == ["rep_01", "rep_02", "rep_03"]
+    assert ensemble_stats_cached(runs[0])["replicas"] == ["rep_01", "rep_02", "rep_03"]
     (runs[0] / "rep_03" / "status").write_text("failed\n")
-    assert cached_stats(runs[0])["replicas"] == ["rep_01", "rep_02"]
+    assert ensemble_stats_cached(runs[0])["replicas"] == ["rep_01", "rep_02"]
     assert load_stats(runs[0])["replicas"] == ["rep_01", "rep_02"]          # and saved again
 
 

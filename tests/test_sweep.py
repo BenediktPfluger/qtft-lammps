@@ -93,5 +93,5 @@ def test_sweep_end_to_end(tmp_path):
 
     import matplotlib
     matplotlib.use("Agg")
-    from qtft import sweep_plot
-    assert len(sweep_plot(results, y="final_Bonds").axes[0].lines) >= 1
+    from qtft import fig_sweep
+    assert len(fig_sweep(results, y="final_Bonds").axes[0].lines) >= 1

@@ -170,7 +170,7 @@ def structure(rep_dir: str | Path, every: int = 10) -> tuple[pd.DataFrame, pd.Da
     return pd.DataFrame(rows), table
 
 
-def structure_ensemble(run_dir: str | Path, every: int = 10, save: bool = True) -> dict:
+def structure_run(run_dir: str | Path, every: int = 10, save: bool = True) -> dict:
     """Structure metrics of all finished replicas: mean/SD per frame, per-replica traces and the
     pooled final-frame cluster table. Saved to <run>/analysis/structure_*.csv."""
     run_dir = Path(run_dir).expanduser()

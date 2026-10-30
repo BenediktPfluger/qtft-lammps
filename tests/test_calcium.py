@@ -186,6 +186,6 @@ def test_compressed_protocol_run(tmp_path, rise, method):
     measured = agglomerates.dropna(subset=["v_solid_um3"])         # agglomerates wrapping the small box have none
     assert len(measured) and (measured["v_envelope_um3"] >= measured["v_solid_um3"]).all()
     assert agglomerates.loc[agglomerates["v_solid_um3"].isna(), "spans"].notna().all()
-    coord = load_run(run).coord_stim["Qt"]
+    coord = load_run(run).coord_influx_end["Qt"]
     assert coord.equals(read_histo(rep / "coord_qt.hist").loc[p.influx_end_step])
     assert (out / "figures" / "agglomerate_distributions.pdf").exists()

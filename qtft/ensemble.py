@@ -169,7 +169,7 @@ def _save(run_dir: Path, r: dict) -> None:
     (out / "ensemble_stats.json").write_text(json.dumps(payload))
 
 
-def cached_stats(run_dir: str | Path) -> dict:
+def ensemble_stats_cached(run_dir: str | Path) -> dict:
     """The saved ensemble_stats.json if it covers exactly the replicas finished now, otherwise
     ensemble_stats() computed afresh (and saved)."""
     run_dir = Path(run_dir).expanduser()
@@ -516,7 +516,7 @@ def compare(run_dirs: list[str | Path]) -> pd.DataFrame:
     labels, differing = differing_labels(run_dirs)
     cols = {}
     for r, label in zip(run_dirs, labels):
-        final = cached_stats(r)["final"]
+        final = ensemble_stats_cached(r)["final"]
         cols[label] = final.apply(lambda row: f"{row['mean']:.4g} ± {row['sd']:.2g}", axis=1)
     table = pd.DataFrame(cols)
     table.attrs["differing parameters"] = differing
