@@ -303,7 +303,7 @@ class Params:
             "p_bind per attempt (f = 1)": self.p_bind,
             "p_break per attempt (max)": self.p_break_max,
         }
-        if self.ca_rise_s > 0:                    # optoCRAC one-equation model (docs/decisions.md)
+        if self.ca_rise_s > 0:                    # optoCRAC one-equation model
             lam, k_dark = self.ca_rate_on_per_s, 1 / self.ca_tau_s
             calcium |= {
                 "tau rise / decay [s]": (round(1 / lam, 4), self.ca_tau_s),

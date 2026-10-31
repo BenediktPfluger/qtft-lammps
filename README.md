@@ -14,8 +14,8 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 | Dynamics | overdamped Brownian dynamics, `fix brownian`, γ = k_BT/D per species |
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j |
 | Bonds | `bond_style harmonic`, E = K (r − r₀)², r₀ = r_Qt + r_Ft |
-| Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on f Δt) per step: a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ (see `docs/decisions.md`) |
-| Unbinding | `fix bond/break/random` (own plugin in `lammps_plugins/`): every bond breaks independently with probability 1 − exp(−k_off Δt) per attempt, k_off following the calcium at every attempt (`bond_break="random"`, default); `bond_break="longest"`: the built-in `fix bond/break` (only the longest bond of both atoms can break, see `docs/decisions.md`) |
+| Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on f Δt) per step: a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ |
+| Unbinding | `fix bond/break/random` (own plugin in `lammps_plugins/`): every bond breaks independently with probability 1 − exp(−k_off Δt) per attempt, k_off following the calcium at every attempt (`bond_break="random"`, default); `bond_break="longest"`: the built-in `fix bond/break` (only the longest bond of both atoms can break) |
 | Calcium control | every production follows a calcium protocol (baseline → influx with an exponential rise to the plateau → exponential pump-out, each phase optional); calmodulin loading f = Caⁿ/(K_Caⁿ + Caⁿ) sets k_on f and k_off = f k_off,Ca + (1 − f) k_off,free; computed inside LAMMPS (k_on per segment, k_off at every unbinding attempt) |
 | Start | overlap-free random insertion, short equilibration without binding |
 
@@ -40,7 +40,6 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `control.ipynb` | set all parameters, build the LAMMPS input, run, monitor |
 | `analysis.ipynb` | ensemble statistics, structure and overlap analysis, figures and tables, comparison of runs, FIB-SEM export |
 | `animation.ipynb` | video of one replica: set the run folder name, `animate` writes `rep_XX/animation/animation.mp4` |
-| `docs/decisions.md` | model and project decisions with reasons, status of the implementation (local only, not in the repository) |
 | `docs/outputs.md` | every output file: content and what creates it |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
 | `lammps_plugins/bond_break_random/` | LAMMPS plugin `fix bond/break/random` (C++ source, `build.sh`; the built `.so` is not committed) |

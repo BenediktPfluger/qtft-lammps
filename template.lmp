@@ -213,7 +213,7 @@ thermo_modify   line yaml norm no flush yes
 #   bonds at most once per attempt (with its closest eligible partner)
 # - bond_break = longest, fix bond/break with Rmax = 0: every bond is a candidate and breaks with
 #   probability p_off, BUT only the longest bond of each atom (and only if it is also the partner's
-#   longest) can break, so bonds of highly connected atoms break less often (see docs/decisions.md)
+#   longest) can break, so bonds of highly connected atoms break less often
 variable        seg loop {{n_segments}}
 variable        seed_on equal ({{seed_bind}} + v_seg) % 900000000 + 1
 variable        seed_off equal ({{seed_break}} + v_seg) % 900000000 + 1
