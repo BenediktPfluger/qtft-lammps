@@ -141,5 +141,5 @@ def test_spatial_run_files_cache_and_figure(tmp_path):
     assert labels[1].startswith("end of influx: R = ") and labels[2] == "random points"
     labels = [t.get_text() for t in d.get_legend().get_texts()]
     assert labels[0] == "random points" and labels[2].startswith("end of influx: max ")
-    assert len(list((tmp_path / "figs" / "fibsem_comparison").glob("*.png"))) == 4
+    assert len(list((tmp_path / "figs" / "fibsem_comparison").glob("*.png"))) == 5
     plt.close("all")

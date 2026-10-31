@@ -79,7 +79,7 @@ def test_wall_run(tmp_path, boundary):
     import matplotlib
     matplotlib.use("Agg")
     from qtft import make_report
-    assert (make_report(run, every=1) / "figures" / "overlap.pdf").exists()
+    assert (make_report(run, every=1) / "figures" / "overlap" / "overlap.pdf").exists()
 
     out = fibsem_export(rep, plot=False)
     meta = json.loads((out / "sim_metadata.json").read_text())

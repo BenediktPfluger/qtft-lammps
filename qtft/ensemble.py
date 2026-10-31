@@ -499,15 +499,32 @@ def update_index(data_dir: str | Path = "runs") -> pd.DataFrame:
     return df
 
 
-def differing_labels(run_dirs) -> tuple[list[str], list[str]]:
-    """Labels of runs built from the physical parameters that differ between them."""
+SHORT_NAMES = {"n_qt": "Qt", "n_ft": "Ft", "box_length": "L", "k_off_ca_per_s": "k_off,Ca",
+               "k_off_free_per_s": "k_off,free", "ca_rest_uM": "Ca rest", "ca_peak_uM": "Ca peak", "ca_K_uM": "K",
+               "ca_hill": "n", "ca_rise_s": "rise", "ca_tau_s": "τ", "t_baseline_s": "t_base",
+               "t_influx_s": "t_influx", "t_pumpout_s": "t_pump", "timestep": "dt"}   # short labels (figure legends)
+
+
+def _short_value(v) -> str:
+    if isinstance(v, (list, tuple)):
+        return "×".join(_short_value(x) for x in v)
+    return f"{v:g}" if isinstance(v, float) else str(v)
+
+
+def differing_labels(run_dirs, short: bool = False) -> tuple[list[str], list[str]]:
+    """Labels of runs built from the physical parameters that differ between them: "k=v, ..." (tables), or
+    with `short` "Qt 1280, L 4000" (short names from SHORT_NAMES, numbers without trailing .0; legends)."""
     run_dirs = [Path(r).expanduser() for r in run_dirs]
     params = [Params.load(r / "params.json") for r in run_dirs]
     differing = [f.name for f in dataclasses.fields(Params)
                  if f.name not in EXECUTION_SETTINGS
                  and len({json.dumps(getattr(q, f.name)) for q in params}) > 1]
-    labels = [", ".join(f"{k}={getattr(q, k)}" for k in differing) or r.name
-              for r, q in zip(run_dirs, params)]
+    if short:
+        labels = [", ".join(f"{SHORT_NAMES.get(k, k)} {_short_value(getattr(q, k))}" for k in differing) or r.name
+                  for r, q in zip(run_dirs, params)]
+    else:
+        labels = [", ".join(f"{k}={getattr(q, k)}" for k in differing) or r.name
+                  for r, q in zip(run_dirs, params)]
     return labels, differing
 
 

@@ -1,5 +1,6 @@
 """Structure (OVITO), overlap and figure/report tests on tiny LAMMPS runs."""
 
+import re
 import shutil
 from collections import defaultdict
 
@@ -104,6 +105,10 @@ def test_overlap_frame_matches_brute_force(runs):
             assert np.isnan(result.loc[family, "closest [nm]"])
 
 
+def _pdf_pages(path) -> int:
+    return len(re.findall(rb"/Type\s*/Page[^s]", path.read_bytes()))
+
+
 def test_report_and_comparison(runs, tmp_path):
     from qtft.figures import compare_report, make_report
 
@@ -117,9 +122,11 @@ def test_report_and_comparison(runs, tmp_path):
     for name in ("calcium", "overview", "agglomerate_distributions", "kinetics", "agglomerates_above_size", "overlap",
                  "binding_rate", "fibsem_comparison"):
         for ext in ("pdf", "svg", "png"):
-            assert (out / "figures" / f"{name}.{ext}").exists(), f"{name}.{ext}"
+            assert (out / "figures" / name / f"{name}.{ext}").exists(), f"{name}.{ext}"
     panels = {"overview": 12, "calcium": 6, "kinetics": 3, "agglomerate_distributions": 3,   # every panel alone
               "agglomerates_above_size": 8, "fibsem_comparison": 4}
+    panels = {name: n + 1 for name, n in panels.items()} | {"overlap": 1, "binding_rate": 1}  # + the whole figure
+    assert not list((out / "figures").glob("*.*"))                                  # every figure in its folder
     assert (out / "figures" / "overview" / "coordination_at_end_of_influx.pdf").exists()
     assert {d.name: len(list(d.glob("*.pdf"))) for d in (out / "figures").iterdir() if d.is_dir()} == panels
     assert not (out / "figures" / "journal").exists() and not (out / "figures" / "bond_rates.pdf").exists()
@@ -131,11 +138,15 @@ def test_report_and_comparison(runs, tmp_path):
     assert not any((runs[0] / rep / "analysis").exists() for rep in reps)
     table = pd.read_csv(out / "summary_table.csv", index_col=0)
     assert "mean Rg (nm)" in table.index
+    assert _pdf_pages(out / "report.pdf") == len(panels) + 2                        # 2 cover pages + figures
 
     cmp_dir = compare_report(runs, tmp_path / "cmp")
-    assert (cmp_dir / "comparison.pdf").exists() and (cmp_dir / "comparison_table.tex").exists()
-    assert len(list((cmp_dir / "comparison").glob("*.pdf"))) == 12
-    assert len(list((cmp_dir / "kinetics").glob("*.pdf"))) == 3
+    figs = cmp_dir / "figures"
+    assert (figs / "comparison" / "comparison.pdf").exists() and (cmp_dir / "comparison_table.tex").exists()
+    assert len(list((figs / "comparison").glob("*.pdf"))) == 13
+    assert len(list((figs / "kinetics").glob("*.pdf"))) == 4
+    assert (figs / "agglomerates_above_size_total_density" / "agglomerates_above_size_total_density.pdf").exists()
+    assert _pdf_pages(cmp_dir / "report.pdf") >= 4                                  # cover pages + 3 figures
 
 
 def test_fibsem_export(runs):

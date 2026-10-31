@@ -4,12 +4,15 @@ Every figure is drawn at its final size (89 mm single column, 183 mm double colu
 Arial 7 pt labels / 6 pt ticks, 0.5 pt axes, inward ticks on all sides, 1 pt lines, frameless
 legends, no grid. Saved as PDF + SVG (editable text) + PNG (300 dpi). Ensemble data: mean line with
 a +-1 SD band, optionally the individual replicas. Time in ms (axes in s for long runs); dotted
-vertical lines mark the start and end of the calcium influx. A figure of several panels is saved
-as <name>.* and every panel alone in <name>/<panel>.*.
+vertical lines mark the start and end of the calcium influx. Every figure is saved in its own folder,
+<name>/<name>.*; a figure of several panels also has every panel alone in <name>/<panel>.*.
+make_report and compare_report also collect all their figures in one report.pdf, after cover pages
+with the run names, the summary table and the simulation parameters.
 """
 
 from __future__ import annotations
 
+import datetime
 import json
 import math
 from dataclasses import dataclass, field
@@ -18,6 +21,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MultipleLocator, NullFormatter
 
 from .ensemble import (SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, SIZE_THRESHOLDS_QT_FT, TO_PER_M_S,
@@ -233,11 +237,14 @@ def p_fraction_bound(ax, runs, traces=False):
         for species, ls in (("qt", "-"), ("ft", "--")):
             t, m, s, tr = _series(r, f"frac_bound_{species}")
             color = LINE["Qt" if species == "qt" else "Ft"] if len(runs) == 1 else r.color
-            label = ("Qt" if species == "qt" else "Ft") if len(runs) == 1 else f"{r.label} {species.capitalize()}"
+            label = ("Qt" if species == "qt" else "Ft") if len(runs) == 1 else None
             band(ax, t, m, s, color, label, ls=ls if len(runs) > 1 else "-", traces=tr if traces else None)
     ax.set_ylim(0, 1.02)
     ax.set_ylabel("fraction bound")
-    ax.legend(ncol=2 if len(runs) > 1 else 1)
+    if len(runs) == 1:
+        ax.legend()
+    else:                                     # the run colours are in the legend below; here only the line styles
+        ax.legend([plt.Line2D([], [], color="0.3", ls=ls) for ls in ("-", "--")], ["Qt", "Ft"])
 
 
 CATEGORIES = [("f_mono", "monomers"), ("f_small", "small"), ("f_medium", "medium"),
@@ -422,6 +429,11 @@ def save(fig, stem: Path) -> None:
         fig.savefig(stem.with_suffix(f".{ext}"), dpi=300)
 
 
+def save_figure(fig, out_dir: Path, name: str) -> None:
+    """A whole figure into its own folder: out_dir/<name>/<name>.*."""
+    save(fig, out_dir / name / name)
+
+
 def _t_end(runs) -> float:
     return max(r.stats["time_ms"][-1] for r in runs)
 
@@ -454,8 +466,14 @@ def _grid(panels, runs, nrows, ncols, width, height, titles=True, traces=False, 
         ax.set_visible(False)
     if legend_below and len(runs) > 1:
         handles, labels = axes.flat[2].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="outside lower center", ncol=min(len(runs), 4))
+        fig.legend(handles, labels, loc="outside lower center", ncol=_legend_columns(fig, labels))
     return fig
+
+
+def _legend_columns(fig, labels) -> int:
+    """Columns of a run legend below the axes: as many (at most 4) as fit the figure width at 6 pt."""
+    per_column = 1.3 * max(map(len, labels)) + 12                    # mm: about 1.3 mm per character + line
+    return max(1, min(len(labels), 4, int(fig.get_figwidth() * 25.4 // per_column)))
 
 
 def _single_panels(panels, runs, folder: Path, traces=False):
@@ -475,11 +493,11 @@ def _single_panels(panels, runs, folder: Path, traces=False):
 
 
 def _panel_figure(name, panels, runs, out_dir, nrows, ncols, width, height, traces=False, **grid):
-    """A figure of several panels: saved as out_dir/<name>.* and every panel alone in out_dir/<name>/."""
+    """A figure of several panels: saved as out_dir/<name>/<name>.* and every panel alone in out_dir/<name>/."""
     with plt.rc_context(STYLE):
         fig = _grid(panels, runs, nrows, ncols, width, height, traces=traces, **grid)
         if out_dir:
-            save(fig, out_dir / name)
+            save_figure(fig, out_dir, name)
             _single_panels(panels, runs, out_dir / name, traces=traces)
     return fig
 
@@ -729,14 +747,14 @@ def fig_agglomerates_above_size_total(runs: list[RunData], out_dir: Path | None 
         _time_axis(ax, _t_end(runs))
         handles, labels = ax.get_legend_handles_labels()
         if len(runs) > 1:                                    # runs below the axes, thresholds in the corner
-            fig.legend(handles, labels, loc="outside lower center", ncol=min(len(runs), 4))
+            fig.legend(handles, labels, loc="outside lower center", ncol=_legend_columns(fig, labels))
             if len(ns) > 1:
                 ax.legend([plt.Line2D([], [], color="0.3", ls=THRESHOLD_STYLES[i]) for i in range(len(ns))],
                           [f"≥ {n}" for n in ns], ncol=2, handlelength=3)
         elif handles:
             ax.legend(handles, labels)
         if out_dir:
-            save(fig, out_dir / ("agglomerates_above_size_total" + ("_density" if density else "")))
+            save_figure(fig, out_dir, "agglomerates_above_size_total" + ("_density" if density else ""))
     return fig
 
 
@@ -749,7 +767,7 @@ def fig_overlap(run: RunData, out_dir: Path | None = None):
         phase_lines(ax, [run])
         _time_axis(ax, run.stats["time_ms"][-1])
         if out_dir:
-            save(fig, out_dir / "overlap")
+            save_figure(fig, out_dir, "overlap")
     return fig
 
 
@@ -794,7 +812,7 @@ def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: 
         ax.set_ylabel("bonds formed")
         ax.legend(loc="upper left")
         if out_dir:
-            save(fig, out_dir / "binding_rate")
+            save_figure(fig, out_dir, "binding_rate")
     return fig
 
 
@@ -856,7 +874,7 @@ def fig_sweep(results: pd.DataFrame, y: str = "final_frac_bound", x: str | None 
         if others:
             ax.legend()
         if out_dir:
-            save(fig, out_dir / f"sweep_{y}")
+            save_figure(fig, out_dir, f"sweep_{y}")
     return fig
 
 
@@ -911,6 +929,52 @@ def _slug(text: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in text).strip("_").lower()
 
 
+# ---------------------------------------------------------------------------- report.pdf
+A4 = (210 * MM, 297 * MM)
+TEXT_CHARS = 120        # characters per line of a cover page at 7 pt; wider text is set smaller
+
+
+def _text_pages(title: str, name: str, blocks: list[tuple[str, str]]) -> list:
+    """A4 pages of monospace text: a title and a name (run or folder) on its own line, then (heading, text)
+    blocks, continued on further pages."""
+    lines = []
+    for heading, text in blocks:
+        lines += [heading, "─" * len(heading), *str(text).splitlines(), ""]
+    size = min(7.0, 7.0 * TEXT_CHARS / max(map(len, lines)))
+    per_page = int(250 / (size * 1.3 * 25.4 / 72))                   # 250 mm of text at 1.3 line spacing
+    pages = []
+    for start in range(0, len(lines), per_page):
+        fig = plt.figure(figsize=A4)
+        fig.text(0.07, 0.965, title + (" (continued)" if start else ""), size=11, weight="bold", va="top")
+        fig.text(0.07, 0.945, name, size=min(8.0, 8.0 * 100 / len(name)), family="monospace", va="top")
+        fig.text(0.07, 0.915, "\n".join(lines[start:start + per_page]), family="monospace", size=size,
+                 va="top", linespacing=1.3)
+        pages.append(fig)
+    return pages
+
+
+def _run_record(run_dir: Path) -> str:
+    """Run folder, creation date and git commit of a run (from params.json)."""
+    record = json.loads((run_dir / "params.json").read_text())
+    git = record.get("git") or {}
+    return "\n".join([f"folder     {run_dir.parent.name}/{run_dir.name}",
+                      f"created    {record.get('created', '?')}",
+                      f"git        {git.get('commit', '?')}{' (modified)' if git.get('dirty') else ''}"])
+
+
+def _write_report(path: Path, cover: list, figs: list) -> None:
+    """Cover pages and figures, one per page, into one PDF; closes the cover pages."""
+    with PdfPages(path) as pdf:
+        for fig in (*cover, *figs):
+            pdf.savefig(fig)
+    for fig in cover:
+        plt.close(fig)
+
+
+def _now() -> str:
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
 # ---------------------------------------------------------------------------- report
 def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool = True,
                 overlap_analysis: bool = True, traces: bool = False, n_min=SIZE_THRESHOLDS,
@@ -935,11 +999,11 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     figs = out / "figures"
     rate = [fig_binding_rate(run, figs, rate=binding_rate(run_dir))] if run.p.t_influx_s > 0 and run.p.ca_rise_s == 0 else []  # + csv
     rates = bond_rates(run_dir)                                                                  # + csv
-    for f in (fig_calcium(run, figs, traces, rates), fig_overview(run, figs, traces=traces),
-              fig_agglomerate_distributions(run, figs), fig_kinetics([run], figs, traces=traces),
-              fig_agglomerates_above_size(run, figs, traces, n_min, n_min_qt, n_min_ft, n_qt_ft),
-              fig_fibsem_comparison(run, figs, spatial=qt_spatial_run(run_dir)), fig_overlap(run, figs), *rate):
-        plt.close(f)
+    figures = [fig_calcium(run, figs, traces, rates), fig_overview(run, figs, traces=traces),
+               fig_agglomerate_distributions(run, figs),
+               fig_agglomerates_above_size(run, figs, traces, n_min, n_min_qt, n_min_ft, n_qt_ft),
+               fig_fibsem_comparison(run, figs, spatial=qt_spatial_run(run_dir)),
+               fig_kinetics([run], figs, traces=traces), fig_overlap(run, figs), *rate]
 
     table = summary_table(run)
     table.to_csv(out / "summary_table.csv")
@@ -949,18 +1013,40 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
                   "time_ms": t, "bonds_mean": stats["mean"]["Bonds"], "bonds_sd": stats["sd"]["Bonds"]}
                  ).to_csv(out / "bonds_timeseries.csv", index=False)
     (out / "report.json").write_text(json.dumps({"every": every, "replicas": stats["replicas"]}))
+    cover = _text_pages("Report of one run", run_dir.name, [
+        ("Run", f"{_run_record(run_dir)}\nreplicas   {', '.join(stats['replicas'])}\n"
+                f"report     {_now()}, every = {every} (frames for the structure and overlap analysis)"),
+        ("Final state (mean, SD over replicas)", table.to_string(float_format=lambda x: f"{x:.4g}")),
+        ("Simulation parameters", "\n".join(f"{k:<24} {v}" for k, v in run.p.to_dict().items())),
+        ("Derived values and checks", run.p.summary())])
+    _write_report(out / "report.pdf", cover, figures)
+    for f in figures:
+        plt.close(f)
     return out
 
 
 def compare_report(run_dirs, out_dir: str | Path, labels=None) -> Path:
-    """Comparison figures and table of several runs into out_dir."""
+    """Comparison figures (out_dir/figures/<figure>/) and table of several runs into out_dir, and all
+    figures in out_dir/report.pdf after cover pages with the runs, the table and their parameters."""
     from .ensemble import compare, differing_labels
     out_dir = Path(out_dir).expanduser()
-    runs = load_runs(run_dirs, labels or differing_labels(run_dirs)[0])
-    for f in (fig_comparison(runs, out_dir), fig_kinetics(runs, out_dir),
-              fig_agglomerates_above_size_total(runs, out_dir, density=True)):
-        plt.close(f)
+    run_dirs = [Path(r).expanduser() for r in run_dirs]
+    runs = load_runs(run_dirs, labels or differing_labels(run_dirs, short=True)[0])
+    figs = out_dir / "figures"
+    figures = [fig_comparison(runs, figs), fig_kinetics(runs, figs),
+               fig_agglomerates_above_size_total(runs, figs, density=True)]
     table = compare(run_dirs)
     table.to_csv(out_dir / "comparison_table.csv")
     (out_dir / "comparison_table.tex").write_text(to_latex(table))
+
+    names = [f"run {i}" for i in range(1, len(runs) + 1)]
+    params = pd.DataFrame({name: r.p.to_dict() for name, r in zip(names, runs)}).astype(str)
+    cover = _text_pages("Comparison of runs", out_dir.name, [
+        ("Runs", "\n\n".join(f"{name}: {r.label}\n{_run_record(r.run_dir)}" for name, r in zip(names, runs))
+         + f"\n\nreport     {_now()}"),
+        ("Final state (mean ± SD over replicas)", table.set_axis(names, axis=1).to_string()),
+        ("Simulation parameters", params.to_string())])
+    _write_report(out_dir / "report.pdf", cover, figures)
+    for f in figures:
+        plt.close(f)
     return out_dir

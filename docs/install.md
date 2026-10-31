@@ -98,6 +98,9 @@ Then switch on **nbstripout** (installed with the environment) for this reposito
 
 ```bash
 nbstripout --install
+# keep the cell ids (otherwise every commit renumbers them 0, 1, 2, ...)
+git config filter.nbstripout.clean "$(git config filter.nbstripout.clean) --keep-id"
+git config diff.ipynb.textconv "$(git config diff.ipynb.textconv) --keep-id"
 git check-attr filter control.ipynb      # control.ipynb: filter: nbstripout
 ```
 

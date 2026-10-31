@@ -122,8 +122,9 @@ def test_figure_count_and_density(tmp_path):
     assert len(traces) == 2 and len(mean) == 1
     np.testing.assert_allclose(mean[0].get_ydata(), np.mean([_hand("rep_01", 5), _hand("rep_02", 5)], axis=0)
                                * 1000 / 0.216)
-    assert sorted(f.name for f in (tmp_path / "figs").glob("*.png")) == ["agglomerates_above_size_total.png",
-                                                                        "agglomerates_above_size_total_density.png"]
+    assert sorted(f.relative_to(tmp_path / "figs").as_posix() for f in (tmp_path / "figs").rglob("*.png")) == [
+        "agglomerates_above_size_total/agglomerates_above_size_total.png",
+        "agglomerates_above_size_total_density/agglomerates_above_size_total_density.png"]
     plt.close("all")
 
 
@@ -194,6 +195,6 @@ def test_figure_by_species(tmp_path):
     np.testing.assert_allclose(pair[1].get_ydata(),
                                np.mean([_hand_species("rep_01", 5, "ft"), _hand_species("rep_02", 5, "ft")], axis=0))
     assert sorted(pd.read_csv(run / "analysis" / "agglomerates_above_size_qt.csv")["n_min"].unique()) == [2, 3, 5]
-    assert (tmp_path / "figs" / "agglomerates_above_size.png").exists()
-    assert len(list((tmp_path / "figs" / "agglomerates_above_size").glob("*.png"))) == 8
+    assert (tmp_path / "figs" / "agglomerates_above_size" / "agglomerates_above_size.png").exists()
+    assert len(list((tmp_path / "figs" / "agglomerates_above_size").glob("*.png"))) == 9
     plt.close("all")

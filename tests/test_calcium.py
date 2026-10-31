@@ -171,8 +171,8 @@ def test_compressed_protocol_run(tmp_path, rise, method):
     matplotlib.use("Agg")
     from qtft import make_report
     out = make_report(run, every=2, structure_analysis=False)
-    assert (out / "figures" / "calcium.pdf").exists()
-    assert (out / "figures" / "binding_rate.pdf").exists() == (rise == 0)      # only with a calcium step
+    assert (out / "figures" / "calcium" / "calcium.pdf").exists()
+    assert (out / "figures" / "binding_rate" / "binding_rate.pdf").exists() == (rise == 0)      # only with a calcium step
     assert (out / "bond_rates.csv").exists()
     final = pd.read_csv(out / "final_state.csv", index_col=0)
     assert {"bonds_peak", "t_half_unbind_bonds_ms"} <= set(final.index)
@@ -188,4 +188,4 @@ def test_compressed_protocol_run(tmp_path, rise, method):
     assert agglomerates.loc[agglomerates["v_solid_um3"].isna(), "spans"].notna().all()
     coord = load_run(run).coord_influx_end["Qt"]
     assert coord.equals(read_histo(rep / "coord_qt.hist").loc[p.influx_end_step])
-    assert (out / "figures" / "agglomerate_distributions.pdf").exists()
+    assert (out / "figures" / "agglomerate_distributions" / "agglomerate_distributions.pdf").exists()
