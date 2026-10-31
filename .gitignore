@@ -27,14 +27,14 @@ runs/
 # Claude Code project instructions (local only)
 CLAUDE.md
 
-# personal LRZ settings (email for Slurm), see docs/INSTALL.md section 9
+# personal LRZ settings (email for Slurm), see docs/install.md, section "LRZ Linux cluster"
 lrz_local.json
 
 # LAMMPS plugin build output (built locally with build.sh)
 lammps_plugins/*/build/
 lammps_plugins/*/*.so
 
-# docs: only INSTALL.md and outputs.md are published; the rest stays local
+# docs: only install.md and outputs.md are published; the rest stays local
 docs/*
-!docs/INSTALL.md
+!docs/install.md
 !docs/outputs.md

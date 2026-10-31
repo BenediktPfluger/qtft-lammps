@@ -4,7 +4,7 @@ The run folder is built locally (build_run) and mirrored on LRZ below LRZ["root"
 runs/<group>/<run name>/ there corresponds to <data_dir>/<group>/<run name>/ here. job.slurm (from
 job_template.slurm) runs every replica as one task of a Slurm job array and writes the same status
 files as the local launcher. LAMMPS on LRZ has fix bond/break/random built in, so the input loads no
-plugin. Setup (ssh, LAMMPS build): docs/INSTALL.md, section "LRZ Linux cluster".
+plugin. Setup (ssh, LAMMPS build): docs/install.md, part B "LRZ Linux cluster".
 
 All commands go through ssh/rsync to the host LRZ["host"] in non-interactive mode (BatchMode): they
 use the connection opened once with `ssh lrz` in a terminal (ControlMaster, 2FA) and fail at once,
@@ -184,7 +184,7 @@ def submit(target: Path, p: Params) -> str:
     if not (target / "job.slurm").exists():
         raise FileNotFoundError(f"{target / 'job.slurm'} missing: build the run with executor='lrz'")
     remote = remote_dir(target, p)
-    ssh(f"test -x {LRZ['lmp']} || {{ echo 'LAMMPS not found on LRZ: {LRZ['lmp']} (docs/INSTALL.md, section 9)' >&2; exit 1; }}"
+    ssh(f"test -x {LRZ['lmp']} || {{ echo 'LAMMPS not found on LRZ: {LRZ['lmp']} (docs/install.md, part B)' >&2; exit 1; }}"
         f" && mkdir -p {remote}")
     _rsync("--exclude=analysis/", "--exclude=launcher.*", f"--exclude={JOB_FILE}", f"{target}/",
            f"{LRZ['host']}:{remote}/")

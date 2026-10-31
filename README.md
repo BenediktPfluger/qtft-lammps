@@ -21,7 +21,7 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 
 ## Usage
 
-1. Install everything as described in [docs/INSTALL.md](docs/INSTALL.md), including the unbinding plugin
+1. Install everything as described in [docs/install.md](docs/install.md), including the unbinding plugin
    (`lammps_plugins/bond_break_random/build.sh`; again after every LAMMPS update).
 2. `conda activate lammps`, open the repo in VS Code.
 3. Open `control.ipynb`: set the parameters, check the derived values, build and run. For a parameter
@@ -46,7 +46,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `qtft/params.py` | all parameters with defaults, derived values (γ = k_BT/D, α, p, …) and checks |
 | `qtft/build.py` | fills the template → `rep_XX/in.lammps`, writes `params.json`, derives seeds |
 | `qtft/run.py`, `qtft/launcher.py` | start runs or whole sweeps in the background (one queue, at most `max_parallel` replicas at once), live progress (`watch`, `launcher.log`), stop |
-| `qtft/remote.py`, `job_template.slurm` | runs on the LRZ Linux cluster (`Params(executor="lrz")`): LRZ settings (host, folders, Slurm partition, modules; email from the gitignored `lrz_local.json`), the Slurm job script (one array task per replica), and submit / sync / cancel / `fetch` over SSH, used by `start`, `watch`, `stop` (setup: `docs/INSTALL.md`, section 9) |
+| `qtft/remote.py`, `job_template.slurm` | runs on the LRZ Linux cluster (`Params(executor="lrz")`): LRZ settings (host, folders, Slurm partition, modules; email from the gitignored `lrz_local.json`), the Slurm job script (one array task per replica), and submit / sync / cancel / `fetch` over SSH, used by `start`, `watch`, `stop` (setup: `docs/install.md`, part B) |
 | `qtft/read.py` | readers for `log.lammps` (YAML thermo), dumps, `rdf.dat`, histograms |
 | `qtft/quicklook.py` | quick overview plot of a run: thermo time series, potential energy, virial pressure, mean overlap per pair family |
 | `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table, association rate k_a (`binding_rate`, measured and Collins–Kimball; needs a calcium step), bond formation and breaking rates and apparent k_a over time (`bond_rates`, any protocol), number of agglomerates ≥ n over time for several n, in the box or per 1000 µm³, with the size counted in all particles, Qt or Ft (`agglomerates_above_size`, from `traj.dump`), `index.csv` of all runs, comparison of runs |
