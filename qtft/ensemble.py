@@ -362,6 +362,7 @@ def bond_rates(run_dir: str | Path, bin_s: float | None = None, save: bool = Tru
 
 SIZE_THRESHOLDS = (5, 20, 60, 80, 100, 150)     # default thresholds [particles] of agglomerates_above_size
 SIZE_THRESHOLDS_QT = (5, 10, 20, 50, 70)        # default thresholds [Qt per agglomerate] (about 4x fewer Qt than Ft)
+SIZE_THRESHOLDS_QT_FT = (15, 20)                # default pair (>= n Qt, >= n Ft) shown together in one panel
 # what the size of an agglomerate counts -> suffix of analysis/agglomerates_above_size<suffix>.csv
 SPECIES_SUFFIX = {"all": "", "qt": "_qt", "ft": "_ft"}
 SPECIES_TYPE = {"qt": 1, "ft": 2}

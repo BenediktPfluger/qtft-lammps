@@ -107,23 +107,25 @@ def test_overlap_frame_matches_brute_force(runs):
 def test_report_and_comparison(runs, tmp_path):
     from qtft.figures import compare_report, make_report
 
-    out = make_report(runs[0], every=2, n_min_qt=[2, 5])
+    out = make_report(runs[0], every=2, n_min_qt=[2, 5], n_qt_ft=(3, 4))
     for name in ("summary_table.csv", "summary_table.tex", "bonds_timeseries.csv", "structure_timeseries.csv",
                  "clusters_final.csv", "overlap_final.csv", "binding_rate.csv", "agglomerates_influx_end.csv",
-                 "agglomerates_above_size.csv", "agglomerates_above_size_qt.csv", "agglomerates_above_size_ft.csv"):
+                 "agglomerates_above_size.csv", "agglomerates_above_size_qt.csv", "agglomerates_above_size_ft.csv",
+                 "qt_nn_distances.csv", "qt_pair_correlation.csv", "qt_clark_evans.csv",
+                 "qt_ripley_l.csv"):
         assert (out / name).exists(), name
     for name in ("calcium", "overview", "agglomerate_distributions", "kinetics", "agglomerates_above_size", "overlap",
-                 "binding_rate"):
+                 "binding_rate", "fibsem_comparison"):
         for ext in ("pdf", "svg", "png"):
             assert (out / "figures" / f"{name}.{ext}").exists(), f"{name}.{ext}"
     panels = {"overview": 12, "calcium": 6, "kinetics": 3, "agglomerate_distributions": 3,   # every panel alone
-              "agglomerates_above_size": 6}
+              "agglomerates_above_size": 8, "fibsem_comparison": 4}
     assert (out / "figures" / "overview" / "coordination_at_end_of_influx.pdf").exists()
     assert {d.name: len(list(d.glob("*.pdf"))) for d in (out / "figures").iterdir() if d.is_dir()} == panels
     assert not (out / "figures" / "journal").exists() and not (out / "figures" / "bond_rates.pdf").exists()
     assert not any((out / "figures" / f"{old}.pdf").exists() for old in ("large_agglomerates", "clusters"))
     qt_counts = pd.read_csv(out / "agglomerates_above_size_qt.csv")
-    assert sorted(qt_counts["n_min"].unique()) == [2, 5]                       # thresholds passed on
+    assert sorted(qt_counts["n_min"].unique()) == [2, 3, 5]                    # thresholds passed on
     reps = sorted(d.name for d in runs[0].glob("rep_*"))
     assert all((out / f"percolation_{rep}.csv").exists() for rep in reps)        # one analysis/ folder per run
     assert not any((runs[0] / rep / "analysis").exists() for rep in reps)

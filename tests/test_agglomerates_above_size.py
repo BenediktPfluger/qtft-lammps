@@ -11,7 +11,7 @@ import pytest
 
 from qtft import Params, agglomerates_above_size
 from qtft.ensemble import _agglomerates_above_size_species
-from qtft.figures import RunData, fig_agglomerates_above_size, fig_agglomerates_above_size_total
+from qtft.figures import LINE, RunData, fig_agglomerates_above_size, fig_agglomerates_above_size_total
 
 STEPS = (0, 1000, 2000)
 # cluster sizes per replica and frame (a free particle is a cluster of 1)
@@ -115,7 +115,7 @@ def test_figure_count_and_density(tmp_path):
     assert ax.get_ylabel() == "agglomerates in the box"
     fig = fig_agglomerates_above_size_total([r], tmp_path / "figs", n_min=5, density=True, traces=True)
     ax = fig.axes[0]
-    assert ax.get_ylabel() == "agglomerates ≥ 5 per 1000 µm³ (×10³)"            # up to 13900: in thousands
+    assert ax.get_ylabel() == "agglomerates ≥ 5 / 1000 µm³ (×10³)"            # up to 13900: in thousands
     assert ax.get_legend() is None
     traces = [l for l in ax.lines if l.get_lw() == 0.3]
     mean = [l for l in ax.lines if l.get_lw() == 1.0 and len(l.get_xdata()) == len(STEPS)]
@@ -172,16 +172,28 @@ def test_counts_by_species(tmp_path):
 
 def test_figure_by_species(tmp_path):
     run, p = _run(tmp_path)
-    fig = fig_agglomerates_above_size(_rundata(run, p), tmp_path / "figs", n_min=[5, 20], n_min_qt=[2, 5], n_min_ft=5)
+    fig = fig_agglomerates_above_size(_rundata(run, p), tmp_path / "figs", n_min=[5, 20], n_min_qt=[2, 5], n_min_ft=5,
+                                      n_qt_ft=(3, 5))
     axes = fig.axes
-    assert len(axes) == 6
+    assert len(axes) == 8
     assert [ax.get_title(loc="left") for ax in axes] == ["all particles, number", "all particles, density", "Qt, number",
-                                               "Qt, density", "Ft, number", "Ft, density"]
+                                               "Qt, density", "Ft, number", "Ft, density",
+                                               "≥ 3 Qt and ≥ 5 Ft, number", "≥ 3 Qt and ≥ 5 Ft, density"]
     assert [l.get_text() for l in axes[2].get_legend().get_texts()] == ["≥ 2 Qt", "≥ 5 Qt"]
     assert axes[4].get_legend() is None and axes[4].get_ylabel() == "agglomerates ≥ 5 Ft in the box"
     mean = [l for l in axes[2].lines if len(l.get_xdata()) == len(STEPS)]
     np.testing.assert_allclose(mean[0].get_ydata(),
                                np.mean([_hand_species("rep_01", 2, "qt"), _hand_species("rep_02", 2, "qt")], axis=0))
+    for ax, unit in ((axes[6], "in the box"), (axes[7], "/ 1000 µm³")):      # last row: the Qt / Ft pair
+        assert [l.get_text() for l in ax.get_legend().get_texts()] == ["≥ 3 Qt", "≥ 5 Ft"]
+        assert ax.get_ylabel().startswith(f"agglomerates {unit}")             # tiny test box: density in 10^3
+    pair = [l for l in axes[6].lines if len(l.get_xdata()) == len(STEPS)]
+    assert [l.get_color() for l in pair] == [LINE["Qt"], LINE["Ft"]]
+    np.testing.assert_allclose(pair[0].get_ydata(),
+                               np.mean([_hand_species("rep_01", 3, "qt"), _hand_species("rep_02", 3, "qt")], axis=0))
+    np.testing.assert_allclose(pair[1].get_ydata(),
+                               np.mean([_hand_species("rep_01", 5, "ft"), _hand_species("rep_02", 5, "ft")], axis=0))
+    assert sorted(pd.read_csv(run / "analysis" / "agglomerates_above_size_qt.csv")["n_min"].unique()) == [2, 3, 5]
     assert (tmp_path / "figs" / "agglomerates_above_size.png").exists()
-    assert len(list((tmp_path / "figs" / "agglomerates_above_size").glob("*.png"))) == 6
+    assert len(list((tmp_path / "figs" / "agglomerates_above_size").glob("*.png"))) == 8
     plt.close("all")

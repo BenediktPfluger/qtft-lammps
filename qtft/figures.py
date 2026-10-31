@@ -20,10 +20,12 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import MultipleLocator, NullFormatter
 
-from .ensemble import (SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, TO_PER_M_S, _agglomerates_above_size_species, _thresholds,
-                       agglomerates_above_size, binding_rate, bond_rates, ensemble_stats, ensemble_stats_cached)
+from .ensemble import (SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, SIZE_THRESHOLDS_QT_FT, TO_PER_M_S,
+                       _agglomerates_above_size_species, _thresholds, agglomerates_above_size, binding_rate,
+                       bond_rates, ensemble_stats, ensemble_stats_cached)
 from .params import Params
 from .read import read_histo
+from .spatial import QT_MIN, density_estimate, peak, qt_spatial_run
 from .structure import AGGLOMERATE_MIN, agglomerate_volumes_run
 
 MM = 1 / 25.4
@@ -525,6 +527,91 @@ def fig_agglomerate_distributions(run: RunData, out_dir: Path | None = None):
     return _panel_figure("agglomerate_distributions", panels, [run], out_dir, 1, 3, DOUBLE, 60 * MM)
 
 
+def _peak_label(ax, r, frame, left=False) -> None:
+    ax.text(0.03 if left else 0.97, 0.95, frame + (f"\nr = {r:.0f} nm" if np.isfinite(r) else ""),
+            transform=ax.transAxes, ha="left" if left else "right", va="top")
+
+
+def fig_fibsem_comparison(run: RunData, out_dir: Path | None = None, spatial: dict | None = None,
+                          r_plot_nm: float = 500.0):
+    """Qt spatial statistics for the comparison with 3D FIB-SEM (Qt only), 2 x 2 (183 mm): distances to the
+    nearest Qt of the same agglomerate (agglomerates with >= QT_MIN Qt, 1 nm bins, kernel density estimate)
+    and g(r) of all Qt (log scale, up to `r_plot_nm`) at the end of the influx, each with its peak;
+    cumulative distribution of the nearest-neighbour distance of all Qt (fraction of Qt with a Qt within
+    d) with the random-point curve 1 - exp(-4/3 pi rho d^3) and the Clark-Evans index R, and Ripley's
+    L(r) - r of all Qt (up to `r_plot_nm`, with its maximum), each in the first frame and at the end of the
+    influx. Pooled over replicas (L: mean over replicas). `spatial`: a result of
+    qt_spatial_run() (computed or read from its cache if not given). Saved as fibsem_comparison.*; panels
+    also alone in fibsem_comparison/."""
+    spatial = spatial or qt_spatial_run(run.run_dir)
+    nn, rdf, ce, ripley = spatial["nn"], spatial["rdf"], spatial["clark_evans"], spatial["ripley"]
+    end = influx_end_label(run.p)
+    color = LINE["Qt"]
+
+    def p_nn_intra(ax, runs, traces=False):
+        d = nn.loc[nn["set"] == "intra", "distance_nm"].to_numpy()
+        if len(d) < 2:
+            _no_data(ax, f"no agglomerates with ≥ {QT_MIN} Qt")
+            return
+        ax.hist(d, bins=np.arange(np.floor(d.min()), d.max() + 1, 1.0), density=True, color=color, alpha=0.5,
+                lw=0)
+        kde = density_estimate(d)
+        if kde is not None:
+            x = np.linspace(d.min(), d.max(), 400)
+            ax.plot(x, kde(x), color=color)
+        _peak_label(ax, peak(d), end, left=True)                  # the distances pile up on the right
+        ax.set_xlabel("distance to nearest Qt in the agglomerate (nm)")
+        ax.set_ylabel("probability density (1/nm)")
+
+    def p_rdf(ax, runs, traces=False):
+        r, g = rdf["r_nm"].to_numpy(), rdf["g_mean"].to_numpy()
+        if not np.isfinite(g).any():
+            _no_data(ax, "fewer than 2 Qt")
+            return
+        shown = (r <= r_plot_nm) & (g > 0)
+        ax.axhline(1, color="0.6", lw=0.5, ls=":")
+        ax.plot(r[shown], g[shown], color=color)
+        ax.set_yscale("log")
+        ax.set_xlim(0, r_plot_nm)
+        _peak_label(ax, peak(r, g, r_min=2 * run.p.radius_qt), end)
+        ax.set_xlabel("r (nm)")
+        ax.set_ylabel("g(r), Qt–Qt")
+
+    def p_clark_evans(ax, runs, traces=False):
+        d_all = nn[nn["set"] == "all"]
+        for frame, c, name in (("first", "0.6", "first frame"), ("influx_end", color, end)):
+            d = np.sort(d_all.loc[d_all["frame"] == frame, "distance_nm"].to_numpy())
+            rows = ce[ce["frame"] == frame]
+            ax.step(d, np.arange(1, len(d) + 1) / len(d), where="post", color=c,
+                    label=f"{name}: R = {rows['R'].mean():.2f}, ⟨d⟩ = {d.mean():.0f} nm")
+        rho = ce["density_per_um3"].mean() * 1e-9                               # [1/nm^3]
+        x = np.linspace(0, d_all["distance_nm"].max(), 400)
+        ax.plot(x, 1 - np.exp(-4 / 3 * math.pi * rho * x**3), color="k", lw=0.5, ls="--", label="random points")
+        ax.set_ylim(0, 1.02)
+        ax.set_xlabel("distance to nearest Qt, d (nm)")
+        ax.set_ylabel("fraction of Qt with a Qt within d")
+        ax.legend(loc="lower right")
+
+    def p_ripley(ax, runs, traces=False):
+        ax.axhline(0, color="k", lw=0.5, ls="--", label="random points")
+        for frame, c, name in (("first", "0.6", "first frame"), ("influx_end", color, end)):
+            mean = ripley[ripley["frame"] == frame].groupby("r_nm")["L_minus_r"].mean()
+            mean = mean[mean.index <= r_plot_nm]
+            label = name
+            if mean.notna().any():
+                label += f": max {mean.max():.0f} nm at r = {mean.idxmax():.0f} nm"
+            ax.plot(mean.index, mean.to_numpy(), color=c, label=label)
+        ax.set_xlim(0, r_plot_nm)
+        ax.set_xlabel("r (nm)")
+        ax.set_ylabel("L(r) − r (nm)")
+        ax.legend(loc="center left", bbox_to_anchor=(0.2, 0.3))                  # below the curve of the influx end
+
+    panels = [("Qt nearest neighbour in agglomerates", p_nn_intra, False), ("Qt pair correlation", p_rdf, False),
+              ("Qt clustering (Clark–Evans)", p_clark_evans, False),
+              ("Qt clustering scale (Ripley's L)", p_ripley, False)]
+    return _panel_figure("fibsem_comparison", panels, [run], out_dir, 2, 2, DOUBLE, 120 * MM)
+
+
 def fig_comparison(runs: list[RunData], out_dir: Path | None = None):
     """3 x 4 overlay of several runs with a shared legend below (183 mm); panels also alone in comparison/."""
     return _panel_figure("comparison", COMPARISON, runs, out_dir, 3, 4, DOUBLE, 140 * MM, legend_below=True)
@@ -570,17 +657,33 @@ def _draw_above_size(ax, runs, ns, density, traces, species="all"):
             values.append(d[f"{column}_mean"].to_numpy())
     k = _thousands(ax, np.concatenate(values))
     size = f" ≥ {ns[0]}{unit}" if len(ns) == 1 else ""
-    ax.set_ylabel(f"agglomerates{size} " + ("per 1000 µm³" if density else "in the box")
+    ax.set_ylabel(f"agglomerates{size} " + ("/ 1000 µm³" if density else "in the box")
                   + (" (×10³)" if k else ""))
 
 
+def _above_size_curve(r: RunData, species: str, n: int, density: bool):
+    """Time [ms], mean, SD and replica traces of the agglomerates with >= n (particles, Qt or Ft)."""
+    column = "per_1000um3" if density else "count"
+    d = agglomerates_above_size(r.run_dir, n, species=species)
+    reps = [c for c in d.columns if c.startswith("count_") and c not in ("count_mean", "count_sd")]
+    scale = 1000 / (math.prod(r.p.box) * 1e-9) if density else 1.0          # replica traces as plotted
+    return (d["time_s"].to_numpy() * 1e3, d[f"{column}_mean"].to_numpy(), d[f"{column}_sd"].to_numpy(),
+            d[reps].to_numpy().T * scale)
+
+
 def fig_agglomerates_above_size(run: RunData, out_dir: Path | None = None, traces=False,
-                                n_min=SIZE_THRESHOLDS, n_min_qt=SIZE_THRESHOLDS_QT, n_min_ft=SIZE_THRESHOLDS):
-    """Number of agglomerates with >= n particles (top), >= n Qt (middle) and >= n Ft (bottom) over time,
-    in the box (left) and per 1000 um^3 of box volume (right), one line per threshold, 3 x 2 (183 mm).
+                                n_min=SIZE_THRESHOLDS, n_min_qt=SIZE_THRESHOLDS_QT, n_min_ft=SIZE_THRESHOLDS,
+                                n_qt_ft=SIZE_THRESHOLDS_QT_FT):
+    """Number of agglomerates with >= n particles (row 1), >= n Qt (row 2) and >= n Ft (row 3) over time,
+    in the box (left) and per 1000 um^3 of box volume (right), one line per threshold; row 4: >= n Qt and
+    >= n Ft for the pair `n_qt_ft` together (Qt green, Ft red), 4 x 2 (183 mm).
     Saved as agglomerates_above_size.*; panels also alone in agglomerates_above_size/."""
+    if len(n_qt_ft) != 2:
+        raise ValueError(f"n_qt_ft must be one pair (>= n Qt, >= n Ft), not {n_qt_ft!r}")
+    n_qt, n_ft = (_thresholds(v)[0] for v in n_qt_ft)
     ns = {"all": _thresholds(n_min), "qt": _thresholds(n_min_qt), "ft": _thresholds(n_min_ft)}
-    _agglomerates_above_size_species(run.run_dir, ns)          # all three from one pass over the dumps (cached)
+    _agglomerates_above_size_species(run.run_dir, {"all": ns["all"], "qt": ns["qt"] + [n_qt],
+                                                   "ft": ns["ft"] + [n_ft]})   # one pass over the dumps (cached)
     names = {"all": "all particles", "qt": "Qt", "ft": "Ft"}
 
     def panel(species, density):
@@ -590,8 +693,20 @@ def fig_agglomerates_above_size(run: RunData, out_dir: Path | None = None, trace
                 ax.legend(ncol=2)
         return f"{names[species]}, {'density' if density else 'number'}", draw, True
 
-    panels = [panel(sp, density) for sp in ns for density in (False, True)]
-    return _panel_figure("agglomerates_above_size", panels, [run], out_dir, 3, 2, DOUBLE, 150 * MM,
+    def pair(density):
+        def draw(ax, runs, traces=False):
+            values = []
+            for species, n in (("qt", n_qt), ("ft", n_ft)):
+                t, m, s, tr = _above_size_curve(runs[0], species, n, density)
+                band(ax, t, m, s, LINE[names[species]], f"≥ {n} {names[species]}", traces=tr if traces else None)
+                values.append(m)
+            k = _thousands(ax, np.concatenate(values))
+            ax.set_ylabel("agglomerates " + ("/ 1000 µm³" if density else "in the box") + (" (×10³)" if k else ""))
+            ax.legend()
+        return f"≥ {n_qt} Qt and ≥ {n_ft} Ft, {'density' if density else 'number'}", draw, True
+
+    panels = [panel(sp, density) for sp in ns for density in (False, True)] + [pair(False), pair(True)]
+    return _panel_figure("agglomerates_above_size", panels, [run], out_dir, 4, 2, DOUBLE, MAX_HEIGHT,
                          traces=traces)
 
 
@@ -799,10 +914,12 @@ def _slug(text: str) -> str:
 # ---------------------------------------------------------------------------- report
 def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool = True,
                 overlap_analysis: bool = True, traces: bool = False, n_min=SIZE_THRESHOLDS,
-                n_min_qt=SIZE_THRESHOLDS_QT, n_min_ft=SIZE_THRESHOLDS) -> Path:
+                n_min_qt=SIZE_THRESHOLDS_QT, n_min_ft=SIZE_THRESHOLDS, n_qt_ft=SIZE_THRESHOLDS_QT_FT) -> Path:
     """Full analysis of one run: ensemble statistics, structure (OVITO) and overlap analysis,
     all figures and tables into <run>/analysis/. n_min, n_min_qt, n_min_ft: size thresholds of
-    fig_agglomerates_above_size (agglomerates with >= n particles, Qt, Ft)."""
+    fig_agglomerates_above_size (agglomerates with >= n particles, Qt, Ft); n_qt_ft: the pair
+    (>= n Qt, >= n Ft) of its last row. Includes the Qt spatial statistics for FIB-SEM (qt_spatial_run,
+    fig_fibsem_comparison)."""
     run_dir = Path(run_dir).expanduser()
     out = run_dir / "analysis"
     stats = ensemble_stats(run_dir)
@@ -820,7 +937,8 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     rates = bond_rates(run_dir)                                                                  # + csv
     for f in (fig_calcium(run, figs, traces, rates), fig_overview(run, figs, traces=traces),
               fig_agglomerate_distributions(run, figs), fig_kinetics([run], figs, traces=traces),
-              fig_agglomerates_above_size(run, figs, traces, n_min, n_min_qt, n_min_ft), fig_overlap(run, figs), *rate):
+              fig_agglomerates_above_size(run, figs, traces, n_min, n_min_qt, n_min_ft, n_qt_ft),
+              fig_fibsem_comparison(run, figs, spatial=qt_spatial_run(run_dir)), fig_overlap(run, figs), *rate):
         plt.close(f)
 
     table = summary_table(run)
