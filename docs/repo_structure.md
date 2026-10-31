@@ -373,7 +373,8 @@ Shown in analysis section 4.
 1. **Qt nearest neighbour in agglomerates**: distance from every Qt in an agglomerate with ≥ 2 Qt to the nearest
    Qt of the same agglomerate, at the end of the influx; histogram (1 nm bins), kernel density estimate and its
    peak "r = … nm".
-2. **Qt pair correlation**: g(r) of all Qt at the end of the influx up to 500 nm, log scale, with its first peak.
+2. **Qt pair correlation**: g(r) of all Qt at the end of the influx up to 500 nm, log scale, with
+   its peak beyond the Qt contact distance 2 r_Qt (the highest value of g there).
 3. **Qt clustering (Clark–Evans)**: fraction of Qt with another Qt within d, in the first frame and at the end
    of the influx, with the curve for random points and the Clark–Evans R and mean distance ⟨d⟩ in the legend.
 4. **Qt clustering scale (Ripley's L)**: L(r) − r of all Qt in the first frame and at the end of the influx, up
