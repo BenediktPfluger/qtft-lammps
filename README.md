@@ -40,7 +40,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `control.ipynb` | set all parameters, build the LAMMPS input, run, monitor |
 | `analysis.ipynb` | ensemble statistics, structure and overlap analysis, figures and tables, comparison of runs, FIB-SEM export |
 | `animation.ipynb` | video of one replica: set the run folder name, `animate` writes `rep_XX/animation/animation.mp4` |
-| `docs/decisions.md` | model and project decisions with reasons, status of the implementation |
+| `docs/decisions.md` | model and project decisions with reasons, status of the implementation (local only, not in the repository) |
 | `docs/outputs.md` | every output file: content and what creates it |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
 | `lammps_plugins/bond_break_random/` | LAMMPS plugin `fix bond/break/random` (C++ source, `build.sh`; the built `.so` is not committed) |

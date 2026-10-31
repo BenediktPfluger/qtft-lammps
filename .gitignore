@@ -33,3 +33,8 @@ lrz_local.json
 # LAMMPS plugin build output (built locally with build.sh)
 lammps_plugins/*/build/
 lammps_plugins/*/*.so
+
+# docs: only INSTALL.md and outputs.md are published; the rest stays local
+docs/*
+!docs/INSTALL.md
+!docs/outputs.md
