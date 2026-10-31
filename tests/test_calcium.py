@@ -22,7 +22,7 @@ def test_phases_and_calcium_formula():
     assert p.k_off_per_s(1.0) == p.k_off_ca_per_s and p.k_off_per_s(0.0) == p.k_off_free_per_s
     no_influx = Params(t_baseline_s=1.0, t_influx_s=0.0, t_pumpout_s=1.0)
     assert no_influx.ca_start_uM == no_influx.ca_rest_uM                      # pump-out stays at rest
-    assert "_ca10-30-90s_periodic" in p.auto_name()
+    assert "_rise0tau20_t10-30-90s_" in p.auto_name()
 
 
 def test_calcium_rise():

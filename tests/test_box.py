@@ -19,6 +19,8 @@ def test_box_property_and_derived():
     assert p.derived()["c_Qt [uM]"] == pytest.approx(cube.derived()["c_Qt [uM]"] / 3)
     assert p.derived()["phi_Qt"] == pytest.approx(4000 * 4 / 3 * math.pi * 27.5**3 / 24e9)
     assert "_L2000x3000x4000_" in p.auto_name() and "_L2000_" in cube.auto_name()
+    assert p.density_per_um3 == pytest.approx((4000 / 24, 10000 / 24))
+    assert p.auto_name().startswith("Qt167_Ft417_") and cube.auto_name().startswith("Qt500_Ft1250_")
     assert p.check() == []
 
 
@@ -65,3 +67,14 @@ def test_rectangular_box_run(tmp_path):
     iu = np.triu_indices(len(pos), 1)
     result = overlap_frame(atoms, p).set_index("family")
     assert result["n overlapping"].sum() == (depth[iu] > 0).sum()
+
+
+def test_run_name():
+    p = Params(n_qt=1280, n_ft=5120, box_length=4000.0, k_on=1.86e-6, k_off_ca_per_s=8e-3, k_off_free_per_s=0.2,
+               ca_rest_uM=0.1, ca_peak_uM=1.0, ca_K_uM=0.5, ca_rise_s=5.0, ca_tau_s=30.0,
+               t_baseline_s=10.0, t_influx_s=30.0, t_pumpout_s=150.0, timestep=500.0)
+    assert p.auto_name() == ("Qt20_Ft80_L4000_kon1860_koff0.008-0.2_Ca0.1-1uM_K0.5_rise5tau30_t10-30-150s"
+                             "_dt500ns_periodic")
+    assert p.name == p.auto_name() and Params(run_name="mine").name == "mine"
+    # the force constants, the bond constant and the Hill coefficient are not in the name
+    assert Params(k_qq=1.0, k_ff=1.0, k_qf=1.0, bond_k=1.0, ca_hill=2.0).auto_name() == Params().auto_name()

@@ -48,8 +48,14 @@ exist. The subfolder follows from `n_replicas`; the `group` parameter overrides 
 
 ## Run folder `<single|ensemble>/<run name>/`
 
-The generated run name lists the main parameters, the calcium protocol (baseline–influx–pump-out durations in s)
-and the boundary (`400Qt_1600Ft_L928.3_kQQ7.5_…_dt500ns_ca10-30-90s_periodic`, `…_reflect`, `…_harmonic`).
+The generated run name (`Params.auto_name()`, unless `run_name` is set) lists the Qt and Ft number density in
+the full box [1/µm³, 3 significant digits], the box edge `L` [nm], `kon` [1/s] (at full calmodulin loading),
+`koff` Ca-loaded–Ca-free [1/s], the calcium rest–peak level and half-loading `K` [µM], the rise time and
+pump-out time constant `rise…tau…` [s], the protocol durations baseline–influx–pump-out `t…s`, the time step
+and the boundary:
+`Qt20_Ft80_L4000_kon1860_koff0.008-0.2_Ca0.1-1uM_K0.5_rise5tau30_t10-30-150s_dt500ns_periodic`
+(`…_reflect`, `…_harmonic`). The force constants, the bond constant and the Hill coefficient are not in the
+name: runs that differ only in those (or in execution settings and seeds) need their own `run_name`.
 
 | File | Content | Created by |
 |---|---|---|

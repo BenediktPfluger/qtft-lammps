@@ -324,6 +324,7 @@ class Params:
             **walls,
             "RMS step Qt [nm/axis]": math.sqrt(2 * self.D_qt * self.timestep),
             "RMS step Ft [nm/axis]": math.sqrt(2 * self.D_ft * self.timestep),
+            "density Qt / Ft [1/um^3]": tuple(round(rho, 4) for rho in self.density_per_um3),
             "c_Qt [uM]": self.n_qt * to_uM,
             "c_Ft [uM]": self.n_ft * to_uM,
             "phi_Qt": self.n_qt * sphere(self.radius_qt) / vol,
@@ -440,11 +441,23 @@ class Params:
         lines += [f"{lvl}: {msg}" for lvl, msg in issues] or ["all OK"]
         return "\n".join(lines)
 
+    @property
+    def density_per_um3(self) -> tuple[float, float]:
+        """Number densities of Qt and Ft in the full box [1/um^3]."""
+        vol = math.prod(self.box) * 1e-9
+        return self.n_qt / vol, self.n_ft / vol
+
     def auto_name(self) -> str:
-        return (f"{self.n_qt}Qt_{self.n_ft}Ft_L{box_label(self.box_length)}"
-                f"_kQQ{self.k_qq:g}_kFF{self.k_ff:g}_kQF{self.k_qf:g}_K{self.bond_k:g}"
-                f"_kon{self.k_on:g}_dt{self.timestep:g}ns"
-                f"_ca{self.t_baseline_s:g}-{self.t_influx_s:g}-{self.t_pumpout_s:g}s_{self.boundary}")
+        """Run name: Qt and Ft density [1/um^3], box edge [nm], k_on [1/s], k_off Ca-loaded / Ca-free [1/s],
+        calcium rest-peak and half-loading K [uM], rise time and pump-out time constant [s], phase durations
+        baseline-influx-pump-out [s], timestep, boundary."""
+        rho_qt, rho_ft = self.density_per_um3
+        return (f"Qt{_g3(rho_qt)}_Ft{_g3(rho_ft)}_L{box_label(self.box_length)}"
+                f"_kon{self.k_on * 1e9:g}_koff{self.k_off_ca_per_s:g}-{self.k_off_free_per_s:g}"
+                f"_Ca{self.ca_rest_uM:g}-{self.ca_peak_uM:g}uM_K{self.ca_K_uM:g}"
+                f"_rise{self.ca_rise_s:g}tau{self.ca_tau_s:g}"
+                f"_t{self.t_baseline_s:g}-{self.t_influx_s:g}-{self.t_pumpout_s:g}s"
+                f"_dt{self.timestep:g}ns_{self.boundary}")
 
     @property
     def name(self) -> str:
@@ -480,6 +493,11 @@ def box_label(box_length) -> str:
     if isinstance(box_length, numbers.Real):
         return f"{box_length:g}"
     return "x".join(f"{v:g}" for v in box_length)
+
+
+def _g3(x: float) -> str:
+    """x rounded to 3 significant digits, without exponent for values below 1e6 (run names)."""
+    return f"{float(f'{x:.3g}'):g}"
 
 
 def _fmt(val) -> str:

@@ -15,7 +15,7 @@ from conftest import influx
 def test_wall_params():
     periodic = Params()
     assert periodic.periodic and "reachable volume Qt" not in periodic.derived()
-    assert periodic.auto_name().endswith("_ca10-30-90s_periodic")
+    assert periodic.auto_name().endswith("_t10-30-90s_dt500ns_periodic")
     h = Params(box_length=[400.0, 500.0, 600.0], boundary="harmonic")
     d = h.derived()
     assert d["alpha wall Qt"] == pytest.approx(0.70, abs=0.01) and d["alpha wall Ft"] == pytest.approx(0.70, abs=0.01)
