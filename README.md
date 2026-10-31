@@ -10,11 +10,12 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 | Component | LAMMPS implementation |
 |---|---|
 | Units | `units nano` (nm, ns, energy in zJ, force in pN) |
+| Particles | set as number densities per µm³ of the box (`qt_per_um3=20.0`, `ft_per_um3=80.0`); the particle numbers follow as round(density × box volume), at least one Qt and one Ft, so a larger box keeps the density and holds more particles |
 | Box | cubic (`box_length=2000.0`) or rectangular (`box_length=[2000.0, 3000.0, 4000.0]`); periodic (`boundary="periodic"`, default) or with walls on all faces: reflecting (`"reflect"`, `fix wall/reflect`) or soft (`"harmonic"`, `fix wall/harmonic`) |
 | Dynamics | overdamped Brownian dynamics, `fix brownian`, γ = k_BT/D per species |
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j |
 | Bonds | `bond_style harmonic`, E = K (r − r₀)², r₀ = r_Qt + r_Ft |
-| Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on f Δt) per step: a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ |
+| Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on f Δt · `bind_every`) per attempt (every `bind_every` steps, default 1): a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ |
 | Unbinding | `fix bond/break/random` (own plugin in `lammps_plugins/`): every bond breaks independently with probability 1 − exp(−k_off Δt) per attempt, k_off following the calcium at every attempt (`bond_break="random"`, default); `bond_break="longest"`: the built-in `fix bond/break` (only the longest bond of both atoms can break) |
 | Calcium control | every production follows a calcium protocol (baseline → influx with an exponential rise to the plateau → exponential pump-out, each phase optional); calmodulin loading f = Caⁿ/(K_Caⁿ + Caⁿ) sets k_on f and k_off = f k_off,Ca + (1 − f) k_off,free; computed inside LAMMPS (k_on per segment, k_off at every unbinding attempt) |
 | Start | overlap-free random insertion, short equilibration without binding |
@@ -24,9 +25,13 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 1. Install everything as described in [docs/install.md](docs/install.md), including the unbinding plugin
    (`lammps_plugins/bond_break_random/build.sh`; again after every LAMMPS update).
 2. `conda activate lammps`, open the repo in VS Code.
-3. Open `control.ipynb`: set the parameters, check the derived values, build and run. For a parameter
-   study, list values per parameter in section 4 (`build_sweep`): one run per combination.
-4. Analyse finished runs in `analysis.ipynb`; render a video of a run in `animation.ipynb` (needs ffmpeg).
+3. Open `control.ipynb`: set the parameters (Qt and Ft as densities per µm³), check the derived values (they
+   start with the resulting particle numbers), build and run. For a parameter
+   study, list values per parameter in section 4 (`build_sweep`): one run per combination. Runs go to this
+   PC (`executor="local"`) or to the LRZ Linux cluster (`executor="lrz"`; download the results with `fetch`).
+4. Analyse finished runs in `analysis.ipynb`: `make_report` writes all tables and figures to
+   `<run>/analysis/`, including `report.pdf` with every figure for a review at a glance. Render a video of a
+   run in `animation.ipynb` (needs ffmpeg).
 
 Simulation output is written to `runs/` inside the repository (gitignored, never committed):
 `runs/single/` for runs with one replica, `runs/ensemble/` for runs with several,
@@ -37,13 +42,15 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 
 | Path | Purpose |
 |---|---|
-| `control.ipynb` | set all parameters, build the LAMMPS input, run, monitor |
-| `analysis.ipynb` | ensemble statistics, structure and overlap analysis, figures and tables, comparison of runs, FIB-SEM export |
-| `animation.ipynb` | video of one replica: set the run folder name, `animate` writes `rep_XX/animation/animation.mp4` |
+| `control.ipynb` | set all parameters, build the LAMMPS input, run (locally or on LRZ), monitor; parameter sweeps, quick look, performance measurement, force-constant sweep |
+| `analysis.ipynb` | index of all runs, ensemble statistics, full report (figures, tables, `report.pdf`), comparison with 3D FIB-SEM, comparison of runs, parameter sweeps, FIB-SEM export |
+| `animation.ipynb` | video of one replica: set the run folder name, `animate` writes `rep_XX/animation/animation.mp4` (and optional stills) |
+| `docs/install.md` | installation: WSL, Ubuntu, conda, LAMMPS, VS Code on this PC; SSH and LAMMPS on LRZ |
 | `docs/repo_structure.md` | folder structure, every input and output file of a run, and every figure with its panels |
+| `environment.yml` | the conda environment `lammps` (compilers, MPI, Python packages, OVITO, ffmpeg, pytest, nbstripout) |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
 | `lammps_plugins/bond_break_random/` | LAMMPS plugin `fix bond/break/random` (C++ source, `build.sh`; the built `.so` is not committed) |
-| `qtft/params.py` | all parameters with defaults, derived values (γ = k_BT/D, α, p, …) and checks |
+| `qtft/params.py` | all parameters with defaults, derived values (particle numbers from the densities, γ = k_BT/D, α, p, …) and checks |
 | `qtft/build.py` | fills the template → `rep_XX/in.lammps`, writes `params.json`, derives seeds |
 | `qtft/run.py`, `qtft/launcher.py` | start runs or whole sweeps in the background (one queue, at most `max_parallel` replicas at once), live progress (`watch`, `launcher.log`), stop |
 | `qtft/remote.py`, `job_template.slurm` | runs on the LRZ Linux cluster (`Params(executor="lrz")`): LRZ settings (host, folders, Slurm partition, modules; email from the gitignored `lrz_local.json`), the Slurm job script (one array task per replica), and submit / sync / cancel / `fetch` over SSH, used by `start`, `watch`, `stop` (setup: `docs/install.md`, part B) |
