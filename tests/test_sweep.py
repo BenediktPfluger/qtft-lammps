@@ -67,7 +67,7 @@ def test_summary_and_progress_of_sweep(tmp_path):
 @pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_sweep_end_to_end(tmp_path):
-    p = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(2000),
+    p = Params(qt_per_um3=500.0, ft_per_um3=2000.0, box_length=464.2, equil_steps=200, **influx(2000),
                output_every=500, traj_every=500, n_replicas=2, max_parallel=2, data_dir=str(tmp_path))
     sweep = build_sweep(p, {"k_on": [1e-4, 2e-4]}, "kon")
     start(sweep, wait=True)

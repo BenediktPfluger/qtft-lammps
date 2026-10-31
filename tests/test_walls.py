@@ -32,7 +32,7 @@ def test_wall_params():
 def test_wall_inputs(tmp_path):
     text = {b: (build_run(Params(box_length=[400.0, 500.0, 600.0], boundary=b, data_dir=str(tmp_path), run_name=b))
                 / "rep_01" / "in.lammps").read_text() for b in ("periodic", "reflect", "harmonic")}
-    assert "boundary        p p p" in text["periodic"] and "random 400 " in text["periodic"]
+    assert "boundary        p p p" in text["periodic"] and "random 60 " in text["periodic"]   # default 500 Qt/um^3 in 0.12 um^3
     assert " NULL overlap" in text["periodic"]
     for b in ("reflect", "harmonic"):
         assert "boundary        f f f" in text[b] and " ins_qt overlap" in text[b] and " ins_ft overlap" in text[b]
@@ -49,7 +49,7 @@ def test_wall_run(tmp_path, boundary):
     from qtft.overlap import overlap_frame
     from qtft.structure import structure
 
-    p = Params(n_qt=50, n_ft=200, box_length=[400.0, 500.0, 600.0], boundary=boundary, equil_steps=200,
+    p = Params(qt_per_um3=50 / 0.12, ft_per_um3=200 / 0.12, box_length=[400.0, 500.0, 600.0], boundary=boundary, equil_steps=200,
                **influx(1000), output_every=500, traj_every=500, k_on=1e-4, data_dir=str(tmp_path), run_name="w")
     run = build_run(p)
     start(run, wait=True)

@@ -91,7 +91,7 @@ def test_job_script_runs_replicas(tmp_path):
     # job.slurm as Slurm would run it, for array tasks 1 and 2; module and srun are stand-ins, and
     # $HOME/src/lammps/build/lmp points to the local lmp. The only test of a replica that fails inside
     # LAMMPS (the fake-LRZ tests below run the same script, all replicas succeed there)
-    p = Params(executor="lrz", n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(500),
+    p = Params(executor="lrz", qt_per_um3=500.0, ft_per_um3=2000.0, box_length=464.2, equil_steps=200, **influx(500),
                output_every=250, traj_every=500, bond_break="longest", n_replicas=2,
                data_dir=str(tmp_path / "data"), run_name="job")
     run = build_run(p)
@@ -182,7 +182,7 @@ def fake_lrz(tmp_path, monkeypatch):
 
 
 def _small(tmp_path, **kw):
-    return Params(executor="lrz", n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(500),
+    return Params(executor="lrz", qt_per_um3=500.0, ft_per_um3=2000.0, box_length=464.2, equil_steps=200, **influx(500),
                   output_every=250, traj_every=500, bond_break="longest", data_dir=str(tmp_path / "data"), **kw)
 
 

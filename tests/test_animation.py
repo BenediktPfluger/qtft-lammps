@@ -92,7 +92,7 @@ def test_render_spheres():
 
 def _synthetic_run(root, n_qt=6, n_ft=12):
     """Run folder below root/single with params.json, a log.lammps and a traj.dump of 6 frames (0-5 ms)."""
-    p = Params(n_qt=n_qt, n_ft=n_ft, box_length=600, t_baseline_s=0.001, t_influx_s=0.002, t_pumpout_s=0.002)
+    p = Params(qt_per_um3=n_qt / 0.216, ft_per_um3=n_ft / 0.216, box_length=600, t_baseline_s=0.001, t_influx_s=0.002, t_pumpout_s=0.002)
     run = root / "single" / NAME
     rep = run / "rep_01"
     rep.mkdir(parents=True)

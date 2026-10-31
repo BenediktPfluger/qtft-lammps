@@ -462,7 +462,7 @@ def _agglomerates_above_size_species(run_dir: str | Path, n_min: dict, save: boo
 
 
 # ------------------------------------------------------------------ index of all runs
-INDEX_PARAMS = ("n_qt", "n_ft", "box_length", "boundary", "k_qq", "k_ff", "k_qf", "bond_k", "k_on",
+INDEX_PARAMS = ("qt_per_um3", "ft_per_um3", "box_length", "boundary", "k_qq", "k_ff", "k_qf", "bond_k", "k_on",
                 "k_off_ca_per_s", "k_off_free_per_s", "timestep", "t_baseline_s", "t_influx_s", "t_pumpout_s",
                 "n_replicas")
 
@@ -499,7 +499,7 @@ def update_index(data_dir: str | Path = "runs") -> pd.DataFrame:
     return df
 
 
-SHORT_NAMES = {"n_qt": "Qt", "n_ft": "Ft", "box_length": "L", "k_off_ca_per_s": "k_off,Ca",
+SHORT_NAMES = {"qt_per_um3": "Qt", "ft_per_um3": "Ft", "box_length": "L", "k_off_ca_per_s": "k_off,Ca",
                "k_off_free_per_s": "k_off,free", "ca_rest_uM": "Ca rest", "ca_peak_uM": "Ca peak", "ca_K_uM": "K",
                "ca_hill": "n", "ca_rise_s": "rise", "ca_tau_s": "τ", "t_baseline_s": "t_base",
                "t_influx_s": "t_influx", "t_pumpout_s": "t_pump", "timestep": "dt"}   # short labels (figure legends)

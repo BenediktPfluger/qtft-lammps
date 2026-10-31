@@ -23,7 +23,7 @@ def _atoms(rows):
 
 
 def _params(boundary="periodic"):
-    return Params(n_qt=10, n_ft=10, box_length=L, boundary=boundary)
+    return Params(qt_per_um3=10.0, ft_per_um3=10.0, box_length=L, boundary=boundary)
 
 
 # agglomerate 1: two Qt across the periodic boundary (20 nm apart through it); agglomerate 5: three Qt
@@ -88,7 +88,7 @@ def test_peak():
 def _run(root):
     """Run folder with two finished replicas: random Qt in the first frame, Qt in pairs 20 nm apart (one
     agglomerate per pair) at the end of the influx (the last frame, the default protocol is longer)."""
-    p = Params(n_qt=400, n_ft=0, box_length=L)
+    p = Params(qt_per_um3=400.0, ft_per_um3=0.0, box_length=L)
     run = root / "spatial"
     run.mkdir()
     (run / "params.json").write_text(json.dumps({"params": p.to_dict()}))

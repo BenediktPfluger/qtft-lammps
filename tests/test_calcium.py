@@ -54,7 +54,7 @@ def test_deagglomeration_half_time():
 
 def test_bond_rates(tmp_path, monkeypatch):
     # 10 bonds formed and 4 broken per segment (1 ms), known exactly; two identical replicas
-    p = Params(n_qt=10, n_ft=20, box_length=100.0, output_every=500, rate_update_every=2000)
+    p = Params(qt_per_um3=1e4, ft_per_um3=2e4, box_length=100.0, output_every=500, rate_update_every=2000)
     (tmp_path / "params.json").write_text(json.dumps({"params": p.__dict__}))
     step = np.arange(0, 20_001, 500)
     broken = 4 * step / 2000
@@ -104,8 +104,9 @@ def test_input_has_segment_loop(tmp_path):
 def test_bond_break_toggle(tmp_path, monkeypatch):
     assert Params().bond_break == "random"
     assert any("bond_break" in m for lvl, m in Params(bond_break="all").check() if lvl == "ERROR")
-    assert Params.from_dict({}).bond_break == "longest"                          # runs from before the toggle
-    assert Params.from_dict({"bond_break": "random"}).bond_break == "random"
+    densities = {"qt_per_um3": 500.0, "ft_per_um3": 2000.0}
+    assert Params.from_dict(densities).bond_break == "longest"                   # runs from before the toggle
+    assert Params.from_dict({**densities, "bond_break": "random"}).bond_break == "random"
     assert Params(bond_break="longest").auto_name() == Params().auto_name()       # no run-name tag
 
     # the plugin is loaded only for "random" and only if lmp does not have the style built in
@@ -133,7 +134,7 @@ def test_bond_break_toggle(tmp_path, monkeypatch):
 @pytest.mark.parametrize("rise, method", [(0.0, "random"), (2e-3, "random"), (0.0, "longest")])
 def test_compressed_protocol_run(tmp_path, rise, method):
     # milliseconds instead of seconds and fast rates, so that bonds form and break within the test
-    p = Params(n_qt=150, n_ft=600, box_length=500.0, equil_steps=200, output_every=500, traj_every=1000,
+    p = Params(qt_per_um3=1200.0, ft_per_um3=4800.0, box_length=500.0, equil_steps=200, output_every=500, traj_every=1000,
                t_baseline_s=2e-3, t_influx_s=4e-3, t_pumpout_s=6e-3, ca_tau_s=2e-3, ca_rise_s=rise,
                rate_update_every=1000,
                k_on=2e-3, k_off_ca_per_s=1.0, k_off_free_per_s=2000.0, bond_break=method,

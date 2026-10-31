@@ -40,7 +40,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `control.ipynb` | set all parameters, build the LAMMPS input, run, monitor |
 | `analysis.ipynb` | ensemble statistics, structure and overlap analysis, figures and tables, comparison of runs, FIB-SEM export |
 | `animation.ipynb` | video of one replica: set the run folder name, `animate` writes `rep_XX/animation/animation.mp4` |
-| `docs/outputs.md` | every output file: content and what creates it |
+| `docs/repo_structure.md` | folder structure, every input and output file of a run, and every figure with its panels |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
 | `lammps_plugins/bond_break_random/` | LAMMPS plugin `fix bond/break/random` (C++ source, `build.sh`; the built `.so` is not committed) |
 | `qtft/params.py` | all parameters with defaults, derived values (γ = k_BT/D, α, p, …) and checks |
@@ -65,7 +65,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 
 Simulation output goes to `runs/<single|ensemble>/<run name>/` (inside the repository,
 gitignored). Every output file,
-its content and what creates it is listed in [docs/outputs.md](docs/outputs.md).
+its content and what creates it is listed in [docs/repo_structure.md](docs/repo_structure.md).
 
 In OVITO, `radius`, `cluster` and `nbonds` are read as particle properties; colour by
 `cluster` with the *Color coding* modifier.

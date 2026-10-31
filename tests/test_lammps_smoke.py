@@ -32,7 +32,7 @@ def _clusters_from_bonds(ids, bonds):
 
 def test_tiny_system(tmp_path):
     # same concentration as the default system, faster binding so that bonds form within the test
-    p = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(3000),
+    p = Params(qt_per_um3=500.0, ft_per_um3=2000.0, box_length=464.2, equil_steps=200, **influx(3000),
                output_every=500, traj_every=1000, k_on=1e-4, data_dir=str(tmp_path), run_name="smoke")
     run_dir = build_run(p)
     start(run_dir, wait=True)

@@ -36,7 +36,7 @@ def test_update_index_lists_built_runs(tmp_path):
 @pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_ensemble_of_tiny_runs(tmp_path):
-    common = dict(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(2000),
+    common = dict(qt_per_um3=500.0, ft_per_um3=2000.0, box_length=464.2, equil_steps=200, **influx(2000),
                   output_every=500, traj_every=500, n_replicas=3, data_dir=str(tmp_path))
     runs = [build_run(Params(**common, k_on=k, run_name=f"kon{k:g}")) for k in (1e-4, 2e-4)]
     for r in runs:
@@ -89,7 +89,7 @@ def test_ensemble_of_tiny_runs(tmp_path):
 @pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 def test_binding_rate_needs_frames(tmp_path):
-    p = Params(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(500), output_every=500,
+    p = Params(qt_per_um3=500.0, ft_per_um3=2000.0, box_length=464.2, equil_steps=200, **influx(500), output_every=500,
                traj_every=500, data_dir=str(tmp_path), run_name="short")
     run = build_run(p)
     start(run, wait=True)

@@ -2,6 +2,7 @@
 small synthetic run folder (no LAMMPS)."""
 
 import json
+import math
 import os
 
 import matplotlib.pyplot as plt
@@ -22,7 +23,8 @@ SIZES = {"rep_01": [[1] * 60, [12, 6, 5, 3] + [1] * 34, [25, 12, 5] + [1] * 18],
 def _run(root, box=(600, 600, 600), sizes=SIZES):
     """Run folder with params.json and one finished replica per entry of `sizes` (traj.dump frames with the
     given cluster sizes)."""
-    p = Params(n_qt=20, n_ft=40, box_length=list(box))
+    p = Params(qt_per_um3=20 / (math.prod(box) * 1e-9), ft_per_um3=40 / (math.prod(box) * 1e-9),
+               box_length=list(box))
     run = root / "synthetic"
     run.mkdir()
     (run / "params.json").write_text(json.dumps({"params": p.to_dict()}))

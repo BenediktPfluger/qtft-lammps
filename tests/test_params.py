@@ -34,7 +34,7 @@ def test_stability_values_of_reference_timestep():
 
 
 def test_concentrations():
-    small, large = Params(), Params(n_qt=4000, n_ft=16000, box_length=2000)
+    small, large = Params(), Params(qt_per_um3=500.0, ft_per_um3=2000.0, box_length=2000)
     assert small.derived()["c_Qt [uM]"] == pytest.approx(large.derived()["c_Qt [uM]"], rel=1e-3)
     assert large.derived()["c_Qt [uM]"] == pytest.approx(0.83, abs=0.01)
 
@@ -49,4 +49,5 @@ def test_checks_catch_bad_values():
 
 def test_size_bounds():
     assert Params().size_bounds() == (40, 200, 500)
-    assert Params(n_qt=4000, n_ft=16000).size_bounds() == (400, 2000, 5000)
+    assert Params(qt_per_um3=4000 / Params().volume_um3, ft_per_um3=16000 / Params().volume_um3).size_bounds() == (
+        400, 2000, 5000)

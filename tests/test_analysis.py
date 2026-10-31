@@ -24,7 +24,7 @@ matplotlib.use("Agg")
 @pytest.fixture(scope="module")
 def runs(tmp_path_factory):
     data = tmp_path_factory.mktemp("data")
-    common = dict(n_qt=50, n_ft=200, box_length=464.2, equil_steps=200, **influx(3000),
+    common = dict(qt_per_um3=500.0, ft_per_um3=2000.0, box_length=464.2, equil_steps=200, **influx(3000),
                   output_every=500, traj_every=500, n_replicas=2, data_dir=str(data))
     dirs = [build_run(Params(**common, k_on=k, run_name=f"kon{k:g}")) for k in (2e-4, 4e-4)]
     for d in dirs:

@@ -12,9 +12,9 @@ from conftest import influx
 
 def test_box_property_and_derived():
     assert Params(box_length=2000.0).box == (2000.0, 2000.0, 2000.0)
-    p = Params(n_qt=4000, n_ft=10000, box_length=[2000.0, 3000.0, 4000.0])
+    p = Params(qt_per_um3=4000 / 24, ft_per_um3=10000 / 24, box_length=[2000.0, 3000.0, 4000.0])
     assert p.box == (2000.0, 3000.0, 4000.0)
-    cube = Params(n_qt=4000, n_ft=10000, box_length=2000.0)
+    cube = Params(qt_per_um3=500.0, ft_per_um3=1250.0, box_length=2000.0)
     # three times the volume of the 2000 nm cube -> a third of the concentration
     assert p.derived()["c_Qt [uM]"] == pytest.approx(cube.derived()["c_Qt [uM]"] / 3)
     assert p.derived()["phi_Qt"] == pytest.approx(4000 * 4 / 3 * math.pi * 27.5**3 / 24e9)
@@ -22,6 +22,24 @@ def test_box_property_and_derived():
     assert p.density_per_um3 == pytest.approx((4000 / 24, 10000 / 24))
     assert p.auto_name().startswith("Qt167_Ft417_") and cube.auto_name().startswith("Qt500_Ft1250_")
     assert p.check() == []
+
+
+def test_particle_numbers_from_densities():
+    p = Params(qt_per_um3=20.0, ft_per_um3=80.0, box_length=4000.0)              # 64 um^3
+    assert (p.n_qt, p.n_ft, p.volume_um3) == (1280, 5120, pytest.approx(64.0))
+    assert p.derived()["particles Qt / Ft"] == (1280, 5120) and p.summary().count("(1280, 5120)") == 1
+    # the same density in a larger box: more particles, same density (a box sweep keeps the density)
+    assert Params(qt_per_um3=20.0, ft_per_um3=80.0, box_length=[4000.0, 4000.0, 8000.0]).n_qt == 2560
+    small = Params(qt_per_um3=20.3, ft_per_um3=80.0, box_length=500.0)            # 0.125 um^3 -> 2.54 Qt -> 3
+    assert small.n_qt == 3 and any(lvl == "WARNING" and "3 Qt give 24" in m for lvl, m in small.check())
+    assert Params(qt_per_um3=-1.0).check()[0][0] == "ERROR"
+    assert Params(qt_per_um3=0.0, ft_per_um3=0.0).check()[0][0] == "ERROR"
+    assert "at least one Qt and one Ft" in Params(qt_per_um3=0.0, ft_per_um3=80.0, box_length=1000.0).check()[0][1]
+    assert Params(qt_per_um3=20.0, ft_per_um3=0.4, box_length=1000.0).check()[0][0] == "ERROR"   # 0.4 Ft -> 0
+    assert "n_qt" not in Params().to_dict() and "qt_per_um3" in Params().to_dict()
+    old = {k: v for k, v in Params().to_dict().items() if k not in ("qt_per_um3", "ft_per_um3")}
+    with pytest.raises(ValueError, match="built with particle numbers"):     # runs from before the densities
+        Params.from_dict({**old, "n_qt": 1280, "n_ft": 5120})
 
 
 def test_box_checks():
@@ -44,7 +62,7 @@ def test_box_in_input_and_sweep_label(tmp_path):
 def test_rectangular_box_run(tmp_path):
     from qtft.overlap import overlap_frame
 
-    p = Params(n_qt=50, n_ft=200, box_length=[400.0, 500.0, 600.0], equil_steps=200, **influx(1000),
+    p = Params(qt_per_um3=50 / 0.12, ft_per_um3=200 / 0.12, box_length=[400.0, 500.0, 600.0], equil_steps=200, **influx(1000),
                output_every=500, traj_every=500, k_on=1e-4, data_dir=str(tmp_path), run_name="box")
     run = build_run(p)
     start(run, wait=True)
@@ -70,7 +88,7 @@ def test_rectangular_box_run(tmp_path):
 
 
 def test_run_name():
-    p = Params(n_qt=1280, n_ft=5120, box_length=4000.0, k_on=1.86e-6, k_off_ca_per_s=8e-3, k_off_free_per_s=0.2,
+    p = Params(qt_per_um3=20.0, ft_per_um3=80.0, box_length=4000.0, k_on=1.86e-6, k_off_ca_per_s=8e-3, k_off_free_per_s=0.2,
                ca_rest_uM=0.1, ca_peak_uM=1.0, ca_K_uM=0.5, ca_rise_s=5.0, ca_tau_s=30.0,
                t_baseline_s=10.0, t_influx_s=30.0, t_pumpout_s=150.0, timestep=500.0)
     assert p.auto_name() == ("Qt20_Ft80_L4000_kon1860_koff0.008-0.2_Ca0.1-1uM_K0.5_rise5tau30_t10-30-150s"

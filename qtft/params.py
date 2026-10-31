@@ -54,8 +54,8 @@ def data_path(data_dir: str | Path = "runs") -> Path:
 @dataclass
 class Params:
     # --- system --------------------------------------------------------------
-    n_qt: int = 400                  # number of Qt encapsulins
-    n_ft: int = 1600                 # number of Ft ferritins
+    qt_per_um3: float = 500.0        # Qt encapsulins per um^3 of box (n_qt = round(density * volume))
+    ft_per_um3: float = 2000.0       # Ft ferritins per um^3 of box
     box_length: float | list[float] = 928.3   # box [nm]: one edge (cube) or [Lx, Ly, Lz]
     boundary: str = "periodic"       # "periodic", "reflect" (fix wall/reflect) or "harmonic" (fix wall/harmonic)
     wall_k_qt: float = 15.0          # harmonic wall E = k (r_Qt - d)^2, d = centre-wall distance [zJ/nm^2]
@@ -312,6 +312,9 @@ class Params:
                                               * lam / (lam - k_dark), 4) if lam > k_dark else float("nan"),
             }
         return {
+            "particles Qt / Ft": (self.n_qt, self.n_ft),
+            "box volume [um^3]": round(self.volume_um3, 4),
+            "density Qt / Ft [1/um^3]": tuple(round(rho, 4) for rho in self.density_per_um3),
             "kT [zJ]": self.kT,
             "gamma_Qt [ag/ns]": gq,
             "gamma_Ft [ag/ns]": gf,
@@ -324,7 +327,6 @@ class Params:
             **walls,
             "RMS step Qt [nm/axis]": math.sqrt(2 * self.D_qt * self.timestep),
             "RMS step Ft [nm/axis]": math.sqrt(2 * self.D_ft * self.timestep),
-            "density Qt / Ft [1/um^3]": tuple(round(rho, 4) for rho in self.density_per_um3),
             "c_Qt [uM]": self.n_qt * to_uM,
             "c_Ft [uM]": self.n_ft * to_uM,
             "phi_Qt": self.n_qt * sphere(self.radius_qt) / vol,
@@ -342,6 +344,9 @@ class Params:
             return [("ERROR", "box_length must be one number (cube) or three numbers [Lx, Ly, Lz]")]
         if min(self.box) <= 0:
             return [("ERROR", "box edges must be positive")]
+        if min(self.n_qt, self.n_ft) < 1:
+            return [("ERROR", f"densities give {self.n_qt} Qt and {self.n_ft} Ft in {self.volume_um3:.4g} um^3: "
+                              "at least one Qt and one Ft are needed (Qt-Ft binding)")]
         if min(self.t_baseline_s, self.t_influx_s, self.t_pumpout_s) < 0 or self.prod_steps <= 0:
             return [("ERROR", "phase durations must be >= 0 and add up to more than one step")]
         if min(self.ca_rest_uM, self.ca_peak_uM, self.ca_K_uM, self.ca_tau_s, self.ca_hill) <= 0:
@@ -368,6 +373,10 @@ class Params:
             return [("ERROR", f"boundary '{self.boundary}' unknown: use 'periodic', 'reflect' or 'harmonic'")]
         if not self.periodic and min(self.box) <= 2 * max(self.radius_qt, self.radius_ft):
             return [("ERROR", "with walls every box edge must exceed the largest particle diameter")]
+        for name, wanted, n in (("Qt", self.qt_per_um3, self.n_qt), ("Ft", self.ft_per_um3, self.n_ft)):
+            if wanted > 0 and abs(n / self.volume_um3 - wanted) > 0.01 * wanted:
+                out.append(("WARNING", f"{n} {name} give {n / self.volume_um3:.4g} per um^3 instead of {wanted:g}: "
+                                       "the box is too small for this density to be met within 1 %"))
         d = self.derived()
         if self.r_bind > self.cut_qf + 1e-9:
             out.append(("ERROR", f"R_bind {self.r_bind} nm exceeds the Qt-Ft pair cutoff {self.cut_qf} nm "
@@ -442,10 +451,24 @@ class Params:
         return "\n".join(lines)
 
     @property
+    def volume_um3(self) -> float:
+        """Volume of the full box [um^3] (also with walls)."""
+        return math.prod(self.box) * 1e-9
+
+    @property
+    def n_qt(self) -> int:
+        """Number of Qt: the density times the box volume, rounded."""
+        return round(self.qt_per_um3 * self.volume_um3)
+
+    @property
+    def n_ft(self) -> int:
+        """Number of Ft: the density times the box volume, rounded."""
+        return round(self.ft_per_um3 * self.volume_um3)
+
+    @property
     def density_per_um3(self) -> tuple[float, float]:
-        """Number densities of Qt and Ft in the full box [1/um^3]."""
-        vol = math.prod(self.box) * 1e-9
-        return self.n_qt / vol, self.n_ft / vol
+        """Actual number densities of Qt and Ft in the full box [1/um^3] (after rounding the numbers)."""
+        return self.n_qt / self.volume_um3, self.n_ft / self.volume_um3
 
     def auto_name(self) -> str:
         """Run name: Qt and Ft density [1/um^3], box edge [nm], k_on [1/s], k_off Ca-loaded / Ca-free [1/s],
@@ -477,7 +500,13 @@ class Params:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Params":
-        """Params of a stored run (params.json); runs from before bond_break existed used fix bond/break."""
+        """Params of a stored run (params.json); runs from before bond_break existed used fix bond/break.
+        Runs built with particle numbers (n_qt, n_ft) instead of densities are refused: their densities
+        would silently fall back to the defaults."""
+        missing = [k for k in ("qt_per_um3", "ft_per_um3") if k not in data]
+        if missing:
+            raise ValueError(f"params.json has no {' and '.join(missing)}: the run was built with particle numbers "
+                             "(n_qt, n_ft), before the densities were introduced; build it again")
         known = {f.name for f in fields(cls)}
         data = {"bond_break": "longest", **data}
         return cls(**{k: v for k, v in data.items() if k in known})

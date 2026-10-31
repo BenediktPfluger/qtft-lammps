@@ -601,7 +601,7 @@ def fig_fibsem_comparison(run: RunData, out_dir: Path | None = None, spatial: di
             d = np.sort(d_all.loc[d_all["frame"] == frame, "distance_nm"].to_numpy())
             rows = ce[ce["frame"] == frame]
             ax.step(d, np.arange(1, len(d) + 1) / len(d), where="post", color=c,
-                    label=f"{name}: R = {rows['R'].mean():.2f}, ⟨d⟩ = {d.mean():.0f} nm")
+                    label=f"{name}: R = {rows['R'].mean():.2f}, $\\langle d \\rangle$ = {d.mean():.0f} nm")
         rho = ce["density_per_um3"].mean() * 1e-9                               # [1/nm^3]
         x = np.linspace(0, d_all["distance_nm"].max(), 400)
         ax.plot(x, 1 - np.exp(-4 / 3 * math.pi * rho * x**3), color="k", lw=0.5, ls="--", label="random points")
