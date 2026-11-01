@@ -336,7 +336,7 @@ def _agglomerate_hist(column, xlabel):
             return
         lo, hi = values.min(), values.max()
         bins = np.geomspace(lo, hi, 21) if hi > lo else np.array([lo / 1.1, hi * 1.1])
-        n_rep = r.agglomerates["replica"].nunique()
+        n_rep = len(r.stats["replicas"])          # also the replicas without any agglomerate
         ax.hist(values, bins=bins, weights=np.full(len(values), 1 / n_rep), color=r.color, lw=0)
         ax.set_xscale("log")
         ax.xaxis.set_minor_formatter(NullFormatter())                   # labels at the decades only
