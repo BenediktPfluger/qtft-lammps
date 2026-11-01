@@ -206,8 +206,8 @@ The simulation in this repository does not use the GPU.
 4. Run the tests:
 
    ```bash
-   pytest -q                    # all tests, including short LAMMPS runs (about 4 min)
-   pytest -q -m "not slow"      # without the LAMMPS runs (a few seconds)
+   pytest -q                    # all tests, including short LAMMPS runs (about 5 min)
+   pytest -q -m "not slow"      # without the LAMMPS runs (about 20 s)
    ```
 
 ## 7. Set up VS Code
@@ -349,6 +349,11 @@ PC: the 3 µm run takes about 35 h there instead of 24 h here.
 repository as here) and submits the job. While `watch`, `progress` or `summary` run, only the status files and
 the new log lines come over (at most every 30 s): enough for the progress table and `quicklook`, without the
 overlap panels. If the ssh connection is lost, `watch` stops with a notice and the run continues on LRZ.
+
+`stop(run_dir)` cancels the job; replicas that finished in the meantime keep their results. `start(run_dir)` on
+a run that was stopped or has failed replicas submits only the replicas that are not done, after removing their
+old outputs here and on LRZ; it checks the connection first, so a closed connection changes nothing. To repeat a
+whole run, build it again with `build_run(p, overwrite=True)`.
 
 When the run has finished, its results stay on LRZ: nothing is copied back by itself, and nothing runs in the
 background on this PC. Download them with `fetch(run_dir)` (about 360 MB per replica of the 3 µm run).
