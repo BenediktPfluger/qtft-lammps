@@ -478,6 +478,46 @@ magnified region outlined, a fixed central magnification, calcium and calmodulin
 cluster size (all, Qt, Ft), statistics of the frame (bonds, most Qt in one cluster, % of Qt in clusters with
 ≥ 2 Qt) and the protocol timeline. It is written as `animation.partial.mp4` and renamed when complete.
 
+
+<details>
+<summary>Design of the video</summary>
+
+Black background, Arial regular (taken from Windows and copied to matplotlib's cache folder: read from `/mnt/c`,
+text draws ~10× slower).
+
+- **Resolution:** the layout is defined at 1920 × 1080; `scale` (default 2) multiplies it (2 = 3840 × 2160, 4K):
+  text and lines scale, and the spheres are rendered at the full resolution, which they need: at 1080p an Ft
+  sphere is only ~3 px wide in the whole-box views (4K: ~7 px; magnification ~20 px). H.264 with CRF 14 and
+  `yuv420p` (plays everywhere; 4:2:0 halves the colour resolution, which 4K makes up for). The frame size must be
+  even (scale 1, 1.5, 2, 3, ...).
+- **Frames:** one video frame per `traj.dump` frame, no interpolation (it would invent Brownian motion and bond
+  states). The speed follows from `traj_every` and `fps`: 0.1 s per frame at 30 fps runs 3× faster than real
+  time (3 µm run: 1300 frames, 43 s of video); `animate` prints the factor. Rendering takes ≈0.25 s per frame at scale 1
+  and ≈0.3 s at scale 2 (3375 particles, without the encoding).
+- **Particles:** shaded spheres at physical size (Lambert shading, highlight at the top left), coloured by type
+  and bonded (`nbonds > 0`): Qt green / blue, Ft orange / red; painted back to front, the farthest 35 % darker.
+  A small numpy renderer pastes one pre-shaded sprite per colour and pixel radius (matplotlib cannot shade
+  spheres; OVITO's renderers are slow or need a display).
+- **Views:** 3D perspective from a fixed camera (elevation 20°, azimuth 30°, 2.5 box diagonals away), 12 box
+  edges (the three at the farthest corner behind the particles); front view orthographic along y (x right, z up)
+  over the full depth; magnification of a **central box of a third of every edge**, chosen instead of the full
+  depth behind the outlined region, which would stack many particles: particles whose centre lies inside it in
+  depth and whose sphere reaches into it in x and z. Periodic runs show wrapped positions (an agglomerate across
+  a face appears on both sides).
+- **Graph:** the average cluster size of the analysis figures (`p_mean_size`): all particles / clusters, Qt per
+  cluster with Qt, Ft per cluster with Ft, free particles counted as clusters of 1; from the thermo table
+  (`output_every`), so finer than the frames. Right of the magnification: calcium and calmodulin loading f over
+  time (`Params.calcium`, `Params.loading`: the formulas of `template.lmp`), which shows why the agglomerates
+  dissolve only slowly after the influx (calcium decays with `ca_tau_s`). Both graphs shade the influx period
+  and mark the current time.
+- **Statistics** of the shown frame: bonds = Σ nbonds / 2; Qt in the cluster with the most Qt; % of the Qt in
+  clusters with ≥ 2 Qt.
+- **Header and timeline:** phases and their times from `params.json` (calcium off / on / off at the baseline,
+  influx and pump-out); the calcium readout is `Params.calcium(t)`, the formula of `template.lmp`, so it shows
+  the rise over `ca_rise_s` and the decay with `ca_tau_s`.
+
+</details>
+
 ### Parameter sweep `runs/sweeps/<sweep name>/`
 
 Only after `build_sweep()` (control, section 4). One run folder per combination of the listed values, named
