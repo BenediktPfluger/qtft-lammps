@@ -137,12 +137,15 @@ while [ $# -gt 0 ]; do
 done
 exec "$REAL_RSYNC" "${args[@]}"
 """,
-    # sbatch --parsable job.slurm: runs every array task at once (FAKE_SBATCH_HOLD: none, they stay queued)
+    # sbatch --parsable [--array=<list>] job.slurm: runs the array tasks at once (all without --array;
+    # FAKE_SBATCH_HOLD: none, they stay queued); the tasks are noted in .sbatch_tasks
     "sbatch": """#!/bin/bash
 job="${@: -1}"
-n=$(sed -n 's/^#SBATCH --array=1-\\([0-9]*\\).*/\\1/p' "$job")
+tasks=$(printf '%s\\n' "$@" | sed -n 's/^--array=\\([0-9,]*\\).*/\\1/p' | tr ',' ' ')
+[ -z "$tasks" ] && tasks=$(seq "$(sed -n 's/^#SBATCH --array=1-\\([0-9]*\\).*/\\1/p' "$job")")
+echo $tasks > "$FAKE_LRZ/.sbatch_tasks"
 if [ -z "$FAKE_SBATCH_HOLD" ]; then
-  for i in $(seq "$n"); do
+  for i in $tasks; do
     SLURM_ARRAY_TASK_ID=$i SLURM_SUBMIT_DIR="$PWD" SLURM_JOB_ID=777 bash "$job" > "slurm-777_$i.out" 2>&1
   done
 fi
@@ -196,7 +199,7 @@ def test_tests_cannot_reach_lrz(tmp_path):
 
 @pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
-def test_lrz_start_watch_fetch(tmp_path, fake_lrz):
+def test_lrz_start_watch_fetch(tmp_path, fake_lrz, monkeypatch):
     run = build_run(_small(tmp_path, n_replicas=2, run_name="e2e"))
     start(run)                                         # copies the folder, sbatch runs both tasks
     there = fake_lrz / "qtft-lammps/runs/ensemble/e2e"
@@ -229,13 +232,24 @@ def test_lrz_start_watch_fetch(tmp_path, fake_lrz):
     index = pd.read_csv(tmp_path / "data/index.csv")
     assert index.loc[index["run"] == "e2e", "executor"].tolist() == ["lrz"]
 
-    # submitted again: the local logs of the first attempt are replaced, not appended to
-    before = (there / "rep_01/log.lammps").read_bytes()
+    # all done: start() submits nothing
     start(run)
-    remote._last_sync.clear()
-    summary(run)
-    assert (run / "rep_01/log.lammps").read_bytes() == (there / "rep_01/log.lammps").read_bytes()
-    assert len((run / "rep_01/log.lammps").read_bytes()) == pytest.approx(len(before), rel=0.01)
+    assert (fake_lrz / ".sbatch_tasks").read_text().split() == ["1", "2"]          # from the first start
+    # rep_01 failed (here: marked by hand): start() submits only its array task, removes its old outputs
+    # here and there (so the new log is not skipped by the appending fetch) and the run's analysis files,
+    # and keeps the finished rep_02
+    for d in (run, there):
+        (d / "rep_01/status").write_text("failed\n")
+    (there / "rep_01/log.lammps").write_text("old attempt\n" * 100000)            # longer than the new log
+    done_dump = (run / "rep_02/traj.dump").read_bytes()
+    assert (run / "analysis/ensemble_stats.json").exists()
+    monkeypatch.setenv("FAKE_SBATCH_HOLD", "1")
+    start(run)
+    assert (fake_lrz / ".sbatch_tasks").read_text().split() == ["1"]
+    assert not (run / "rep_01/traj.dump").exists() and not (there / "rep_01/log.lammps").exists()
+    assert not (run / "analysis/ensemble_stats.json").exists()
+    assert (run / "rep_02/traj.dump").read_bytes() == done_dump and (run / "rep_02/status").read_text() == "done\n"
+    assert progress(run)["status"].tolist() == ["queued", "done"]
 
 
 def test_lrz_watch_connection_lost(tmp_path, fake_lrz, monkeypatch, capsys):
@@ -271,6 +285,20 @@ def test_lrz_queue_lost_tasks_and_cancel(tmp_path, fake_lrz, monkeypatch):
     stop(run)                                          # cancels the whole job
     assert (fake_lrz / ".scancel").read_text() == "-M serial 777\n"
     assert [(r / "status").read_text() for r in (run / "rep_03", there / "rep_03")] == ["stopped\n"] * 2
+
+
+def test_lrz_stop_keeps_replicas_finished_since_the_last_sync(tmp_path, fake_lrz, monkeypatch):
+    monkeypatch.setenv("FAKE_SBATCH_HOLD", "1")
+    run = build_run(_small(tmp_path, n_replicas=2, run_name="c"))
+    there = fake_lrz / "qtft-lammps/runs/ensemble/c"
+    start(run)
+    (there / "rep_01/status").write_text("done\n")                      # finished on LRZ, not synced yet
+    (fake_lrz / ".squeue").write_text("777_2|RUNNING|None\n")
+    (fake_lrz / ".sacct").write_text("777_1|COMPLETED\n777_2|RUNNING\n")
+    assert (run / "rep_01/status").read_text() == "queued\n"
+    stop(run)
+    assert [(d / "rep_01/status").read_text() for d in (run, there)] == ["done\n"] * 2
+    assert [(d / "rep_02/status").read_text() for d in (run, there)] == ["stopped\n"] * 2
 
 
 def test_lrz_sweep_and_no_connection(tmp_path, fake_lrz, monkeypatch):

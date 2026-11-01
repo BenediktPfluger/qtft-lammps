@@ -24,6 +24,9 @@ from pathlib import Path
 
 from .params import Params, data_path
 
+REPLICA_OUTPUTS = ("log.lammps", "lammps.out", "log.cite", "traj.dump", "bonds.dump", "rdf.dat", "coord_qt.hist",
+                   "coord_ft.hist", "final.data", "pid", "fibsem", "animation")   # removed before a replica runs again
+
 LRZ = {
     "host": "lrz",                                 # Host entry in ~/.ssh/config (ControlMaster: one 2FA login)
     "root": "qtft-lammps",                         # in the LRZ home; holds runs/ like the repository here
@@ -177,9 +180,11 @@ def _close_lost_tasks(target: Path, fetch_small) -> None:
 
 
 # ------------------------------------------------------------------ public: submit, sync, cancel, fetch
-def submit(target: Path, p: Params) -> str:
-    """Copy the run or sweep folder to LRZ and submit its job.slurm; returns the Slurm job ID. p: the
-    parameters of the run (of a sweep: of any of its runs; the execution settings are shared)."""
+def submit(target: Path, p: Params, reps: list[Path]) -> str:
+    """Copy the run or sweep folder to LRZ and submit its job.slurm for the replicas `reps` only (their
+    array tasks, --array=<list>); their outputs of an earlier attempt are removed there first. Returns
+    the Slurm job ID. p: the parameters of the run (of a sweep: of any of its runs; the execution
+    settings are shared)."""
     target = Path(target)
     if not (target / "job.slurm").exists():
         raise FileNotFoundError(f"{target / 'job.slurm'} missing: build the run with executor='lrz'")
@@ -188,8 +193,13 @@ def submit(target: Path, p: Params) -> str:
         f" && mkdir -p {remote}")
     _rsync("--exclude=analysis/", "--exclude=launcher.*", f"--exclude={JOB_FILE}", f"{target}/",
            f"{LRZ['host']}:{remote}/")
-    # pid files of an earlier submission would date the start of the new one
-    out = ssh(f"cd {remote} && sed 's|$|/pid|' replicas.txt | xargs rm -f && sbatch --parsable job.slurm")
+    lines = (target / "replicas.txt").read_text().split()
+    tasks = [lines.index(rep.relative_to(target).as_posix()) + 1 for rep in reps]
+    # outputs of an earlier attempt: a new log would be skipped by the appending fetch while it is shorter
+    # than the old one, and the pid file would date the start of the new attempt
+    old = " ".join(f"{rep.relative_to(target).as_posix()}/{name}" for rep in reps for name in REPLICA_OUTPUTS)
+    array = ",".join(map(str, tasks)) + (f"%{p.max_parallel}" if p.max_parallel else "")
+    out = ssh(f"cd {remote} && rm -rf {old} && sbatch --parsable --array={array} job.slurm")
     job = out.strip().splitlines()[-1].split(";")[0]
     info = {"job": job, "cluster": LRZ["cluster"], "remote": remote,
             "submitted": datetime.datetime.now().isoformat(timespec="seconds")}
@@ -231,17 +241,26 @@ def last_states(target: Path) -> dict[int, tuple[str, str]]:
 
 
 def cancel(target: Path) -> None:
-    """Cancel the array tasks of target's replicas on LRZ; queued/running replicas get status stopped."""
+    """Cancel the array tasks of target's replicas on LRZ. The status files are fetched first; replicas
+    still queued/running get status stopped, but only where the status on LRZ is not done (a replica
+    that finished since the last sync keeps its result)."""
     target = Path(target)
     found = job(target)
     if found is None:
         return
     info, job_dir = found
+    sync(target, force=True)
     tasks = _tasks(job_dir, target)
     ids = [info["job"]] if job_dir == target else [f"{info['job']}_{i}" for i in tasks]
     ssh(f"scancel -M {info['cluster']} {' '.join(ids)}")
-    _write_status(job_dir, info, {r: "stopped" for r in tasks.values()
-                                  if (r / "status").read_text().strip() in ("queued", "running")})
+    active = [r for r in tasks.values()
+              if (r / "status").exists() and (r / "status").read_text().strip() in ("queued", "running")]
+    if active:
+        rel = {r.relative_to(job_dir).as_posix(): r for r in active}
+        out = ssh("; ".join(f"grep -qx done {info['remote']}/{name}/status 2>/dev/null || "
+                            f"{{ echo stopped > {info['remote']}/{name}/status; echo {name}; }}" for name in rel))
+        for name in out.split():
+            (rel[name] / "status").write_text("stopped\n")
     _last_sync.pop(target, None)
 
 

@@ -194,7 +194,13 @@ Kinetic energy and temperature are not logged: they have no meaning in overdampe
 | `slurm-<job>_<task>.out` | only with `executor = "lrz"`: output of the job script of one array task | Slurm on LRZ |
 
 On LRZ, a task that left Slurm without an end status (time limit, node failure) is set to `failed`, and a
-cancelled one to `stopped`.
+cancelled one to `stopped`. `stop()` fetches the status files first and never overwrites a `done` status.
+
+`start()` runs only the replicas that are not `done` (built, failed or stopped; on LRZ only their array tasks).
+Before that it removes their old outputs (logs, dumps, `rdf.dat`, histograms, `final.data`, `pid`, `fibsem/`,
+`animation/`; on LRZ as well) and the files in the run's `analysis/` folder, which were computed from them;
+`analysis/figures/` stays until the next `make_report()`. To repeat a whole run, build it again with
+`build_run(p, overwrite=True)`.
 
 ---
 

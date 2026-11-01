@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -79,6 +80,22 @@ def _set_status(rep: Path, status: str) -> None:
     (rep / "status").write_text(status + "\n")
 
 
+def _clear_outputs(reps: list[Path]) -> None:
+    """Remove the outputs of replicas that run again, and the analysis files of their runs (cached results
+    of the old outputs; the figures stay until the next make_report)."""
+    for rep in reps:
+        for name in remote.REPLICA_OUTPUTS:
+            path = rep / name
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink(missing_ok=True)
+    for run in dict.fromkeys(rep.parent for rep in reps):
+        for path in (run / "analysis").glob("*"):
+            if path.is_file():
+                path.unlink()
+
+
 def _lrz(params: dict) -> bool:
     return params.get("executor", "local") == "lrz"
 
@@ -112,8 +129,10 @@ def _command(params: dict) -> list[str]:
 
 
 def start(run_dir: str | Path, wait: bool = False) -> None:
-    """Run all replicas of a built run folder or sweep in the background (or in the foreground with
-    wait=True)."""
+    """Run the replicas of a built run folder or sweep that are not done yet (built, failed or stopped) in
+    the background (or in the foreground with wait=True). Their old outputs and the analysis files of
+    their runs are removed first; finished replicas are kept. To repeat a whole run, build it again with
+    build_run(p, overwrite=True)."""
     run_dir = Path(run_dir).expanduser()
     params = _record(_runs(run_dir)[0])["params"]
     if _lrz(params) and wait:
@@ -122,27 +141,31 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
     busy = [_rep_name(run_dir, r) for r in reps if _status(r) in ("queued", "running")]
     if busy:
         raise RuntimeError(f"replicas already queued/running: {busy}")
-    missing = sorted({so for rep in reps for so in PLUGIN_LOAD.findall((rep / "in.lammps").read_text())
+    todo = [r for r in reps if _status(r) != "done"]
+    if not todo:
+        print(f"all {len(reps)} replica(s) are done: {run_dir}\n"
+              "to run them again, build the run again with build_run(p, overwrite=True)")
+        return
+    missing = sorted({so for rep in todo for so in PLUGIN_LOAD.findall((rep / "in.lammps").read_text())
                       if not Path(so).exists()})
     if missing:
         raise FileNotFoundError(f"LAMMPS plugin not found: {missing}; build it with "
                                 "lammps_plugins/bond_break_random/build.sh (see README)")
-    for rep in reps:
+    skipped = f" ({len(reps) - len(todo)} done replica(s) kept)" if len(todo) < len(reps) else ""
+    previous = {rep: _status(rep) for rep in todo}
+    _clear_outputs(todo)                               # also the pid files (pid file = replica has started)
+    for rep in todo:
         _set_status(rep, "queued")
-        (rep / "pid").unlink(missing_ok=True)          # pid file = replica has started
     (run_dir / "launcher.pid").unlink(missing_ok=True)
     if _lrz(params):
         p = Params.from_dict(params)
-        for rep in reps:              # logs of an earlier attempt: the new ones are fetched by appending
-            for name in ("log.lammps", "lammps.out"):
-                (rep / name).unlink(missing_ok=True)
         try:
-            job = remote.submit(run_dir, p)
+            job = remote.submit(run_dir, p, todo)
         except Exception:
-            for rep in reps:
-                _set_status(rep, "built")
+            for rep, status in previous.items():
+                _set_status(rep, status)
             raise
-        print(f"submitted to LRZ: Slurm job {job} ({len(reps)} replica(s) as a job array, "
+        print(f"submitted to LRZ: Slurm job {job} ({len(todo)} replica(s) as a job array{skipped}, "
               f"{params['mpi_procs']} MPI proc(s) each, {params['slurm_time']} limit): {run_dir}\n"
               f"on LRZ: ~/{remote.remote_dir(run_dir, p)}\n"
               "follow it with watch(run_dir); download the results with fetch(run_dir) when it is done")
@@ -159,7 +182,7 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
                                 stdin=subprocess.DEVNULL, start_new_session=True)
     (run_dir / "launcher.pid").write_text(str(proc.pid))
     n_par = _n_parallel(params)
-    print(f"started {len(reps)} replica(s), up to {n_par} in parallel, "
+    print(f"started {len(todo)} replica(s){skipped}, up to {n_par} in parallel, "
           f"{params['mpi_procs']} MPI process(es) each: {run_dir}\n"
           f"follow it with watch(run_dir), or in a terminal: tail -f {run_dir / 'launcher.log'}")
 
