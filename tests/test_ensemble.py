@@ -59,9 +59,17 @@ def test_ensemble_of_tiny_runs(tmp_path):
     assert stats["final"].loc["final_Bonds", "mean"] == pytest.approx(finals.mean())
     assert stats["final"].loc["final_Bonds", "sd"] == pytest.approx(finals.std(ddof=1))
     assert stats["mean"]["Bonds"][-1] == pytest.approx(finals.mean())
-    for name in ("ensemble_stats.json", "ensemble_timeseries.csv", "final_state.csv"):
+    for name in ("ensemble_stats.json", "ensemble_series.npz", "ensemble_timeseries.csv", "final_state.csv"):
         assert (runs[0] / "analysis" / name).exists()
-    assert np.allclose(load_stats(runs[0])["mean"]["Bonds"], stats["mean"]["Bonds"])
+    loaded = load_stats(runs[0])                                       # series as float32 in the .npz
+    assert np.allclose(loaded["time_ms"], stats["time_ms"])
+    for column in ("Bonds", "PotEng", "frac_bound"):
+        assert np.allclose(loaded["mean"][column], stats["mean"][column], rtol=1e-6, equal_nan=True)
+        assert np.allclose(loaded["sd"][column], stats["sd"][column], rtol=1e-6, equal_nan=True)
+        assert np.allclose(loaded["traces"][column], stats["traces"][column], rtol=1e-6)
+    assert set(loaded["mean"]) == set(stats["mean"])
+    assert np.allclose(loaded["final"].to_numpy(float), stats["final"].to_numpy(float), equal_nan=True)
+    assert "traces" not in (runs[0] / "analysis" / "ensemble_stats.json").read_text()
 
     table = compare(runs)
     assert table.attrs["differing parameters"] == ["k_on"]

@@ -117,9 +117,10 @@ def band(ax, t, mean, sd, color, label=None, ls="-", traces=None):
     ax.plot(t, mean, color=color, ls=ls, label=label, marker="o" if few else None, ms=2)
 
 
-def _series(run: RunData, key: str, scale: float = 1.0):
+def _series(run: RunData, key: str, scale: float = 1.0, traces: bool = False):
+    """Time, mean, SD and (only with traces, read on demand) the replica traces of a thermo column."""
     s = run.stats
-    return s["time_ms"], s["mean"][key] * scale, s["sd"][key] * scale, s["traces"][key] * scale
+    return s["time_ms"], s["mean"][key] * scale, s["sd"][key] * scale, s["traces"][key] * scale if traces else None
 
 
 def _structure(run: RunData, key: str):
@@ -166,14 +167,14 @@ def _no_data(ax, text):
 
 def p_energy(ax, runs, traces=False):
     for r in runs:
-        t, m, s, tr = _series(r, "PotEng")
+        t, m, s, tr = _series(r, "PotEng", traces=traces)
         band(ax, t, m, s, r.color, r.label, traces=tr if traces else None)
     ax.set_ylabel("potential energy (zJ)")
 
 
 def p_pressure(ax, runs, traces=False):
     for r in runs:
-        t, m, s, tr = _series(r, "pvir", PRESSURE_TO_PA)
+        t, m, s, tr = _series(r, "pvir", PRESSURE_TO_PA, traces=traces)
         band(ax, t, m, s, r.color, r.label, traces=tr if traces else None)
     ax.set_ylabel("virial pressure (Pa)")
 
@@ -182,7 +183,7 @@ def _simple(key, ylabel, scale_by_n=False):
     def panel(ax, runs, traces=False):
         values = []
         for r in runs:
-            t, m, s, tr = _series(r, key, 1 / r.n_total if scale_by_n else 1.0)
+            t, m, s, tr = _series(r, key, 1 / r.n_total if scale_by_n else 1.0, traces=traces)
             band(ax, t, m, s, r.color, r.label, traces=tr if traces else None)
             values.append(m)
         k = _thousands(ax, np.concatenate(values))
@@ -199,7 +200,7 @@ def _species_panel(key, ylabel):
             curves += [(runs[0], f"{key}_{name.lower()}", LINE[name], name) for name in ("Qt", "Ft")]
         values = []
         for r, column, color, label in curves:
-            t, m, s, tr = _series(r, column)
+            t, m, s, tr = _series(r, column, traces=traces)
             band(ax, t, m, s, color, label, traces=tr if traces else None)
             values.append(m)
         k = _thousands(ax, np.concatenate(values))
@@ -235,7 +236,7 @@ def p_counts(ax, runs, traces=False):
 def p_fraction_bound(ax, runs, traces=False):
     for r in runs:
         for species, ls in (("qt", "-"), ("ft", "--")):
-            t, m, s, tr = _series(r, f"frac_bound_{species}")
+            t, m, s, tr = _series(r, f"frac_bound_{species}", traces=traces)
             color = LINE["Qt" if species == "qt" else "Ft"] if len(runs) == 1 else r.color
             label = ("Qt" if species == "qt" else "Ft") if len(runs) == 1 else None
             band(ax, t, m, s, color, label, ls=ls if len(runs) > 1 else "-", traces=tr if traces else None)

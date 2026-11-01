@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import math
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -114,7 +115,9 @@ def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
     their peak value. Calcium protocol (deagglomeration): peaks of bonds and largest cluster and the
     half-times after the end of the influx. "final" values are those at the end of the whole protocol.
 
-    Saved to <run>/analysis/: ensemble_stats.json, ensemble_timeseries.csv, final_state.csv.
+    Saved to <run>/analysis/: ensemble_stats.json (replicas, per-replica and final values),
+    ensemble_series.npz (time grid, mean, SD and per-replica traces as float32), ensemble_timeseries.csv,
+    final_state.csv.
     """
     run_dir = Path(run_dir).expanduser()
     require_fetched(run_dir)
@@ -161,6 +164,9 @@ def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
     return result
 
 
+SERIES_FILE = "ensemble_series.npz"
+
+
 def _save(run_dir: Path, r: dict) -> None:
     out = run_dir / "analysis"
     out.mkdir(exist_ok=True)
@@ -170,23 +176,47 @@ def _save(run_dir: Path, r: dict) -> None:
         ts[f"{c}_sd"] = r["sd"][c]
     pd.DataFrame(ts).to_csv(out / "ensemble_timeseries.csv", index=False)
     r["final"].to_csv(out / "final_state.csv")
+    columns = list(r["mean"])
+    # the time series as float32 in a compressed binary file (arrays numbered in the order of `columns`:
+    # thermo names may contain '/'); the JSON keeps the small parts
+    np.savez_compressed(out / SERIES_FILE, time_ms=r["time_ms"],
+                        **{f"{kind}_{i}": r[kind][c].astype(np.float32)
+                           for kind in ("mean", "sd", "traces") for i, c in enumerate(columns)})
     payload = {
         "replicas": r["replicas"],
-        "time_ms": r["time_ms"].tolist(),
-        "mean": {c: v.tolist() for c, v in r["mean"].items()},
-        "sd": {c: v.tolist() for c, v in r["sd"].items()},
-        "traces": {c: v.tolist() for c, v in r["traces"].items()},
+        "columns": columns,
         "per_replica": json.loads(r["per_replica"].to_json(orient="index")),
         "final": json.loads(r["final"].to_json(orient="index")),
     }
     (out / "ensemble_stats.json").write_text(json.dumps(payload))
 
 
+class _Series(Mapping):
+    """One kind of array ("mean", "sd" or "traces") from ensemble_series.npz by thermo column, each read
+    on first access (the traces are only needed for figures with traces=True)."""
+
+    def __init__(self, path: Path, kind: str, columns: list[str]):
+        self._path, self._kind, self._index = path, kind, {c: i for i, c in enumerate(columns)}
+        self._cache: dict[str, np.ndarray] = {}
+
+    def __getitem__(self, column: str) -> np.ndarray:
+        if column not in self._cache:
+            with np.load(self._path) as z:
+                self._cache[column] = z[f"{self._kind}_{self._index[column]}"].astype(float)
+        return self._cache[column]
+
+    def __iter__(self):
+        return iter(self._index)
+
+    def __len__(self) -> int:
+        return len(self._index)
+
+
 def ensemble_stats_cached(run_dir: str | Path) -> dict:
     """The saved ensemble_stats.json if it covers exactly the replicas finished now, otherwise
     ensemble_stats() computed afresh (and saved)."""
     run_dir = Path(run_dir).expanduser()
-    if (run_dir / "analysis" / "ensemble_stats.json").exists():
+    if all((run_dir / "analysis" / name).exists() for name in ("ensemble_stats.json", SERIES_FILE)):
         stats = load_stats(run_dir)
         if stats["replicas"] == list(replica_series(run_dir, names_only=True)):
             return stats
@@ -194,14 +224,16 @@ def ensemble_stats_cached(run_dir: str | Path) -> dict:
 
 
 def load_stats(run_dir: str | Path) -> dict:
-    """Read a saved ensemble_stats.json back (arrays as numpy, tables as DataFrames)."""
-    d = json.loads((Path(run_dir).expanduser() / "analysis" / "ensemble_stats.json").read_text())
+    """Read saved ensemble statistics back: ensemble_stats.json (tables as DataFrames) and the time series
+    of ensemble_series.npz (arrays as float64; mean, SD and traces read per column on first access)."""
+    analysis = Path(run_dir).expanduser() / "analysis"
+    d = json.loads((analysis / "ensemble_stats.json").read_text())
+    with np.load(analysis / SERIES_FILE) as z:
+        time_ms = z["time_ms"]
     return {
         "replicas": d["replicas"],
-        "time_ms": np.array(d["time_ms"]),
-        "mean": {c: np.array(v) for c, v in d["mean"].items()},
-        "sd": {c: np.array(v) for c, v in d["sd"].items()},
-        "traces": {c: np.array(v) for c, v in d["traces"].items()},
+        "time_ms": time_ms,
+        **{kind: _Series(analysis / SERIES_FILE, kind, d["columns"]) for kind in ("mean", "sd", "traces")},
         # to_json writes NaN as null: back to float
         "per_replica": pd.DataFrame.from_dict(d["per_replica"], orient="index").astype(float),
         "final": pd.DataFrame.from_dict(d["final"], orient="index").astype(float),

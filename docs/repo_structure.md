@@ -214,7 +214,8 @@ Everything here lives in `<run>/analysis/`. It is written by `ensemble_stats()` 
 
 | File | Content | Written by |
 |---|---|---|
-| `ensemble_stats.json` | mean, SD (ddof = 1) and per-replica traces of all thermo quantities on a common time grid; half-times; percolation; final values per replica | `ensemble_stats()` |
+| `ensemble_stats.json` | replicas, the per-replica values (half-times, percolation, final values) and the final state; the quantities of `ensemble_series.npz` by name | `ensemble_stats()` |
+| `ensemble_series.npz` | the time series on a common time grid: `time_ms`, and mean, SD (ddof = 1) and per-replica traces of all thermo quantities as float32 (numpy, read with `load_stats()`; traces read only when a figure draws them) | `ensemble_stats()` |
 | `ensemble_timeseries.csv` | the same time series as a table (`<quantity>_mean`, `<quantity>_sd`) | `ensemble_stats()` |
 | `final_state.csv` | final value of every quantity (end of the calcium protocol): mean, SD, number of replicas; also the peaks and deagglomeration half-times | `ensemble_stats()` |
 | `percolation_rep_XX.csv` | per `traj.dump` frame: `Step, time_ms, axes` (the axes along which one cluster spans the box, `""` for none); written once the replica is done (delete it to recompute) | `ensemble_stats()` |
