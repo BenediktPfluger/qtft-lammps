@@ -91,6 +91,7 @@ def benchmark(p: Params, procs=None, cores: int | None = None, steps: int = 2000
                 t_pumpout_s=0.0, ca_rise_s=0.0, rate_update_every=steps,         # one segment
                 output_every=min(p.output_every, steps), traj_every=min(p.output_every, steps),
                 n_replicas=parallel, mpi_procs=n, max_parallel=parallel, group="benchmark",
+                executor="local",                                                 # measures this machine
                 run_name=f"{name}/{_slug(label)}_np{n}")
             run_dir = build_run(q, overwrite=True)
             start(run_dir, wait=True)

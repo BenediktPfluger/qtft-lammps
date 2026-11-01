@@ -1,6 +1,9 @@
 import os
 
-from qtft.benchmark import loop_timing, physical_cores, special_need
+import pytest
+
+from qtft import Params
+from qtft.benchmark import benchmark, loop_timing, physical_cores, special_need
 
 LOG = """\
 Loop time of 0.5 on 1 procs for 1000 steps with 250 atoms
@@ -51,3 +54,17 @@ def test_special_need_chain(tmp_path):
 
 def test_physical_cores_within_threads():
     assert 1 <= physical_cores() <= (os.cpu_count() or 1)
+
+
+def test_benchmark_runs_locally_also_for_lrz_parameters(monkeypatch):
+    # the parameter cell may say executor="lrz"; the benchmark still measures this machine
+    built = []
+
+    def fake_build(q, overwrite=False):
+        built.append(q)
+        raise StopIteration
+
+    monkeypatch.setattr("qtft.benchmark.build_run", fake_build)
+    with pytest.raises(StopIteration):
+        benchmark(Params(executor="lrz"), procs=[1], cores=1)
+    assert built[0].executor == "local" and built[0].group == "benchmark"
