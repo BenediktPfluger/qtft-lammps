@@ -6,7 +6,7 @@ import pytest
 
 from qtft import Params, build_run, read_dump, start
 from qtft.ensemble import (binding_rate, common_grid, compare, contact_pairs, ensemble_stats, ensemble_stats_cached,
-                           half_time, load_stats, update_index)
+                           binding_half_time, half_time, load_stats, update_index)
 from conftest import influx
 
 
@@ -15,6 +15,17 @@ def test_common_grid_identical_and_overlap():
     assert np.array_equal(common_grid({"a": a, "b": a.copy()}), [0, 1, 2, 3])
     b = pd.DataFrame({"time_ms": [0.5, 1.5, 2.5]})
     assert np.array_equal(common_grid({"a": a, "b": b}), [1.0, 2.0])     # inside the overlap only
+
+
+def test_binding_half_time():
+    # baseline 0-10 ms with a few bonds, influx from 10 ms: rises to a peak of 100 at 20 ms, then the pump-out
+    # leaves 4 bonds; half of the peak (50) is reached 5 ms after the influx start. The old definition (half of
+    # the final value, from t = 0) gave 2 bonds at about 0 ms, before the influx
+    t = np.arange(0.0, 41.0)
+    y = np.where(t < 10, 4.0, np.where(t <= 20, 4 + 96 * (t - 10) / 10, np.maximum(100 - 8 * (t - 20), 4.0)))
+    assert binding_half_time(t, y, 10.0) == pytest.approx(10 * 46 / 96)
+    assert binding_half_time(t, y, 0.0) == pytest.approx(10 + 10 * 46 / 96)      # no influx: from the start
+    assert np.isnan(binding_half_time(t, np.zeros_like(t), 10.0))
 
 
 def test_half_time():

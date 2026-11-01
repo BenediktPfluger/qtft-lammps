@@ -71,6 +71,16 @@ def half_time(t: np.ndarray, y: np.ndarray, level: float) -> float:
     return float(t[i - 1] + (level - y[i - 1]) * (t[i] - t[i - 1]) / (y[i] - y[i - 1]))
 
 
+def binding_half_time(t: np.ndarray, y: np.ndarray, t0: float) -> float:
+    """Time after t0 (the influx start) until y first reaches half of its peak value after t0 [ms];
+    NaN if y stays 0."""
+    after = t >= t0
+    peak = y[after].max() if after.any() else 0.0
+    if peak <= 0:
+        return float("nan")
+    return half_time(t[after], y[after], 0.5 * peak) - t0
+
+
 def deagglomeration(df: pd.DataFrame, p: Params) -> dict:
     """Peaks of bonds and of the largest cluster, and the deagglomeration half-times: time after the end
     of the influx (start of the pump-out) until bonds / the largest cluster fall to half of their value
@@ -99,8 +109,10 @@ def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
     Percolation = a cluster spans the box along at least one axis (structure.percolation, from the
     trajectory, cached per replica): `percolated` in the last frame (the mean over replicas is the
     fraction of percolated replicas) and `t_percolation_ms`, the first frame with a spanning cluster.
-    Calcium protocol (deagglomeration): peaks of bonds and largest cluster and the half-times after the
-    end of the influx. "final" values are those at the end of the whole protocol.
+    Binding half-times t_half_bonds_ms, t_half_qt_ms, t_half_ft_ms: time from the influx start (the
+    production start without an influx) until the bonds / the fraction of Qt / Ft bound first reach half of
+    their peak value. Calcium protocol (deagglomeration): peaks of bonds and largest cluster and the
+    half-times after the end of the influx. "final" values are those at the end of the whole protocol.
 
     Saved to <run>/analysis/: ensemble_stats.json, ensemble_timeseries.csv, final_state.csv.
     """
@@ -119,6 +131,7 @@ def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
     sd = {c: traces[c].std(axis=0, ddof=1) if len(series) > 1 else np.full(len(t), np.nan)
           for c in columns}
 
+    t_on_ms = p.t_on_s * 1e3 if p.t_influx_s > 0 else 0.0     # binding half-times count from the influx start
     per_rep = []
     for name, df in series.items():
         tt = df["time_ms"].to_numpy()
@@ -127,9 +140,9 @@ def ensemble_stats(run_dir: str | Path, save: bool = True) -> dict:
         spanned = spanning.loc[spanning["axes"] != "", "time_ms"]
         per_rep.append({
             "replica": name,
-            "t_half_bonds_ms": half_time(tt, bonds, 0.5 * bonds[-1]) if bonds[-1] > 0 else float("nan"),
-            "t_half_qt_ms": half_time(tt, df["frac_bound_qt"].to_numpy(), 0.5),
-            "t_half_ft_ms": half_time(tt, df["frac_bound_ft"].to_numpy(), 0.5),
+            "t_half_bonds_ms": binding_half_time(tt, bonds, t_on_ms),
+            "t_half_qt_ms": binding_half_time(tt, df["frac_bound_qt"].to_numpy(), t_on_ms),
+            "t_half_ft_ms": binding_half_time(tt, df["frac_bound_ft"].to_numpy(), t_on_ms),
             "percolated": float(spanning["axes"].iloc[-1] != "") if len(spanning) else float("nan"),
             "t_percolation_ms": float(spanned.iloc[0]) if len(spanned) else float("nan"),
             **deagglomeration(df, p),

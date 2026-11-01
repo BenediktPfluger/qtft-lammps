@@ -215,6 +215,9 @@ Everything here lives in `<run>/analysis/`. It is written by `ensemble_stats()` 
 
 - `percolated` in `ensemble_stats.json`: a cluster spans the box in the last frame. `t_percolation_ms`: the first
   frame with a spanning cluster. In `final_state.csv`, row `percolated` holds the fraction of percolated replicas.
+- Binding half-times `t_half_bonds_ms`, `t_half_qt_ms`, `t_half_ft_ms`: time from the influx start (the
+  production start without an influx) until the bonds, the fraction of Qt bound or of Ft bound first reach half
+  of their peak value.
 - Extra rows of `final_state.csv`: `bonds_peak`, `t_bonds_peak_ms`, `largest_peak`, `t_largest_peak_ms`,
   `t_half_unbind_bonds_ms`, `t_half_unbind_largest_ms` (half-times of the deagglomeration after the influx).
 
