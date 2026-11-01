@@ -129,6 +129,34 @@ def test_bond_break_toggle(tmp_path, monkeypatch):
     assert (run / "rep_01" / "status").read_text().strip() == "built"
 
 
+def test_phase_boundary_on_steps(tmp_path):
+    # 3500 steps of 500 ns: 3500 * 5e-07 = 0.0017499999999999998 < 0.00175 in floating point; the influx
+    # must still start at step 3500, in LAMMPS (integer step comparison) and in Params.calcium
+    p = Params(t_baseline_s=1.75e-3, t_influx_s=1e-3, t_pumpout_s=1e-3, ca_rise_s=0.0, rate_update_every=500,
+               output_every=500, traj_every=500, data_dir=str(tmp_path), run_name="boundary")
+    dt_s = float(f"{p.timestep * 1e-9:.10g}")                                    # 5e-07, as written for LAMMPS
+    assert 3500 * dt_s < p.t_on_s                                                # the trap is real
+    text = (build_run(p) / "rep_01" / "in.lammps").read_text()
+    assert "(step < 3500)*" in text and "(step >= 5500)*" in text and "v_t_s" not in text
+    assert p.calcium(3500 * dt_s) == pytest.approx(p.ca_peak_uM)     # step: peak at once
+    assert p.calcium(3499 * dt_s) == pytest.approx(p.ca_rest_uM)
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
+def test_phase_boundary_run(tmp_path):
+    # in LAMMPS the first influx segment (from step 3500) must bind at the peak rate, not the resting one
+    p = Params(qt_per_um3=1200.0, ft_per_um3=4800.0, box_length=500.0, equil_steps=200,
+               t_baseline_s=1.75e-3, t_influx_s=1e-3, t_pumpout_s=0.5e-3, ca_rise_s=0.0, rate_update_every=500,
+               output_every=500, traj_every=500, data_dir=str(tmp_path), run_name="boundary")
+    run = build_run(p)
+    start(run, wait=True)
+    df = load_thermo(run / "rep_01").set_index("Step")
+    assert df.loc[3500, "ca"] == pytest.approx(p.ca_peak_uM) and df.loc[3000, "ca"] == pytest.approx(p.ca_rest_uM)
+    assert df.loc[3500, "k_on_s"] == pytest.approx(p.k_on * 1e9 * float(p.loading(p.ca_peak_uM)))
+    assert np.allclose(df["ca"], p.calcium(df["time_ms"].to_numpy() * 1e-3))
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(shutil.which("lmp") is None, reason="LAMMPS executable 'lmp' not found")
 @pytest.mark.parametrize("rise, method", [(0.0, "random"), (2e-3, "random"), (0.0, "longest")])

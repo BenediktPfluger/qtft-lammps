@@ -85,7 +85,7 @@ def template_values(p: Params, replica: int, seeds: dict) -> dict:
         "traj_every": p.traj_every,
         "equil_steps": p.equil_steps,
         "dt_s": p.timestep * 1e-9,
-        "t_on": p.t_on_s, "t_off": p.t_off_s,
+        "on_step": p.phase_steps[0], "off_step": p.phase_steps[0] + p.phase_steps[1],
         "ca_rest": p.ca_rest_uM, "ca_peak": p.ca_peak_uM, "ca_start": p.ca_start_uM, "ca_tau": p.ca_tau_s,
         # rise during the influx: ca_peak - amplitude * exp(-rate * (t - t_on)); a step has amplitude and rate 0
         "ca_rise_amp": p.ca_peak_uM - p.ca_rest_uM if p.ca_rise_s > 0 else 0.0,

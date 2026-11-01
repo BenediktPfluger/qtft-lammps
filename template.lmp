@@ -175,11 +175,13 @@ fix             hist_ft Ft ave/histo {{traj_every}} 1 {{traj_every}} -0.5 {{hist
 
 # ---------------------------------------------------------------- 11. production: calcium-controlled binding
 # calcium [uM] over the production time t [s]: baseline (rest) -> influx (exponential rise to the
-# plateau, or a step) -> exponential pump-out back to rest; calmodulin loading f = Ca^n / (K^n + Ca^n)
-variable        t_s equal step*{{dt_s}}
-variable        ca equal "(v_t_s < {{t_on}})*{{ca_rest}} &
-                + (v_t_s >= {{t_on}})*(v_t_s < {{t_off}})*({{ca_peak}} - {{ca_rise_amp}}*exp(-(v_t_s - {{t_on}})*(v_t_s >= {{t_on}})*{{ca_rate_on}})) &
-                + (v_t_s >= {{t_off}})*({{ca_rest}} + ({{ca_start}} - {{ca_rest}})*exp(-(v_t_s - {{t_off}})*(v_t_s >= {{t_off}})/{{ca_tau}}))"
+# plateau, or a step) -> exponential pump-out back to rest; calmodulin loading f = Ca^n / (K^n + Ca^n).
+# The phases are decided on integer steps (influx from step {{on_step}}, pump-out from step {{off_step}}, the
+# steps the analysis uses): a comparison of step*dt with the phase times in seconds depends on the floating-
+# point rounding (in plain double arithmetic 200000 * 5e-07 < 0.1) and could start a phase one segment late
+variable        ca equal "(step < {{on_step}})*{{ca_rest}} &
+                + (step >= {{on_step}})*(step < {{off_step}})*({{ca_peak}} - {{ca_rise_amp}}*exp(-(step - {{on_step}})*(step >= {{on_step}})*{{dt_s}}*{{ca_rate_on}})) &
+                + (step >= {{off_step}})*({{ca_rest}} + ({{ca_start}} - {{ca_rest}})*exp(-(step - {{off_step}})*(step >= {{off_step}})*{{dt_s}}/{{ca_tau}}))"
 variable        f equal "v_ca^{{ca_hill}}/({{ca_K}}^{{ca_hill}} + v_ca^{{ca_hill}})"
 # binding rate per Qt-Ft pair and unbinding rate per bond [1/s], probabilities per attempt
 variable        k_on_s equal "{{k_on_per_s}}*v_f"

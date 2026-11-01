@@ -231,12 +231,16 @@ class Params:
         return float(self._rise(self.t_influx_s)) if self.t_influx_s > 0 else self.ca_rest_uM
 
     def calcium(self, t_s):
-        """Calcium [uM] at production time t [s] (scalar or array); the same formula as in template.lmp."""
+        """Calcium [uM] at production time t [s] (scalar or array); the same formula as in template.lmp,
+        with the phases decided on the nearest step (influx from step phase_steps[0], pump-out from the
+        end of the influx), not on t itself, which can fall just below a phase start in floating point."""
         t = np.asarray(t_s, dtype=float)
+        step = np.rint(t * 1e9 / self.timestep)
+        on, off = self.phase_steps[0], self.phase_steps[0] + self.phase_steps[1]
         rise = self._rise(np.maximum(t - self.t_on_s, 0.0))
         decay = self.ca_rest_uM + (self.ca_start_uM - self.ca_rest_uM) * np.exp(
             -np.maximum(t - self.t_off_s, 0.0) / self.ca_tau_s)
-        return np.where(t < self.t_on_s, self.ca_rest_uM, np.where(t < self.t_off_s, rise, decay))
+        return np.where(step < on, self.ca_rest_uM, np.where(step < off, rise, decay))
 
     def loading(self, ca_uM):
         """Calmodulin loading f = Ca^n / (K^n + Ca^n)."""
