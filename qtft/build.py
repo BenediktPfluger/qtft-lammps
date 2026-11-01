@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from .ensemble import update_index
-from .params import REPO_DIR, Params
+from .params import EXECUTION_SETTINGS, REPO_DIR, Params
 from .remote import LRZ
 
 TEMPLATE = REPO_DIR / "template.lmp"
@@ -128,13 +128,33 @@ def git_info() -> dict:
             "dirty": bool(git("status", "--porcelain", "--untracked-files=no"))}
 
 
+def _check_replace(run_dir: Path, p: Params) -> None:
+    """overwrite=True replaces a run folder only if none of its replicas is queued or running and it holds the
+    same physical parameters (execution settings such as n_replicas or the seed may differ): the run name
+    leaves out some parameters, so another run with different physics can have the same folder."""
+    busy = [rep.name for rep in sorted(run_dir.glob("rep_*"))
+            if (rep / "status").exists() and (rep / "status").read_text().strip() in ("queued", "running")]
+    if busy:
+        raise RuntimeError(f"{run_dir}: replicas {busy} are queued or running; stop the run first")
+    record = run_dir / "params.json"
+    old = json.loads(record.read_text()).get("params", {}) if record.exists() else {}
+    new = p.to_dict()
+    differing = [k for k in new if k not in EXECUTION_SETTINGS
+                 and json.dumps(old.get(k), sort_keys=True) != json.dumps(new[k], sort_keys=True)]
+    if differing:
+        raise FileExistsError(f"{run_dir} holds a run with other parameters ({', '.join(differing)}); "
+                              "to replace it, delete the folder by hand, or give the new run its own run_name")
+
+
 def build_run(p: Params, overwrite: bool = False) -> Path:
-    """Create <data_dir>/<single|ensemble>/<run name>/ with params.json and rep_XX/in.lammps for every replica."""
+    """Create <data_dir>/<single|ensemble>/<run name>/ with params.json and rep_XX/in.lammps for every replica.
+    overwrite=True replaces an existing folder of the same parameters that is not running (_check_replace)."""
     p.raise_on_error()
     run_dir = p.run_dir
     if run_dir.exists():
         if not overwrite:
             raise FileExistsError(f"{run_dir} exists; set a different run_name or use overwrite=True")
+        _check_replace(run_dir, p)
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
 

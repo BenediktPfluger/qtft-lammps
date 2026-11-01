@@ -56,7 +56,7 @@ def test_physical_cores_within_threads():
     assert 1 <= physical_cores() <= (os.cpu_count() or 1)
 
 
-def test_benchmark_runs_locally_also_for_lrz_parameters(monkeypatch):
+def test_benchmark_runs_locally_also_for_lrz_parameters(tmp_path, monkeypatch):
     # the parameter cell may say executor="lrz"; the benchmark still measures this machine
     built = []
 
@@ -66,5 +66,5 @@ def test_benchmark_runs_locally_also_for_lrz_parameters(monkeypatch):
 
     monkeypatch.setattr("qtft.benchmark.build_run", fake_build)
     with pytest.raises(StopIteration):
-        benchmark(Params(executor="lrz"), procs=[1], cores=1)
+        benchmark(Params(executor="lrz", data_dir=str(tmp_path)), procs=[1], cores=1)
     assert built[0].executor == "local" and built[0].group == "benchmark"

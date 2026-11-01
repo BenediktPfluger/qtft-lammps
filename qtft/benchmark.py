@@ -14,6 +14,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import re
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -93,7 +94,8 @@ def benchmark(p: Params, procs=None, cores: int | None = None, steps: int = 2000
                 n_replicas=parallel, mpi_procs=n, max_parallel=parallel, group="benchmark",
                 executor="local",                                                 # measures this machine
                 run_name=f"{name}/{_slug(label)}_np{n}")
-            run_dir = build_run(q, overwrite=True)
+            shutil.rmtree(q.run_dir, ignore_errors=True)                 # scratch run of an earlier benchmark
+            run_dir = build_run(q)
             start(run_dir, wait=True)
             failed = [rep.name for rep in sorted(run_dir.glob("rep_*")) if _status(rep) != "done"]
             if failed:

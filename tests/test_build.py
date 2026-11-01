@@ -46,6 +46,20 @@ def test_build_run(tmp_path):
     build_run(p, overwrite=True)
 
 
+def test_overwrite_only_same_parameters_and_not_running(tmp_path):
+    p = Params(n_replicas=2, data_dir=str(tmp_path), run_name="same_name")
+    run_dir = build_run(p)
+    build_run(Params(n_replicas=2, master_seed=7, mpi_procs=2, data_dir=str(tmp_path), run_name="same_name"),
+              overwrite=True)                                          # execution settings may differ
+    with pytest.raises(FileExistsError, match=r"other parameters \(k_qf, ca_hill\).*delete the folder by hand"):
+        build_run(Params(n_replicas=2, k_qf=2.0, ca_hill=2.0, data_dir=str(tmp_path), run_name="same_name"),
+                  overwrite=True)
+    (run_dir / "rep_02" / "status").write_text("running\n")
+    with pytest.raises(RuntimeError, match="queued or running; stop the run first"):
+        build_run(p, overwrite=True)
+    assert (run_dir / "rep_02" / "status").read_text() == "running\n"       # nothing deleted
+
+
 def test_run_folders_by_replica_count(tmp_path):
     single = build_run(Params(n_replicas=1, data_dir=str(tmp_path), run_name="one"))
     ensemble = build_run(Params(n_replicas=3, data_dir=str(tmp_path), run_name="three"))

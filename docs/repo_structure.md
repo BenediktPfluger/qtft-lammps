@@ -101,7 +101,10 @@ Qt20_Ft80_L4000_kon1860_koff0.008-0.2_Ca0.1-1uM_K0.5_rise5tau30_t10-30-150s_dt50
 | `periodic` | boundary (`periodic`, `reflect` or `harmonic`) |
 
 The force constants, the bond constant and the Hill coefficient are not part of the name. Runs that differ only
-in those, or only in execution settings and seeds, need their own `run_name`.
+in those, or only in execution settings and seeds, need their own `run_name`. `build_run(p, overwrite=True)`
+replaces an existing folder only if it holds the same physical parameters (execution settings such as
+`n_replicas` or the seed may differ) and none of its replicas is queued or running; otherwise delete the folder
+by hand.
 
 ### `index.csv`
 
