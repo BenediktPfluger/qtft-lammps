@@ -47,7 +47,9 @@ def test_last_thermo_while_running(tmp_path):
     log.write_text("LAMMPS (30 Sep 2026)\n")
     assert last_thermo(log) is None
     log.write_text(EQUIL)
-    assert last_thermo(log) == ("equilibration", {"Step": 100, "PotEng": 1.5, "Bonds": 0})
+    phase, values = last_thermo(log)
+    assert (phase, values) == ("equilibration", {"Step": 100, "PotEng": 1.5, "Bonds": 0})
+    assert [type(v) for v in values.values()] == [int, float, int]             # as the YAML reader gave
     log.write_text(EQUIL + PROD + "---\nkeywords: ['Step', 'PotEng', 'Bonds', 'v_ca']\ndata:\n  - [1000, -4, 12, 0.55, ]\n"
                    "  - [1500, -5.5, 1")                                       # last row half-written
     assert last_thermo(log) == ("production", {"Step": 1000, "PotEng": -4, "Bonds": 12, "v_ca": 0.55})

@@ -86,9 +86,9 @@ def last_thermo(log_path: str | Path) -> tuple[str, dict] | None:
         n_blocks -= 1
         if not len(rows):
             return None
-    values = _frame(keywords, rows[-1:]).iloc[0]
     phase = PHASES[min(n_blocks, 2) - 1]
-    return phase, {c: (int(v) if isinstance(v, (int, np.integer)) else float(v)) for c, v in values.items()}
+    whole = lambda v: np.isfinite(v) and v == round(v) and abs(v) < 2**53          # as the YAML reader gave
+    return phase, {c: int(v) if whole(v) else float(v) for c, v in zip(keywords, rows[-1])}
 
 
 def load_thermo(rep_dir: str | Path) -> pd.DataFrame:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import functools
 import json
+import math
 import re
 import shlex
 import shutil
@@ -128,6 +129,18 @@ def git_info() -> dict:
             "dirty": bool(git("status", "--porcelain", "--untracked-files=no"))}
 
 
+def _same(a, b) -> bool:
+    """Equal parameter values: numbers within 1e-12 relative (20 == 20.0; numpy values as Python numbers),
+    lists elementwise, anything else exactly."""
+    a, b = (v.tolist() if isinstance(v, (np.generic, np.ndarray)) else v for v in (a, b))
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    numbers = (int, float)
+    if isinstance(a, numbers) and isinstance(b, numbers) and not isinstance(a, bool) and not isinstance(b, bool):
+        return math.isclose(a, b, rel_tol=1e-12, abs_tol=0.0)
+    return a == b
+
+
 def _check_replace(run_dir: Path, p: Params) -> None:
     """overwrite=True replaces a run folder only if none of its replicas is queued or running and it holds the
     same physical parameters (execution settings such as n_replicas or the seed may differ): the run name
@@ -135,12 +148,14 @@ def _check_replace(run_dir: Path, p: Params) -> None:
     busy = [rep.name for rep in sorted(run_dir.glob("rep_*"))
             if (rep / "status").exists() and (rep / "status").read_text().strip() in ("queued", "running")]
     if busy:
-        raise RuntimeError(f"{run_dir}: replicas {busy} are queued or running; stop the run first")
+        hint = ("the local status files of an LRZ run may be out of date: update them with summary(run_dir) or "
+                "fetch(run_dir), or stop(run_dir) if it still runs" if (run_dir / "job.slurm").exists()
+                else "stop the run first")
+        raise RuntimeError(f"{run_dir}: replicas {busy} are queued or running; {hint}")
     record = run_dir / "params.json"
     old = json.loads(record.read_text()).get("params", {}) if record.exists() else {}
     new = p.to_dict()
-    differing = [k for k in new if k not in EXECUTION_SETTINGS
-                 and json.dumps(old.get(k), sort_keys=True) != json.dumps(new[k], sort_keys=True)]
+    differing = [k for k in new if k not in EXECUTION_SETTINGS and not (k in old and _same(old[k], new[k]))]
     if differing:
         raise FileExistsError(f"{run_dir} holds a run with other parameters ({', '.join(differing)}); "
                               "to replace it, delete the folder by hand, or give the new run its own run_name")

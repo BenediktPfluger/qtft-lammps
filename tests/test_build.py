@@ -1,6 +1,7 @@
 import json
 import re
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -54,10 +55,18 @@ def test_overwrite_only_same_parameters_and_not_running(tmp_path):
     with pytest.raises(FileExistsError, match=r"other parameters \(k_qf, ca_hill\).*delete the folder by hand"):
         build_run(Params(n_replicas=2, k_qf=2.0, ca_hill=2.0, data_dir=str(tmp_path), run_name="same_name"),
                   overwrite=True)
+    build_run(Params(n_replicas=2, qt_per_um3=500, data_dir=str(tmp_path), run_name="same_name"),
+              overwrite=True)                                          # 500 == 500.0
+    build_run(Params(n_replicas=2, maxbond_qt=np.int64(60), D_qt=np.float64(2e-4), data_dir=str(tmp_path),
+                     run_name="same_name"), overwrite=True)            # numpy values: compared, no crash
     (run_dir / "rep_02" / "status").write_text("running\n")
     with pytest.raises(RuntimeError, match="queued or running; stop the run first"):
         build_run(p, overwrite=True)
     assert (run_dir / "rep_02" / "status").read_text() == "running\n"       # nothing deleted
+    lrz = build_run(Params(executor="lrz", data_dir=str(tmp_path), run_name="on_lrz"))
+    (lrz / "rep_01" / "status").write_text("queued\n")
+    with pytest.raises(RuntimeError, match=r"may be out of date: update them with summary\(run_dir\)"):
+        build_run(Params(executor="lrz", data_dir=str(tmp_path), run_name="on_lrz"), overwrite=True)
 
 
 def test_run_folders_by_replica_count(tmp_path):
