@@ -16,38 +16,79 @@ PHASES = ("equilibration", "production")
 TYPE_IDS = {"Qt": 1, "Ft": 2}   # type labels in traj.dump -> numeric atom types
 
 
+ROW_START = "  - ["        # a data row of a YAML thermo block: "  - [2000, 1.338, ..., ]"
+
+
+def _rows(lines: list[str]) -> np.ndarray:
+    """Numeric values of complete thermo data rows (a half-written last row is skipped)."""
+    text = "\n".join(line[len(ROW_START):line.rindex("]")].rstrip().rstrip(",")
+                     for line in lines if line.rstrip().endswith("]"))
+    return np.loadtxt(io.StringIO(text), delimiter=",", ndmin=2) if text else np.empty((0, 0))
+
+
+def _frame(keywords: list[str], rows: np.ndarray) -> pd.DataFrame:
+    """Thermo block as a DataFrame; columns with only whole numbers as int64 (as the YAML reader gave)."""
+    rows = rows.reshape(-1, len(keywords))
+    whole = np.all(np.isfinite(rows) & (rows == np.round(rows)) & (np.abs(rows) < 2**53), axis=0)
+    return pd.DataFrame({c: rows[:, j].astype(np.int64) if whole[j] else rows[:, j]
+                         for j, c in enumerate(keywords)})
+
+
 def read_thermo(log_path: str | Path) -> list[pd.DataFrame]:
     """All YAML thermo blocks of a log.lammps, one DataFrame per `run` command. Other lines inside a
-    block (LAMMPS warnings printed during the run) are skipped."""
-    blocks, current = [], None
+    block (LAMMPS warnings printed during the run) are skipped. The keywords are read with YAML, the data
+    rows numerically, all blocks with the same keywords at once (much faster than YAML on long logs)."""
+    blocks, keywords, rows = [], None, None              # blocks: (keywords line, rows) per finished block
     for line in Path(log_path).read_text().splitlines():
         if line == "---":
-            current = []
-        elif line == "..." and current is not None:
-            doc = yaml.safe_load("\n".join(current))
-            blocks.append(pd.DataFrame(doc["data"], columns=doc["keywords"]))
-            current = None
-        elif current is not None and line.startswith(("keywords:", "data:", "  - [")):
-            current.append(line)
-    return blocks
+            keywords, rows = None, []
+        elif line == "..." and rows is not None:
+            if keywords is not None:
+                blocks.append((keywords, [r for r in rows if r.rstrip().endswith("]")]))
+            keywords, rows = None, None
+        elif rows is not None and line.startswith("keywords:"):
+            keywords = line
+        elif rows is not None and line.startswith(ROW_START):
+            rows.append(line)
+    out = [None] * len(blocks)
+    for kw_line in dict.fromkeys(kw for kw, _ in blocks):
+        keywords = yaml.safe_load(kw_line)["keywords"]
+        members = [i for i, (kw, _) in enumerate(blocks) if kw == kw_line]
+        values = _rows([r for i in members for r in blocks[i][1]]).reshape(-1, len(keywords))
+        ends = np.cumsum([len(blocks[i][1]) for i in members])
+        for i, part in zip(members, np.split(values, ends[:-1])):
+            out[i] = _frame(keywords, part)
+    return out
 
 
 def last_thermo(log_path: str | Path) -> tuple[str, dict] | None:
-    """(phase, values) of the most recent thermo line, also while a run is in progress."""
+    """(phase, values) of the most recent complete thermo row, also while a run is in progress. Reads only
+    the last keywords line and the last row (fast on long logs)."""
     log_path = Path(log_path)
     if not log_path.exists():
         return None
-    keywords, last, n_blocks = None, None, 0
-    for line in log_path.read_text().splitlines():
-        if line.startswith("keywords:"):
-            keywords = yaml.safe_load(line)["keywords"]
-            n_blocks += 1
-        elif line.startswith("  - [") and keywords:
-            last = yaml.safe_load(line.strip())[0]
-    if last is None:
+    text = log_path.read_text()
+    n_blocks = text.count("\nkeywords:") + text.startswith("keywords:")
+    if not n_blocks:
         return None
+    k = text.rfind("keywords:")
+    keywords = yaml.safe_load(text[k:text.index("\n", k)] if "\n" in text[k:] else text[k:])["keywords"]
+    tail = text[k:].splitlines()
+    rows = _rows([line for line in tail if line.startswith(ROW_START)][-2:])
+    if not len(rows):
+        if n_blocks < 2:
+            return None
+        # new block without a row yet: the last row of the previous block
+        previous = text[:text.rfind("\nkeywords:")]
+        k = previous.rfind("keywords:")
+        keywords = yaml.safe_load(previous[k:previous.index("\n", k)])["keywords"]
+        rows = _rows([line for line in previous[k:].splitlines() if line.startswith(ROW_START)][-2:])
+        n_blocks -= 1
+        if not len(rows):
+            return None
+    values = _frame(keywords, rows[-1:]).iloc[0]
     phase = PHASES[min(n_blocks, 2) - 1]
-    return phase, dict(zip(keywords, last))
+    return phase, {c: (int(v) if isinstance(v, (int, np.integer)) else float(v)) for c, v in values.items()}
 
 
 def load_thermo(rep_dir: str | Path) -> pd.DataFrame:
