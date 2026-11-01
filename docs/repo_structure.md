@@ -65,7 +65,7 @@ runs/
 │       │   ├── fibsem/              only after the FIB-SEM export
 │       │   └── animation/           only after animate()
 │       └── analysis/                only after the analysis
-│           ├── *.csv, *.json, summary_table.tex, report.pdf
+│           ├── *.csv, *.json, ensemble_series.npz, summary_table.tex, report.pdf
 │           └── figures/
 │               └── <figure>/        <figure>.pdf/.svg/.png and every panel alone, <panel>.pdf/.svg/.png
 ├── sweeps/                          only after build_sweep()

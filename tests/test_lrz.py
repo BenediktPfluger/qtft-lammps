@@ -316,3 +316,19 @@ def test_lrz_sweep_and_no_connection(tmp_path, fake_lrz, monkeypatch):
     with pytest.raises(ConnectionError, match="ssh lrz"):
         start(run)
     assert (run / "rep_01/status").read_text() == "built\n"            # nothing submitted
+
+
+def test_slurm_task_ids():
+    assert remote._task_ids("777_4") == [4] and remote._task_ids("777") == []
+    assert remote._task_ids("777_[3-6]") == [3, 4, 5, 6] and remote._task_ids("777_[3-6%2]") == [3, 4, 5, 6]
+    assert remote._task_ids("777_[1,4,7-9]") == [1, 4, 7, 8, 9]
+
+
+def test_lrz_tasks_that_never_started(tmp_path, fake_lrz, monkeypatch):
+    # the job is cancelled while tasks 2 and 3 still pend: sacct reports them as one bracketed record
+    monkeypatch.setenv("FAKE_SBATCH_HOLD", "1")
+    run = build_run(_small(tmp_path, n_replicas=3, run_name="b"))
+    start(run)
+    (fake_lrz / ".sacct").write_text("777_1|CANCELLED by 1234\n777_[2-3%1]|CANCELLED by 1234\n")
+    remote._last_sync.clear()
+    assert progress(run)["status"].tolist() == ["stopped"] * 3

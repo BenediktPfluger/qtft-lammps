@@ -113,6 +113,22 @@ def _tasks(job_dir: Path, target: Path) -> dict[int, Path]:
     return {i: r for i, r in reps.items() if r == target or target in r.parents}
 
 
+def _task_ids(job_task: str) -> list[int]:
+    """Array task numbers of a Slurm JobID: '123_4' -> [4]; tasks that have not started are one record,
+    '123_[3-6]', '123_[3-6%2]' or '123_[1,4,7-9]' -> their numbers; [] for the whole job ('123')."""
+    task = job_task.split("_", 1)[1] if "_" in job_task else ""
+    if task.isdigit():
+        return [int(task)]
+    if not (task.startswith("[") and task.endswith("]")):
+        return []
+    ids = []
+    for part in task[1:-1].split("%")[0].split(","):
+        lo, _, hi = part.partition("-")
+        if lo.isdigit() and (hi.isdigit() or not hi):
+            ids += range(int(lo), int(hi or lo) + 1)
+    return ids
+
+
 def slurm_states(target: Path) -> dict[int, tuple[str, str]]:
     """State and reason per array task of target's job while it is in the Slurm queue ({} when it has
     left the queue or was never submitted)."""
@@ -124,10 +140,9 @@ def slurm_states(target: Path) -> dict[int, tuple[str, str]]:
     states = {}
     for line in out.splitlines():
         parts = line.strip().split("|")
-        if len(parts) == 3 and "_" in parts[0]:
-            task = parts[0].split("_", 1)[1]
-            if task.isdigit():
-                states[int(task)] = (parts[1], parts[2])
+        if len(parts) == 3:
+            for task in _task_ids(parts[0]):
+                states[task] = (parts[1], parts[2])
     tasks = _tasks(job_dir, target)
     return {i: s for i, s in states.items() if i in tasks}
 
@@ -168,9 +183,8 @@ def _close_lost_tasks(target: Path, fetch_small) -> None:
     final = {}
     for line in out.splitlines():
         job_task, _, state = line.partition("|")
-        task = job_task.split("_", 1)[1] if "_" in job_task else ""
-        if task.isdigit():
-            final[int(task)] = state.split()[0] if state else ""
+        for task in _task_ids(job_task.strip()):
+            final[task] = state.split()[0] if state else ""
     changes = {}
     for i, rep in active().items():
         if i in queued_or_running or final.get(i, "") in ("PENDING", "RUNNING", "REQUEUED", "COMPLETED", ""):
