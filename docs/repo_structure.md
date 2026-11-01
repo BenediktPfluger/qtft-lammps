@@ -260,8 +260,13 @@ Everything here lives in `<run>/analysis/`. It is written by `ensemble_stats()` 
 
 | File | Content | Written by |
 |---|---|---|
-| `overlap_timeseries.csv` | interpenetration statistics per pair family and frame, mean over replicas; with walls also `Qt-wall` and `Ft-wall` (spheres beyond a box face) | `make_report()`, `overlap_run()` |
+| `overlap_timeseries.csv` | interpenetration statistics per pair family and frame, pooled over replicas; with walls also `Qt-wall` and `Ft-wall` (spheres beyond a box face) | `make_report()`, `overlap_run()` |
 | `overlap_final.csv` | the same, pooled over the last frames | `make_report()`, `overlap_run()` |
+
+The depth columns describe the overlapping pairs only: `mean depth overlapping [nm]` is the mean over all
+overlapping pairs of the pooled frames (weighted by their number), `p95 depth [nm]` the mean of the per-frame
+95th percentiles and `max depth [nm]` the largest depth, each over the frames with an overlap; NaN where no
+pair overlaps. Counts and fractions are plain means over frames.
 
 ### FIB-SEM comparison (Qt only)
 

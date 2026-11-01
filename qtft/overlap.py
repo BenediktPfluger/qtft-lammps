@@ -25,7 +25,8 @@ WALL_FAMILIES = {"Qt-wall": 1, "Ft-wall": 2}
 
 
 def overlap_frame(atoms: pd.DataFrame, p: Params) -> pd.DataFrame:
-    """Overlap statistics of one frame (atoms from read_dump), one row per pair family."""
+    """Overlap statistics of one frame (atoms from read_dump), one row per pair family. The depth columns
+    describe the overlapping pairs only and are NaN when no pair of the family overlaps."""
     box = np.array(p.box)
     pos = atoms[["x", "y", "z"]].to_numpy(dtype=float)
     types = atoms["type"].to_numpy()
@@ -55,10 +56,10 @@ def overlap_frame(atoms: pd.DataFrame, p: Params) -> pd.DataFrame:
             "closest [nm]": d.min() if len(d) else np.nan,
             "n overlapping": len(over),
             "frac overlapping": len(over) / total if total else np.nan,
-            "mean depth overlapping [nm]": over.mean() if len(over) else 0.0,
+            "mean depth overlapping [nm]": over.mean() if len(over) else np.nan,
             "mean depth all pairs [% contact]": 100 * dep.sum() / total / c if total else np.nan,
-            "p95 depth [nm]": np.percentile(over, 95) if len(over) else 0.0,
-            "max depth [nm]": over.max() if len(over) else 0.0,
+            "p95 depth [nm]": np.percentile(over, 95) if len(over) else np.nan,
+            "max depth [nm]": over.max() if len(over) else np.nan,
         })
     if not p.periodic:
         wall_depth = radius - np.minimum(pos, box - pos).min(axis=1)       # r_i - distance to nearest face
@@ -70,10 +71,10 @@ def overlap_frame(atoms: pd.DataFrame, p: Params) -> pd.DataFrame:
                 "closest [nm]": (r - wall_depth[types == t]).min() if n[t] else np.nan,
                 "n overlapping": len(over),
                 "frac overlapping": len(over) / n[t] if n[t] else np.nan,
-                "mean depth overlapping [nm]": over.mean() if len(over) else 0.0,
+                "mean depth overlapping [nm]": over.mean() if len(over) else np.nan,
                 "mean depth all pairs [% contact]": 100 * dep.sum() / n[t] / r if n[t] else np.nan,
-                "p95 depth [nm]": np.percentile(over, 95) if len(over) else 0.0,
-                "max depth [nm]": over.max() if len(over) else 0.0,
+                "p95 depth [nm]": np.percentile(over, 95) if len(over) else np.nan,
+                "max depth [nm]": over.max() if len(over) else np.nan,
             })
     return pd.DataFrame(rows)
 
@@ -93,9 +94,25 @@ def overlap_series(rep_dir: str | Path, every: int = 10) -> pd.DataFrame:
     return pd.concat(out, ignore_index=True)
 
 
+def _pool(frames: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
+    """Overlap statistics of several frames (and replicas) combined per group: means of the counts and
+    fractions; over the frames with an overlap, the mean depth weighted by the number of overlapping pairs
+    (the mean over all overlapping pairs), the mean of the per-frame 95th percentiles and the largest depth
+    (NaN where nothing overlaps)."""
+    numeric = [c for c in frames.columns if c not in ("family", "replica", *keys)]
+    by = [frames[k] for k in keys]
+    out = frames.groupby(by)[numeric].mean()
+    n = frames["n overlapping"].groupby(by).sum()
+    weighted = (frames["mean depth overlapping [nm]"] * frames["n overlapping"]).groupby(by).sum()
+    out["mean depth overlapping [nm]"] = (weighted / n).where(n > 0)
+    out["max depth [nm]"] = frames["max depth [nm]"].groupby(by).max()
+    return out
+
+
 def overlap_run(run_dir: str | Path, every: int = 10, last_frames: int = 5, save: bool = True) -> dict:
-    """Time series (mean over replicas) and pooled statistics of the last `last_frames` analysed
-    frames of all finished replicas. Saved to <run>/analysis/overlap_*.csv."""
+    """Time series (pooled over replicas) and pooled statistics of the last `last_frames` analysed
+    frames of all finished replicas (_pool: depths over the overlapping pairs only). Saved to
+    <run>/analysis/overlap_*.csv."""
     run_dir = Path(run_dir).expanduser()
     series = []
     for rep in sorted(run_dir.glob("rep_*")):
@@ -104,11 +121,9 @@ def overlap_run(run_dir: str | Path, every: int = 10, last_frames: int = 5, save
     if not series:
         raise ValueError(f"no finished replicas in {run_dir}")
     all_frames = pd.concat(series, ignore_index=True)
-    numeric = [c for c in all_frames.columns if c not in ("family", "replica")]
-    timeseries = all_frames.groupby(["family", "Step"])[numeric].mean().drop(columns="Step").reset_index()
+    timeseries = _pool(all_frames, ["family", "Step"]).reset_index()
     last_steps = sorted(all_frames["Step"].unique())[-last_frames:]
-    final = (all_frames[all_frames["Step"].isin(last_steps)]
-             .groupby("family")[numeric[2:]].mean()
+    final = (_pool(all_frames[all_frames["Step"].isin(last_steps)], ["family"]).drop(columns=["Step", "time_ms"])
              .reindex([f for f in (*FAMILIES, *WALL_FAMILIES) if f in set(all_frames["family"])]))
     result = {"timeseries": timeseries, "final": final, "per_frame": all_frames}
     if save:
