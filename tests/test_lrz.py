@@ -332,3 +332,22 @@ def test_lrz_tasks_that_never_started(tmp_path, fake_lrz, monkeypatch):
     (fake_lrz / ".sacct").write_text("777_1|CANCELLED by 1234\n777_[2-3%1]|CANCELLED by 1234\n")
     remote._last_sync.clear()
     assert progress(run)["status"].tolist() == ["stopped"] * 3
+
+
+def test_lrz_start_removes_nothing_when_it_cannot_submit(tmp_path, fake_lrz, monkeypatch):
+    monkeypatch.setenv("FAKE_SBATCH_HOLD", "1")
+    run = build_run(_small(tmp_path, run_name="keep"))
+    (run / "rep_01/status").write_text("failed\n")
+    (run / "rep_01/lammps.out").write_text("the error of the failed attempt\n")
+    (run / "analysis").mkdir()
+    (run / "analysis/final_state.csv").write_text("x\n")
+    monkeypatch.setenv("FAKE_LRZ_DOWN", "1")
+    with pytest.raises(ConnectionError, match="ssh lrz"):
+        start(run)
+    assert (run / "rep_01/lammps.out").exists() and (run / "analysis/final_state.csv").exists()
+    assert (run / "rep_01/status").read_text() == "failed\n"
+    (run / "job.slurm").unlink()                                       # not submittable: also nothing removed
+    monkeypatch.delenv("FAKE_LRZ_DOWN")
+    with pytest.raises(FileNotFoundError, match="job.slurm missing"):
+        start(run)
+    assert (run / "rep_01/lammps.out").exists() and (run / "analysis/final_state.csv").exists()

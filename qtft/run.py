@@ -151,6 +151,8 @@ def start(run_dir: str | Path, wait: bool = False) -> None:
     if missing:
         raise FileNotFoundError(f"LAMMPS plugin not found: {missing}; build it with "
                                 "lammps_plugins/bond_break_random/build.sh (see README)")
+    if _lrz(params):
+        remote.check_submit(run_dir)                   # before any output is removed
     skipped = f" ({len(reps) - len(todo)} done replica(s) kept)" if len(todo) < len(reps) else ""
     previous = {rep: _status(rep) for rep in todo}
     _clear_outputs(todo)                               # also the pid files (pid file = replica has started)

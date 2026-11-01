@@ -194,14 +194,22 @@ def _close_lost_tasks(target: Path, fetch_small) -> None:
 
 
 # ------------------------------------------------------------------ public: submit, sync, cancel, fetch
+def check_submit(target: Path) -> None:
+    """Raise if target cannot be submitted, before anything is changed: no job.slurm, or no connection
+    to LRZ."""
+    target = Path(target)
+    if not (target / "job.slurm").exists():
+        raise FileNotFoundError(f"{target / 'job.slurm'} missing: build the run with executor='lrz'")
+    ssh("true")                                       # raises ConnectionError without the ssh connection
+
+
 def submit(target: Path, p: Params, reps: list[Path]) -> str:
     """Copy the run or sweep folder to LRZ and submit its job.slurm for the replicas `reps` only (their
     array tasks, --array=<list>); their outputs of an earlier attempt are removed there first. Returns
     the Slurm job ID. p: the parameters of the run (of a sweep: of any of its runs; the execution
     settings are shared)."""
     target = Path(target)
-    if not (target / "job.slurm").exists():
-        raise FileNotFoundError(f"{target / 'job.slurm'} missing: build the run with executor='lrz'")
+    check_submit(target)
     remote = remote_dir(target, p)
     ssh(f"test -x {LRZ['lmp']} || {{ echo 'LAMMPS not found on LRZ: {LRZ['lmp']} (docs/install.md, part B)' >&2; exit 1; }}"
         f" && mkdir -p {remote}")
