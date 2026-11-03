@@ -33,7 +33,7 @@ from .spatial import QT_MIN, density_estimate, peak, qt_spatial_run
 from .structure import AGGLOMERATE_MIN, agglomerate_volumes_run
 
 MM = 1 / 25.4
-SINGLE, DOUBLE, MAX_HEIGHT = 89 * MM, 183 * MM, 170 * MM
+SINGLE, ONE_HALF, DOUBLE, MAX_HEIGHT = 89 * MM, 120 * MM, 183 * MM, 170 * MM
 SPECIES_COLORS = {"Qt": "#54aa00", "Ft": "#fea900", "Qt bound": "#55aaff", "Ft bound": "#fe0000"}
 LINE = {"Qt": "#54aa00", "Ft": "#fe0000"}          # line plots per species
 RUN_COLORS = ["#1f4e79", "#c0392b", "#2e8b57", "#8e44ad", "#d35400", "#16a085", "#7f8c8d"]
@@ -695,7 +695,7 @@ def fig_agglomerates_above_size(run: RunData, out_dir: Path | None = None, trace
                                 n_qt_ft=SIZE_THRESHOLDS_QT_FT):
     """Number of agglomerates with >= n particles (row 1), >= n Qt (row 2) and >= n Ft (row 3) over time,
     in the box (left) and per 1000 um^3 of box volume (right), one line per threshold; row 4: >= n Qt and
-    >= n Ft for the pair `n_qt_ft` together (Qt green, Ft red), 4 x 2 (183 mm).
+    >= n Ft for the pair `n_qt_ft` together (Qt green, Ft red), 4 x 2 (120 mm).
     Saved as agglomerates_above_size.*; panels also alone in agglomerates_above_size/."""
     if len(n_qt_ft) != 2:
         raise ValueError(f"n_qt_ft must be one pair (>= n Qt, >= n Ft), not {n_qt_ft!r}")
@@ -725,7 +725,9 @@ def fig_agglomerates_above_size(run: RunData, out_dir: Path | None = None, trace
         return f"≥ {n_qt} Qt and ≥ {n_ft} Ft, {'density' if density else 'number'}", draw, True
 
     panels = [panel(sp, density) for sp in ns for density in (False, True)] + [pair(False), pair(True)]
-    return _panel_figure("agglomerates_above_size", panels, [run], out_dir, 4, 2, DOUBLE, MAX_HEIGHT,
+    # 1.5 columns wide: at the full width the 4 rows of the page height would make every panel twice as wide
+    # as high; at 120 mm the panels have about the shape of the single panels (89 x 65 mm)
+    return _panel_figure("agglomerates_above_size", panels, [run], out_dir, 4, 2, ONE_HALF, MAX_HEIGHT,
                          traces=traces)
 
 

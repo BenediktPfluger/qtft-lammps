@@ -372,7 +372,7 @@ Distributions at the end of the influx, agglomerates of ≥ 3 particles, log bin
 3. **envelope volume at end of influx**: closing with the ellipsoidal probe (µm³), comparable to confocal
    volumes.
 
-### `agglomerates_above_size` (4 × 2)
+### `agglomerates_above_size` (4 × 2, 120 mm wide)
 
 Number of agglomerates above a size threshold over time, one line per threshold. Left column: in the box
 (`number`); right column: per 1000 µm³ (`density`). From `agglomerates_above_size*.csv`. Shown in analysis
