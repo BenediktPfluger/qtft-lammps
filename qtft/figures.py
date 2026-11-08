@@ -44,7 +44,7 @@ PRESSURE_TO_PA = 1e6                               # nano pressure unit ag/(nm n
 STYLE = {
     "font.family": "sans-serif",
     "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
-    "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 7,
+    "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 6, "axes.titleweight": "normal",
     "xtick.labelsize": 6, "ytick.labelsize": 6, "legend.fontsize": 6,
     "axes.linewidth": 0.5, "lines.linewidth": 1.0,
     "xtick.major.width": 0.5, "ytick.major.width": 0.5,
@@ -54,6 +54,9 @@ STYLE = {
     "legend.frameon": False, "axes.grid": False,
     "pdf.fonttype": 42, "svg.fonttype": "none", "savefig.dpi": 300,
 }
+GUIDE_LW = 0.5                                     # thin guide lines: phases, references, peaks, random points
+TRACE_LW, TRACE_ALPHA = 0.3, 0.4                   # individual replicas (traces=True)
+BAND_ALPHA = 0.25                                  # ±1 SD band
 
 
 # ---------------------------------------------------------------------------- data
@@ -130,8 +133,8 @@ def load_runs(run_dirs, labels=None) -> list[RunData]:
 def band(ax, t, mean, sd, color, label=None, ls="-", traces=None):
     if traces is not None:
         for tr in traces:
-            ax.plot(t, tr, color=color, lw=0.3, alpha=0.4, ls=ls)
-    ax.fill_between(t, mean - sd, mean + sd, color=color, alpha=0.25, lw=0)
+            ax.plot(t, tr, color=color, lw=TRACE_LW, alpha=TRACE_ALPHA, ls=ls)
+    ax.fill_between(t, mean - sd, mean + sd, color=color, alpha=BAND_ALPHA, lw=0)
     few = np.count_nonzero(np.isfinite(mean)) <= 5                  # show sparse data as points
     ax.plot(t, mean, color=color, ls=ls, label=label, marker="o" if few else None, ms=2)
 
@@ -177,7 +180,7 @@ def _thousands(ax, values) -> bool:
 
 
 def _no_data(ax, text):
-    ax.text(0.5, 0.5, text, transform=ax.transAxes, ha="center", va="center", fontsize=6, color="0.4")
+    ax.text(0.5, 0.5, text, transform=ax.transAxes, ha="center", va="center", fontsize=plt.rcParams["legend.fontsize"], color="0.4")
 
 
 # ---------------------------------------------------------------------------- panels
@@ -307,7 +310,7 @@ def _structure_panel(key, ylabel, ref=None):
             band(ax, t, m, s, r.color, r.label)
             drawn = True
         if ref is not None:
-            ax.axhline(ref, color="0.5", lw=0.5, ls="--")
+            ax.axhline(ref, color="0.5", lw=GUIDE_LW, ls="--")
         if not drawn:
             _no_data(ax, "no structure analysis (make_report or structure_run)")
         ax.set_ylabel(ylabel)
@@ -556,7 +559,7 @@ def phase_lines(ax, runs) -> None:
     end = _t_end(runs)
     for t in sorted({b * 1e3 for b in bounds.pop()}):
         if 0 < t < end:
-            ax.axvline(t, color="0.6", lw=0.5, ls=":", zorder=0)
+            ax.axvline(t, color="0.6", lw=GUIDE_LW, ls=":", zorder=0)
 
 
 def _grid(panels, runs, nrows, ncols, width, height, titles=True, traces=False, legend_below=False,
@@ -574,7 +577,7 @@ def _grid(panels, runs, nrows, ncols, width, height, titles=True, traces=False, 
             phase_lines(ax, runs)
             _time_axis(ax, t_end, label=not sharex or ax.get_subplotspec().is_last_row())
         if titles:
-            ax.set_title(title, loc="left", fontweight="bold")
+            ax.set_title(title, loc="left")
     for ax in axes.flat[len(panels):]:
         ax.set_visible(False)
     if legend_below and len(runs) > 1:
@@ -733,7 +736,7 @@ def fig_fibsem_comparison(runs, out_dir: Path | None = None, spatial: dict | lis
                 else:
                     ax.hist(d, bins=np.arange(np.floor(d.min()), d.max() + 1, 1.0), density=True,
                             histtype="step", color=r.color, label=r.label)
-                ax.axvline(peak(d), color=r.color, lw=0.5, ls=":")
+                ax.axvline(peak(d), color=r.color, lw=GUIDE_LW, ls=":")
             drawn = True
         if not drawn:
             _no_data(ax, f"no agglomerates with ≥ {QT_MIN} Qt")
@@ -753,12 +756,12 @@ def fig_fibsem_comparison(runs, out_dir: Path | None = None, spatial: dict | lis
             if one:
                 _peak_label(ax, r_peak, end)
             elif np.isfinite(r_peak):
-                ax.axvline(r_peak, color=r.color, lw=0.5, ls=":")
+                ax.axvline(r_peak, color=r.color, lw=GUIDE_LW, ls=":")
             drawn = True
         if not drawn:
             _no_data(ax, "fewer than 2 Qt")
             return
-        ax.axhline(1, color="0.6", lw=0.5, ls=":")
+        ax.axhline(1, color="0.6", lw=GUIDE_LW, ls=":")
         ax.set_yscale("log")
         ax.set_xlim(0, r_plot_nm)
         ax.set_xlabel("r (nm)")
@@ -779,7 +782,7 @@ def fig_fibsem_comparison(runs, out_dir: Path | None = None, spatial: dict | lis
                     ax.text(0.03, 0.95 - 0.08 * i, text, color=r.color, transform=ax.transAxes, va="top")
             rho = ce["density_per_um3"].mean() * 1e-9                               # [1/nm^3]
             x = np.linspace(0, d_all["distance_nm"].max(), 400)
-            ax.plot(x, 1 - np.exp(-4 / 3 * math.pi * rho * x**3), color="k" if one else r.color, lw=0.5,
+            ax.plot(x, 1 - np.exp(-4 / 3 * math.pi * rho * x**3), color="k" if one else r.color, lw=GUIDE_LW,
                     ls="--", label="random points" if one else None)
         ax.set_ylim(0, 1.02)
         ax.set_xlabel("distance to nearest Qt, d (nm)")
@@ -790,7 +793,7 @@ def fig_fibsem_comparison(runs, out_dir: Path | None = None, spatial: dict | lis
             _style_legend(ax, {end: "-", "random points": "--"}, loc="lower right")
 
     def p_ripley(ax, runs, traces=False):
-        zero = ax.axhline(0, color="k", lw=0.5, ls="--", label="random points")
+        zero = ax.axhline(0, color="k", lw=GUIDE_LW, ls="--", label="random points")
         frames = (("first", "0.6", "first frame"), ("influx_end", color, end)) if one else (("influx_end", None, end),)
         for r, sp in data:
             ripley = sp["ripley"]
@@ -1056,7 +1059,7 @@ def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: 
                 label=label("fit k_a", "k_a measured"))
         ax.plot(t, s["k_a predicted"] * pairs_per_volume * t * 1e6, color="0.4", lw=0.8, ls="--",
                 label=label("Collins–Kimball", "k_a predicted"))
-        ax.axvline(window, color="0.6", lw=0.5, ls=":")
+        ax.axvline(window, color="0.6", lw=GUIDE_LW, ls=":")
         ax.set_xlim(0, t[-1])
         ax.set_ylim(bottom=0)
         ax.set_xlabel("time since influx start (ms)")

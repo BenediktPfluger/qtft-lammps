@@ -330,9 +330,10 @@ order of section 6.
 - for figures with several panels, also every panel alone (89 mm wide) as `<panel>.pdf/.svg/.png`, named after
   the panel title (for example `mean_cluster_size.pdf`).
 
-Common to all figures: mean over replicas as a line with a ±1 SD band; dotted vertical lines at the start and
-end of the calcium influx in every time panel; time axes in ms, in s for runs of 10 s or longer. "End of the
-influx" means the last `traj.dump` frame at or before it (the run end for a run without an influx).
+Common to all figures: Nature style (Arial, 7 pt text, 6 pt tick labels, legends and panel titles, titles
+regular); mean over replicas as a line with a ±1 SD band; dotted vertical lines at the start and end of the
+calcium influx in every time panel; time axes in ms, in s for runs of 10 s or longer. "End of the influx" means
+the last `traj.dump` frame at or before it (the run end for a run without an influx).
 
 The figures appear in this order in `report.pdf`.
 
