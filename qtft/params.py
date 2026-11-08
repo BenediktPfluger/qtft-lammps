@@ -81,7 +81,7 @@ class Params:
     k_on: float = 1.86e-6            # binding rate per pair at full calmodulin loading (f = 1) [1/ns]
     bind_radius: float | None = None  # [nm]; None -> r_Qt + r_Ft
     bind_every: int = 1              # attempt bond creation every N steps
-    maxbond_qt: int = 60             # max bonds per Qt
+    maxbond_qt: int = 30             # max bonds per Qt
     maxbond_ft: int = 10             # max bonds per Ft
 
     # --- calcium control (production) ----------------------------------------

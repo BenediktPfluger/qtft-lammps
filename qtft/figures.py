@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MultipleLocator, NullFormatter
+from matplotlib.transforms import offset_copy
 
 from .ensemble import (SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, SIZE_THRESHOLDS_QT_FT, TO_PER_M_S, cluster_sizes,
                        _agglomerates_above_size_species, _thresholds, agglomerates_above_size, binding_rate,
@@ -236,7 +237,7 @@ COUNT_STYLES = {"Qt bound": "-", "Ft bound": "--", "Qt free": ":", "Ft free": "-
 
 def p_counts(ax, runs, traces=False):
     """Free and bound Qt and Ft. One run: species colours; several runs: run colours, one line style per
-    count (COUNT_STYLES, legend in the panel)."""
+    count (COUNT_STYLES, legend below the axes, under the time label, so it covers no curve)."""
     values = []
     for r in runs:
         t = r.stats["time_ms"]
@@ -255,8 +256,10 @@ def p_counts(ax, runs, traces=False):
     ax.set_ylabel("particles" + (" (×10³)" if k else ""))
     if len(runs) == 1:
         ax.legend(ncol=2, loc="best")
-    else:
-        _style_legend(ax, COUNT_STYLES, ncol=2, handlelength=3)
+    else:                                          # 26 pt below the axes: under the tick labels and time label
+        below = offset_copy(ax.transAxes, fig=ax.figure, y=-26, units="points")
+        _style_legend(ax, COUNT_STYLES, ncol=2, handlelength=2.5, columnspacing=1.0, loc="upper center",
+                      bbox_to_anchor=(0.5, 0), bbox_transform=below)
 
 
 def p_fraction_bound(ax, runs, traces=False):

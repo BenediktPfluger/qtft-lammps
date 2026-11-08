@@ -357,7 +357,7 @@ sweep: one colour per run, legend below). Bonds and fraction bound are in `calci
 
 1. **potential energy** (zJ).
 2. **pressure**: virial pressure (Pa).
-3. **particle counts**: free and bound Qt and Ft (several runs: one line style each, legend in the panel).
+3. **particle counts**: free and bound Qt and Ft (several runs: one line style each, legend below the axes).
 4. **agglomerates + free**: number of clusters, free particles included.
 5. **largest agglomerate**: all particles, Qt only and Ft only (several runs: all particles).
 6. **largest / N**.
