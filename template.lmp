@@ -99,7 +99,6 @@ variable        qt_bound atom (type==1)*(c_nb>0)
 variable        ft_bound atom (type==2)*(c_nb>0)
 variable        qt_deg atom (type==1)*c_nb
 variable        ft_deg atom (type==2)*c_nb
-variable        large atom (c_size>={{large_cluster_min}})/c_size
 variable        qt_cl atom (type==1)/(c_size_qt+(c_size_qt==0))    # 1/(Qt in the cluster): sums to the clusters with Qt
 variable        ft_cl atom (type==2)/(c_size_ft+(c_size_ft==0))
 variable        cat_mono atom (c_size==1)
@@ -108,7 +107,7 @@ variable        cat_medium atom (c_size>{{size_small}})*(c_size<={{size_medium}}
 variable        cat_large atom (c_size>{{size_medium}})*(c_size<={{size_large}})
 variable        cat_vlarge atom (c_size>{{size_large}})
 
-compute         sums all reduce sum v_qt_bound v_ft_bound v_qt_deg v_ft_deg v_large &
+compute         sums all reduce sum v_qt_bound v_ft_bound v_qt_deg v_ft_deg &
                 v_cat_mono v_cat_small v_cat_medium v_cat_large v_cat_vlarge v_qt_cl v_ft_cl
 compute         maxdeg all reduce max v_qt_deg v_ft_deg
 
@@ -122,16 +121,15 @@ variable        deg_ft_max equal c_maxdeg[2]
 variable        n_clusters equal c_cl
 variable        mean_size equal count(all)/c_cl
 variable        largest equal max(c_csize)
-variable        mean_size_qt equal count(Qt)/(c_sums[11]+(c_sums[11]==0))    # Qt per cluster with Qt
-variable        mean_size_ft equal count(Ft)/(c_sums[12]+(c_sums[12]==0))
+variable        mean_size_qt equal count(Qt)/(c_sums[10]+(c_sums[10]==0))    # Qt per cluster with Qt
+variable        mean_size_ft equal count(Ft)/(c_sums[11]+(c_sums[11]==0))
 variable        largest_qt equal max(c_cqt)                                  # most Qt in one cluster
 variable        largest_ft equal max(c_cft)
-variable        n_large equal round(c_sums[5])
-variable        f_mono equal c_sums[6]/count(all)
-variable        f_small equal c_sums[7]/count(all)
-variable        f_medium equal c_sums[8]/count(all)
-variable        f_large equal c_sums[9]/count(all)
-variable        f_vlarge equal c_sums[10]/count(all)
+variable        f_mono equal c_sums[5]/count(all)
+variable        f_small equal c_sums[6]/count(all)
+variable        f_medium equal c_sums[7]/count(all)
+variable        f_large equal c_sums[8]/count(all)
+variable        f_vlarge equal c_sums[9]/count(all)
 
 # bond lengths (stability check)
 compute         blen all bond/local dist
@@ -146,7 +144,7 @@ compute         pvir all pressure NULL virial
 # ---------------------------------------------------------------- 8. thermo output (log.lammps, YAML)
 # ke, temp and etotal are omitted on purpose: velocities are not physical in fix brownian
 thermo_style    custom step pe evdwl ebond c_pvir bonds &
-                v_n_qt_bound v_n_ft_bound v_frac_bound v_n_clusters v_mean_size v_largest v_n_large &
+                v_n_qt_bound v_n_ft_bound v_frac_bound v_n_clusters v_mean_size v_largest &
                 v_mean_size_qt v_mean_size_ft v_largest_qt v_largest_ft &
                 v_f_mono v_f_small v_f_medium v_f_large v_f_vlarge &
                 v_deg_qt_mean v_deg_ft_mean v_deg_qt_max v_deg_ft_max v_bond_mean v_bond_max &
@@ -199,7 +197,7 @@ if "{{bond_break}} == random" then &
 variable        nb_prev equal 0
 variable        n_broken equal v_nb_prev+f_unbind[2]
 thermo_style    custom step pe evdwl ebond c_pvir bonds &
-                v_n_qt_bound v_n_ft_bound v_frac_bound v_n_clusters v_mean_size v_largest v_n_large &
+                v_n_qt_bound v_n_ft_bound v_frac_bound v_n_clusters v_mean_size v_largest &
                 v_mean_size_qt v_mean_size_ft v_largest_qt v_largest_ft &
                 v_f_mono v_f_small v_f_medium v_f_large v_f_vlarge &
                 v_deg_qt_mean v_deg_ft_mean v_deg_qt_max v_deg_ft_max v_bond_mean v_bond_max &

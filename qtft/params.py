@@ -109,7 +109,6 @@ class Params:
     # --- output and in-run analysis ------------------------------------------
     output_every: int = 1000         # thermo/analysis in log.lammps [steps]
     traj_every: int = 1000           # traj.dump, bonds.dump, rdf, histograms [steps]
-    large_cluster_min: int = 5       # "large cluster" = at least this many particles
     rdf_bins: int = 200
     rdf_cutoff: float | None = None  # [nm]; None -> 3 (r_Qt + r_Ft)
 

@@ -172,7 +172,6 @@ counter restarts at 0 for the production, and every segment repeats the last ste
 | `v_mean_size`, `v_largest` | mean and largest cluster size (particles) |
 | `v_mean_size_qt`, `v_mean_size_ft` | Qt (Ft) per cluster: number of Qt (Ft) / number of clusters with at least one Qt (Ft); a free particle is a cluster of 1 |
 | `v_largest_qt`, `v_largest_ft` | most Qt (Ft) in one cluster (not necessarily the overall largest cluster) |
-| `v_n_large` | clusters with ≥ `large_cluster_min` particles |
 | `v_ca`, `v_f` | calcium (µM) and calmodulin loading f (production only) |
 | `v_k_on_s`, `v_k_off_s` | binding rate per Qt–Ft pair in contact and unbinding rate per bond (1/s; production only) |
 | `v_n_broken` | bonds broken since the production start (production only) |

@@ -80,7 +80,6 @@ def template_values(p: Params, replica: int, seeds: dict) -> dict:
         "temperature": p.temperature,
         "gamma_qt": p.gamma_qt, "gamma_ft": p.gamma_ft,
         "radius_qt": p.radius_qt, "radius_ft": p.radius_ft,
-        "large_cluster_min": p.large_cluster_min,
         "size_small": small, "size_medium": medium, "size_large": large,
         "output_every": p.output_every,
         "traj_every": p.traj_every,
