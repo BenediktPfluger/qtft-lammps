@@ -236,11 +236,11 @@ Everything here lives in `<run>/analysis/`. It is written by `ensemble_stats()` 
 
 | File | Content | Written by |
 |---|---|---|
-| `agglomerates_above_size.csv` | number of agglomerates with ≥ n particles over time, for several n (cached) | `make_report()`, `compare_report()` |
-| `agglomerates_above_size_qt.csv`, `_ft.csv` | the same with the size counted in Qt or in Ft only (cached) | `make_report()` |
+| `agglomerates_above_size.csv` | number of agglomerates with ≥ n particles over time, for several n (cached) | `make_report()`, `compare_report()`, `sweep_report()` |
+| `agglomerates_above_size_qt.csv`, `_ft.csv` | the same with the size counted in Qt or in Ft only (cached) | `make_report()`, `compare_report()`, `sweep_report()` |
 | `cluster_sizes.csv` | per `traj.dump` frame, mean and SD over replicas and the value of every replica (`<replica>:<measure>`): mean size over the bound particles (clusters of ≥ 2), weight average with the free particles, weight average over the bound particles, each for all particles, Qt and Ft (cached; read in the same pass as the agglomerate counts) | `make_report()`, `compare_report()`, `sweep_report()` |
-| `agglomerates_influx_end.csv` | every agglomerate of ≥ 3 particles at the end of the influx, with size, composition and volume | `make_report()` |
-| `structure_timeseries.csv` | per analysed frame, mean and SD over replicas: Rg, Rg/Rg_ideal, nearest-neighbour distances between and within clusters, Qt fraction per cluster | `make_report()` (OVITO) |
+| `agglomerates_influx_end.csv` | every agglomerate of ≥ 3 particles at the end of the influx, with size, composition and volume | `make_report()`; `compare_report()`, `sweep_report()` if missing |
+| `structure_timeseries.csv` | per analysed frame, mean and SD over replicas: Rg, Rg/Rg_ideal, nearest-neighbour distances between and within clusters, Qt fraction per cluster | `make_report()` (OVITO); `compare_report()`, `sweep_report()` if missing |
 | `structure_per_replica.csv` | the same per replica | `make_report()` (OVITO) |
 | `clusters_final.csv` | every cluster of the last frame: size, Qt and Ft count, bonds, Rg, ideal Rg (sphere of the particle volumes at packing 0.64), centre | `make_report()` (OVITO) |
 
@@ -259,7 +259,7 @@ Everything here lives in `<run>/analysis/`. It is written by `ensemble_stats()` 
 
 | File | Content | Written by |
 |---|---|---|
-| `bond_rates.csv` | bonds formed and broken per second, and the apparent association rate constant k_a = formed per second · V / (N_Qt N_Ft) in 1/(M s), over time; mean and SD over replicas | `make_report()`, `bond_rates()` |
+| `bond_rates.csv` | bonds formed and broken per second, and the apparent association rate constant k_a = formed per second · V / (N_Qt N_Ft) in 1/(M s), over time; mean and SD over replicas | `make_report()`, `compare_report()`, `sweep_report()`, `bond_rates()` |
 | `binding_rate.csv` | k_a measured from the start of the bond curve, and predicted by Collins–Kimball from the Qt–Ft contact pairs at the influx start; only with a calcium step (`ca_rise_s = 0`) | `make_report()`, `binding_rate()` |
 
 - `bond_rates.csv`: columns `time_ms` (bin centre), `formed_per_s`, `broken_per_s`, `k_a_per_M_s`, each as
@@ -272,8 +272,8 @@ Everything here lives in `<run>/analysis/`. It is written by `ensemble_stats()` 
 
 | File | Content | Written by |
 |---|---|---|
-| `overlap_timeseries.csv` | interpenetration statistics per pair family and frame, pooled over replicas; with walls also `Qt-wall` and `Ft-wall` (spheres beyond a box face) | `make_report()`, `overlap_run()` |
-| `overlap_final.csv` | the same, pooled over the last frames | `make_report()`, `overlap_run()` |
+| `overlap_timeseries.csv` | interpenetration statistics per pair family and frame, pooled over replicas; with walls also `Qt-wall` and `Ft-wall` (spheres beyond a box face) | `make_report()`, `overlap_run()`; `compare_report()`, `sweep_report()` if missing |
+| `overlap_final.csv` | the same, pooled over the last frames | `make_report()`, `overlap_run()`; `compare_report()`, `sweep_report()` if missing |
 
 The depth columns describe the overlapping pairs only: `mean depth overlapping [nm]` is the mean over all
 overlapping pairs of the pooled frames (weighted by their number), `p95 depth [nm]` the mean of the per-frame
@@ -288,10 +288,10 @@ files are cached.
 
 | File | Content | Written by |
 |---|---|---|
-| `qt_nn_distances.csv` | nearest-neighbour distances: `replica, frame, step, time_s, set, distance_nm` | `make_report()`, `qt_spatial_run()` |
-| `qt_pair_correlation.csv` | Qt–Qt g(r) of all Qt at the end of the influx: `r_nm, g_<replica>, g_mean` | `make_report()`, `qt_spatial_run()` |
-| `qt_clark_evans.csv` | Clark–Evans index of all Qt per replica and frame: `replica, frame, step, time_s, n_qt, density_per_um3, mean_nn_nm, expected_nn_nm, R` | `make_report()`, `qt_spatial_run()` |
-| `qt_ripley_l.csv` | Ripley's L(r) − r of all Qt per replica and frame: `replica, frame, r_nm, L_minus_r` | `make_report()`, `qt_spatial_run()` |
+| `qt_nn_distances.csv` | nearest-neighbour distances: `replica, frame, step, time_s, set, distance_nm` | `make_report()`, `compare_report()`, `sweep_report()`, `qt_spatial_run()` |
+| `qt_pair_correlation.csv` | Qt–Qt g(r) of all Qt at the end of the influx: `r_nm, g_<replica>, g_mean` | `make_report()`, `compare_report()`, `sweep_report()`, `qt_spatial_run()` |
+| `qt_clark_evans.csv` | Clark–Evans index of all Qt per replica and frame: `replica, frame, step, time_s, n_qt, density_per_um3, mean_nn_nm, expected_nn_nm, R` | `make_report()`, `compare_report()`, `sweep_report()`, `qt_spatial_run()` |
+| `qt_ripley_l.csv` | Ripley's L(r) − r of all Qt per replica and frame: `replica, frame, r_nm, L_minus_r` | `make_report()`, `compare_report()`, `sweep_report()`, `qt_spatial_run()` |
 
 - `frame`: `first` or `influx_end`. `set` in `qt_nn_distances.csv`: `all` (every Qt to the nearest other Qt,
   both frames) or `intra` (every Qt in an agglomerate with ≥ 2 Qt to the nearest Qt of the same agglomerate,
@@ -322,7 +322,9 @@ order of section 6.
 
 ## 6. Figures
 
-`make_report()` writes every figure to `<run>/analysis/figures/<figure>/`:
+`make_report()` writes every figure to `<run>/analysis/figures/<figure>/`; `compare_report()` and
+`sweep_report()` write the same figures, in the same order and with the same panels, for several runs (see
+*Comparison of runs* below):
 
 - the whole figure as `<figure>.pdf`, `.svg` (editable text) and `.png` (300 dpi);
 - for figures with several panels, also every panel alone (89 mm wide) as `<panel>.pdf/.svg/.png`, named after
@@ -368,42 +370,11 @@ sweep: one colour per run, legend below). Bonds and fraction bound are in `calci
 11. **Rg / Rg,ideal**, from the structure analysis.
 12. **Qt fraction**: Qt fraction per agglomerate, from the structure analysis; dashed line at 0.5.
 
-### `agglomerate_distributions` (1 × 3)
+### `overlap` (1 panel)
 
-Distributions at the end of the influx, agglomerates of ≥ 3 particles, log bins, counts per replica (from
-`agglomerates_influx_end.csv`). Shown in analysis section 3.
-
-1. **agglomerate size at end of influx**: particles per agglomerate.
-2. **solid volume at end of influx**: union of the particle spheres (µm³).
-3. **envelope volume at end of influx**: closing with the ellipsoidal probe (µm³), comparable to confocal
-   volumes.
-
-### `agglomerates_above_size` (4 × 2, 120 mm wide)
-
-Number of agglomerates above a size threshold over time, one line per threshold. Left column: in the box
-(`number`); right column: per 1000 µm³ (`density`). From `agglomerates_above_size*.csv`. Shown in analysis
-section 3.
-
-1. **all particles, number** and 2. **all particles, density**: agglomerates with ≥ n particles.
-3. **Qt, number** and 4. **Qt, density**: agglomerates with ≥ n Qt.
-5. **Ft, number** and 6. **Ft, density**: agglomerates with ≥ n Ft.
-7. **≥ 15 Qt and ≥ 20 Ft, number** and 8. **density**: one Qt threshold (green) and one Ft threshold (red)
-   together; the pair is set with `n_qt_ft`.
-
-### `fibsem_comparison` (2 × 2, Qt only)
-
-Metrics that FIB-SEM can measure, since it resolves the Qt but not the ferritin (from the `qt_*.csv` files).
-Shown in analysis section 4.
-
-1. **Qt nearest neighbour in agglomerates**: distance from every Qt in an agglomerate with ≥ 2 Qt to the nearest
-   Qt of the same agglomerate, at the end of the influx; histogram (1 nm bins), kernel density estimate and its
-   peak "r = … nm".
-2. **Qt pair correlation**: g(r) of all Qt at the end of the influx up to 500 nm, log scale, with
-   its peak beyond the Qt contact distance 2 r_Qt (the highest value of g there).
-3. **Qt clustering (Clark–Evans)**: fraction of Qt with another Qt within d, in the first frame and at the end
-   of the influx, with the curve for random points and the Clark–Evans R and mean distance ⟨d⟩ in the legend.
-4. **Qt clustering scale (Ripley's L)**: L(r) − r of all Qt in the first frame and at the end of the influx, up
-   to 500 nm, with the maximum and its position in the legend.
+Number of overlapping pairs per pair family (Qt–Qt, Ft–Ft, Qt–Ft; with walls also Qt–wall and Ft–wall) over
+time, log scale (from `overlap_timeseries.csv`). Several runs: one colour per run (legend below), one line
+style per family (legend in the panel). Not shown in the notebook; in `report.pdf`.
 
 ### `cluster_sizes` (4 × 2, 120 mm wide)
 
@@ -420,23 +391,69 @@ notebook; in `report.pdf`.
 4. **weight-average size (bound particles)**: the same over the bound particles only, independent of
    how many particles are free.
 
-### `overlap` (1 panel)
+With several runs two figures, `cluster_sizes` and `cluster_sizes_n` (/ N), each 4 × 3 (183 mm): the four
+measures as rows, columns all particles, Qt and Ft, one colour per run.
 
-Number of overlapping pairs per pair family (Qt–Qt, Ft–Ft, Qt–Ft; with walls also Qt–wall and Ft–wall) over
-time, log scale (from `overlap_timeseries.csv`). Not shown in the notebook; in `report.pdf`.
+### `agglomerates_above_size` (4 × 2, 120 mm wide)
+
+Number of agglomerates above a size threshold over time, one line per threshold. Left column: in the box
+(`number`); right column: per 1000 µm³ (`density`). From `agglomerates_above_size*.csv`. Shown in analysis
+section 3.
+
+1. **all particles, number** and 2. **all particles, density**: agglomerates with ≥ n particles.
+3. **Qt, number** and 4. **Qt, density**: agglomerates with ≥ n Qt.
+5. **Ft, number** and 6. **Ft, density**: agglomerates with ≥ n Ft.
+7. **≥ 15 Qt and ≥ 20 Ft, number** and 8. **density**: one Qt threshold (green) and one Ft threshold (red)
+   together; the pair is set with `n_qt_ft`.
+
+With several runs (comparison, sweep) the same panels: one colour per run (legend below the figure), one line
+style per threshold (at most 6 per species, style legend in each panel), and in row 4 Qt solid and Ft dashed.
+
+### `agglomerate_distributions` (1 × 3)
+
+Distributions at the end of the influx, agglomerates of ≥ 3 particles, log bins, counts per replica (from
+`agglomerates_influx_end.csv`). Shown in analysis section 3.
+
+1. **agglomerate size at end of influx**: particles per agglomerate.
+2. **solid volume at end of influx**: union of the particle spheres (µm³).
+3. **envelope volume at end of influx**: closing with the ellipsoidal probe (µm³), comparable to confocal
+   volumes.
+
+With several runs the same panels as outlines on common bins, one colour per run (legend below the figure),
+counted per 1000 µm³ of box volume instead of per replica, so runs with different boxes compare.
+
+### `fibsem_comparison` (2 × 2, Qt only)
+
+Metrics that FIB-SEM can measure, since it resolves the Qt but not the ferritin (from the `qt_*.csv` files).
+Shown in analysis section 4.
+
+1. **Qt nearest neighbour in agglomerates**: distance from every Qt in an agglomerate with ≥ 2 Qt to the nearest
+   Qt of the same agglomerate, at the end of the influx; histogram (1 nm bins), kernel density estimate and its
+   peak "r = … nm".
+2. **Qt pair correlation**: g(r) of all Qt at the end of the influx up to 500 nm, log scale, with
+   its peak beyond the Qt contact distance 2 r_Qt (the highest value of g there).
+3. **Qt clustering (Clark–Evans)**: fraction of Qt with another Qt within d, in the first frame and at the end
+   of the influx, with the curve for random points and the Clark–Evans R and mean distance ⟨d⟩ in the legend.
+4. **Qt clustering scale (Ripley's L)**: L(r) − r of all Qt in the first frame and at the end of the influx, up
+   to 500 nm, with the maximum and its position in the legend.
+
+With several runs (`fig_fibsem_comparison(runs)`) the same panels with one line per run (one colour each, legend
+below the figure), at the end of the influx only: panel 1 shows the density estimate without histogram, the
+peaks of panels 1 and 2 are dotted lines in the run colour, panel 3 lists R and ⟨d⟩ of every run in its colour
+(random-point curves dashed), panel 4 has no maximum in the legend.
 
 ### `binding_rate` (1 panel)
 
-Only with an influx and a calcium step (`ca_rise_s = 0`). Bonds formed since the influx start, with the fitted
-k_a and the Collins–Kimball prediction from the counted contact pairs (from `binding_rate.csv`). Shown in
+One run only, with an influx and a calcium step (`ca_rise_s = 0`). Bonds formed since the influx start, with the
+fitted k_a and the Collins–Kimball prediction from the counted contact pairs (from `binding_rate.csv`). Shown in
 analysis section 3.
 
 ### Figures drawn on request
 
 Not saved by `make_report()`; draw them in the notebook (see the note in analysis section 3):
 
-- `fig_agglomerates_above_size_total(runs, …)`: the total panel of `agglomerates_above_size` alone, also for
-  several runs.
+- `fig_agglomerates_above_size_total(runs, …)`: the total panel of `agglomerates_above_size` alone (in the box or,
+  with `density=True`, per 1000 µm³), also for several runs.
 - `fig_bond_rates(run, rates=…)`: the two rate panels alone (also for a list of runs), for example with coarser bins
   (`rates=bond_rates(run_dir, bin_s=…)`).
 - `quicklook(run_dir)` (control, section 5): a quick overview of a running or finished run, not saved.
@@ -447,18 +464,19 @@ Analysis section 5. Writes to the chosen `out_dir`:
 
 | File | Content |
 |---|---|
-| `figures/calcium/` | the `calcium` figure of one run (above, 3 × 2), one colour per run, every panel also alone |
-| `figures/overview/` | the `overview` of one run (above, 4 × 3, the size-categories slot empty), one colour per run, every panel also alone |
-| `figures/cluster_sizes/`, `figures/cluster_sizes_n/` | the four measures of `cluster_sizes` (above) as rows, columns all particles, Qt, Ft (4 × 3, 183 mm), one colour per run; `cluster_sizes_n` the same divided by N (N_Qt, N_Ft) |
-| `figures/agglomerates_above_size_total_density/` | agglomerates with ≥ n particles per 1000 µm³ (so runs with different boxes compare); colour per run, line style per threshold (at most 6) |
+| `figures/<figure>/` | the figures of one run (section 6) in the same order and with the same panels, one colour per run (legend below), every panel also alone: `calcium`, `overview` (the size-categories slot empty), `overlap`, `cluster_sizes` and `cluster_sizes_n` (4 × 3 each, see `cluster_sizes`), `agglomerates_above_size`, `agglomerate_distributions` (per 1000 µm³), `fibsem_comparison`; no `binding_rate` |
 | `comparison_table.csv`, `.tex` | the final-state table of `summary_table` (same rows) for every run, side by side: CSV with the columns `<run> mean` and `<run> sd`, LaTeX as mean ± SD; a label used by several runs gets (1), (2), … |
-| `report.pdf` | cover pages (every run with number, label, folder, creation date and git commit; the comparison table; all simulation parameters, one column per run), then the figures above (calcium, overview, cluster sizes, agglomerates above size) |
+| `report.pdf` | cover pages (every run with number, label, folder, creation date and git commit; the comparison table; all simulation parameters, one column per run), then the figures above in the order of section 6 |
 
 The legends name each run by the parameters that differ, in short form (`Qt 1280, Ft 5120, L 4000`; the short
 names are in `SHORT_NAMES` in `qtft/ensemble.py`). `comparison_table.*` uses the full form (`qt_per_um3=20.0, …`).
-The phase lines are drawn only if all runs have the same phase times. Runs without
-`analysis/structure_timeseries.csv` first get the structure analysis (`structure_run`, every `every`-th frame,
-default 10; `structure_analysis=False` skips it, the Rg and Qt fraction panels then stay empty).
+The phase lines are drawn only if all runs have the same phase times. Every run first gets the analyses it is
+missing, saved in its own `analysis/`: the structure analysis (`structure_run`) and the overlap analysis
+(`overlap_run`), each every `every`-th frame (default 10) and only without `structure_timeseries.csv` or
+`overlap_timeseries.csv` (`structure_analysis=False` or `overlap_analysis=False` skips it, the panels then stay
+empty), the agglomerates at the end of the influx (`agglomerates_influx_end.csv`), the bond rates
+(`bond_rates.csv`) and the Qt spatial statistics (`qt_*.csv`, cached). `traces` and the size thresholds
+(`n_min`, `n_min_qt`, `n_min_ft`, `n_qt_ft`) work as in `make_report()`; `sweep_report()` takes the same options.
 
 ---
 
@@ -549,9 +567,9 @@ launcher files belong to the whole sweep.
 
 `sweep_report(sweep, ys=…)` plots the results in `ys` (default: peak bonds, peak largest cluster, half-times of
 binding and of deagglomeration, peak weight-average size (bound particles), peak weight-average size / N; "final"
-values are those after the pump-out). Like `compare_report`, it first runs the structure analysis for every run
-without it (`structure_analysis=True`, `every=10`). `fig_sweep(results, y, out_dir=…)` draws one such plot alone and
-saves it to `<out_dir>/sweep_<y>/`.
+values are those after the pump-out). Like `compare_report`, it first runs the analyses every run is missing
+(with the same options: `structure_analysis`, `overlap_analysis`, `every`, `traces`, size thresholds).
+`fig_sweep(results, y, out_dir=…)` draws one such plot alone and saves it to `<out_dir>/sweep_<y>/`.
 
 ### Benchmark `runs/benchmark/`
 
