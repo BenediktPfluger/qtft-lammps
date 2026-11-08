@@ -22,16 +22,12 @@ import numpy as np
 import pandas as pd
 
 from .build import build_run, git_info, write_job
-from .ensemble import cluster_sizes, ensemble_stats
+from .ensemble import ensemble_stats, size_peaks
 from .params import EXECUTION_SETTINGS, Params, box_label, data_path
 RESULTS = ["final_frac_bound", "final_Bonds", "final_largest_frac", "final_mean_size",
            "t_half_bonds_ms", "t_half_qt_ms", "t_half_ft_ms", "t_percolation_ms",
            "bonds_peak", "largest_peak", "t_half_unbind_bonds_ms", "t_half_unbind_largest_ms",
            "mean_bound_peak", "weight_peak", "weight_bound_peak", "weight_frac_peak"]
-# results from cluster_sizes (all particles): peak per replica; weight_frac = weight average with the free
-# particles / N
-SIZE_PEAKS = {"mean_bound_peak": "mean_bound", "weight_peak": "weight", "weight_bound_peak": "weight_bound",
-              "weight_frac_peak": "weight"}
 
 
 def _value_label(value) -> str:
@@ -110,22 +106,10 @@ def sweep_runs(sweep_dir: str | Path) -> list[Path]:
     return [sweep_dir / r["label"] for r in load_sweep(sweep_dir)["runs"]]
 
 
-def _size_peaks(run_dir: Path, replicas: list[str]) -> dict[str, tuple[float, float]]:
-    """Mean and SD over the replicas of the peak of every SIZE_PEAKS measure (from cluster_sizes)."""
-    d = cluster_sizes(run_dir)
-    p = Params.load(run_dir / "params.json")
-    out = {}
-    for key, measure in SIZE_PEAKS.items():
-        scale = 1 / (p.n_qt + p.n_ft) if key == "weight_frac_peak" else 1.0
-        peaks = pd.Series([d[f"{rep}:{measure}"].max() * scale for rep in replicas])
-        out[key] = (peaks.mean(), peaks.std(ddof=1))
-    return out
-
-
 def sweep_results(sweep_dir: str | Path, save: bool = True) -> pd.DataFrame:
     """One row per variant: the swept parameters, the number of finished replicas and the mean and SD
     over them of the final-state values (fraction bound, bonds, largest cluster, mean size, half-times),
-    of the peak cluster sizes (SIZE_PEAKS, from cluster_sizes: traj.dump) and the number of percolated
+    of the peak cluster sizes (ensemble.SIZE_PEAKS, from cluster_sizes: traj.dump) and the number of percolated
     replicas. Saved to <sweep>/sweep_results.csv."""
     sweep_dir = Path(sweep_dir).expanduser()
     record = load_sweep(sweep_dir)
@@ -140,7 +124,7 @@ def sweep_results(sweep_dir: str | Path, save: bool = True) -> pd.DataFrame:
             continue
         final = stats["final"]
         row["replicas done"] = len(stats["replicas"])
-        peaks = _size_peaks(run_dir, stats["replicas"])
+        peaks = size_peaks(run_dir, stats["replicas"])
         for key in RESULTS:
             if key in peaks:
                 row[key], row[f"{key} sd"] = peaks[key]

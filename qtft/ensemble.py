@@ -651,14 +651,96 @@ def differing_labels(run_dirs, short: bool = False) -> tuple[list[str], list[str
     return labels, differing
 
 
-def compare(run_dirs: list[str | Path]) -> pd.DataFrame:
-    """Side-by-side final-state table (mean +- SD) of several runs, with the parameters that differ."""
+def _unique(labels: list[str]) -> list[str]:
+    """Labels made unique: a label used more than once gets " (1)", " (2)", ... in run order."""
+    seen = {}
+    counts = {label: labels.count(label) for label in labels}
+    out = []
+    for label in labels:
+        seen[label] = seen.get(label, 0) + 1
+        out.append(f"{label} ({seen[label]})" if counts[label] > 1 else label)
+    return out
+
+
+# results from cluster_sizes (all particles): peak per replica, then mean and SD; weight_frac = weight average
+# with the free particles / N
+SIZE_PEAKS = {"mean_bound_peak": "mean_bound", "weight_peak": "weight", "weight_bound_peak": "weight_bound",
+              "weight_frac_peak": "weight"}
+
+
+def size_peaks(run_dir: str | Path, replicas: list[str]) -> dict[str, tuple[float, float]]:
+    """Mean and SD over `replicas` of the peak of every SIZE_PEAKS measure (from cluster_sizes)."""
+    run_dir = Path(run_dir).expanduser()
+    d = cluster_sizes(run_dir)
+    p = Params.load(run_dir / "params.json")
+    out = {}
+    for key, measure in SIZE_PEAKS.items():
+        scale = 1 / (p.n_qt + p.n_ft) if key == "weight_frac_peak" else 1.0
+        peaks = pd.Series([d[f"{rep}:{measure}"].max() * scale for rep in replicas])
+        out[key] = (peaks.mean(), peaks.std(ddof=1))
+    return out
+
+
+# rows of final_table: (metric, key, factor). Keys of ensemble_stats "final", of SIZE_PEAKS, or "structure:<column>"
+# (last analysed frame of structure_timeseries.csv). "final" = at the end of the whole protocol (after the
+# pump-out), "peak" = maximum over the run.
+FINAL_ROWS = [
+    ("bonds (final)", "final_Bonds", 1), ("bonds (peak)", "bonds_peak", 1),
+    ("fraction bound (final)", "final_frac_bound", 1), ("fraction of Qt bound (final)", "final_frac_bound_qt", 1),
+    ("fraction of Ft bound (final)", "final_frac_bound_ft", 1),
+    ("clusters incl. free particles (final)", "final_n_clusters", 1),
+    ("mean cluster size (final)", "final_mean_size", 1),
+    ("largest cluster, particles (final)", "final_largest", 1),
+    ("largest cluster, % of all (final)", "final_largest_frac", 100),
+    ("largest cluster, particles (peak)", "largest_peak", 1),
+    ("mean size (bound particles) (peak)", "mean_bound_peak", 1), ("weight-average size (peak)", "weight_peak", 1),
+    ("weight-average size (bound particles) (peak)", "weight_bound_peak", 1),
+    ("weight-average size / N (peak)", "weight_frac_peak", 1),
+    ("half-time of bonds (ms)", "t_half_bonds_ms", 1), ("half-time of Qt bound (ms)", "t_half_qt_ms", 1),
+    ("half-time of Ft bound (ms)", "t_half_ft_ms", 1),
+    ("deagglomeration half-time, bonds (ms)", "t_half_unbind_bonds_ms", 1),
+    ("deagglomeration half-time, largest cluster (ms)", "t_half_unbind_largest_ms", 1),
+    ("percolated replicas (fraction)", "percolated", 1), ("percolation time (ms)", "t_percolation_ms", 1),
+    ("mean Rg (nm, final)", "structure:rg_mean", 1), ("Rg / Rg,ideal (final)", "structure:rg_ratio_mean", 1),
+    ("Qt fraction per cluster (final)", "structure:qt_frac_mean", 1),
+]
+
+
+def final_table(run_dirs: list[str | Path], labels: list[str] | None = None) -> pd.DataFrame:
+    """Final-state table of one or several runs, the same rows (FINAL_ROWS) in every report: one row per metric,
+    columns (run label, "mean" / "sd") over the replicas; NaN where a value is missing (no structure analysis,
+    no pump-out, ...). Labels: the parameters that differ (differing_labels), made unique; one run: its name.
+    attrs["differing parameters"]: the names of those parameters."""
     run_dirs = [Path(r).expanduser() for r in run_dirs]
-    labels, differing = differing_labels(run_dirs)
+    found, differing = differing_labels(run_dirs)
+    labels = _unique(list(labels or found))
     cols = {}
     for r, label in zip(run_dirs, labels):
-        final = ensemble_stats_cached(r)["final"]
-        cols[label] = final.apply(lambda row: f"{row['mean']:.4g} ± {row['sd']:.2g}", axis=1)
-    table = pd.DataFrame(cols)
+        stats = ensemble_stats_cached(r)
+        values = {k: (row["mean"], row["sd"]) for k, row in stats["final"].iterrows()}
+        values |= size_peaks(r, stats["replicas"])
+        structure = r / "analysis" / "structure_timeseries.csv"
+        if structure.exists():
+            last = pd.read_csv(structure).iloc[-1]
+            values |= {f"structure:{c[:-len('_mean')]}": (last[c], last[c[:-len("_mean")] + "_sd"])
+                       for c in last.index if c.endswith("_mean") and c[:-len("_mean")] + "_sd" in last.index}
+        nan = (np.nan, np.nan)
+        cols[(label, "mean")] = [values.get(key, nan)[0] * f for _, key, f in FINAL_ROWS]
+        cols[(label, "sd")] = [values.get(key, nan)[1] * f for _, key, f in FINAL_ROWS]
+    table = pd.DataFrame(cols, index=pd.Index([m for m, _, _ in FINAL_ROWS], name="metric"))
     table.attrs["differing parameters"] = differing
     return table
+
+
+def format_table(table: pd.DataFrame) -> pd.DataFrame:
+    """final_table as text, "mean ± SD" (4 / 2 significant digits), one column per run."""
+    out = pd.DataFrame({label: [f"{m:.4g} ± {s:.2g}" for m, s in zip(table[(label, "mean")], table[(label, "sd")])]
+                        for label in dict.fromkeys(table.columns.get_level_values(0))}, index=table.index)
+    out.attrs = dict(table.attrs)
+    return out
+
+
+def compare(run_dirs: list[str | Path]) -> pd.DataFrame:
+    """Side-by-side final-state table of several runs (final_table as "mean ± SD"), columns labelled by the
+    parameters that differ."""
+    return format_table(final_table(run_dirs))

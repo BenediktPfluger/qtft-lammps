@@ -308,7 +308,7 @@ files are cached.
 
 | File | Content | Written by |
 |---|---|---|
-| `summary_table.csv`, `.tex` | final-state table: bonds, clusters, sizes, fraction bound, half-time, Rg, Qt fraction | `make_report()` |
+| `summary_table.csv`, `.tex` | final-state table (`final_table`, the same rows in every report): bonds, fraction bound (all, Qt, Ft), clusters, mean and largest size, peak bonds, largest and cluster sizes, half-times of binding and of deagglomeration, percolation, Rg, Rg / Rg,ideal and Qt fraction of the last analysed frame; columns `mean`, `sd` over replicas, NaN where a value is missing | `make_report()` |
 | `bonds_timeseries.csv` | bonds over time: step, time (µs, ms), mean, SD | `make_report()` |
 | `report.json` | settings of the report (`every`, replicas) | `make_report()` |
 | `report.pdf` | cover pages and every figure of section 6, one per page (see below) | `make_report()` |
@@ -336,7 +336,9 @@ The figures appear in this order in `report.pdf`.
 
 ### `calcium` (3 × 2)
 
-The calcium protocol and the binding it drives. Shown in analysis section 3.
+The calcium protocol and the binding it drives, for one run or several (comparison, sweep: one colour per run,
+legend below; the two quantities of a panel as solid and dashed lines, their legend in the panel). Shown in
+analysis section 3.
 
 1. **calcium and loading**: calcium (µM) and calmodulin loading f (second axis).
 2. **rate constants**: k_on per Qt–Ft contact pair and k_off per bond (1/s, log scale).
@@ -347,21 +349,24 @@ The calcium protocol and the binding it drives. Shown in analysis section 3.
 
 ### `overview` (4 × 3)
 
-All thermo and structure quantities of one run. Shown in analysis section 3.
+The thermo and structure quantities, the same panels in the same places for one run and for several (comparison,
+sweep: one colour per run, legend below). Bonds and fraction bound are in `calcium`, the mean cluster size in
+`cluster_sizes`. Shown in analysis section 3.
 
 1. **potential energy** (zJ).
 2. **pressure**: virial pressure (Pa).
-3. **bonds**.
-4. **particle counts**: free and bound Qt and Ft.
-5. **agglomerates + free**: number of clusters, free particles included.
-6. **mean cluster size**: all particles, Qt only and Ft only (free particles count as clusters of 1).
-7. **largest agglomerate**: all particles, Qt only and Ft only.
-8. **size categories**: fraction of particles in monomers, small, medium, large and very large clusters
-   (stacked; bounds from the particle number).
-9. **mean Rg** (nm), from the structure analysis.
-10. **Qt fraction**: Qt fraction per agglomerate, from the structure analysis; dashed line at 0.5.
-11. **coordination**: mean bonds per bound Qt and per bound Ft.
-12. **coordination at end of influx**: histogram of bonds per Qt and per Ft (from `coord_*.hist`).
+3. **particle counts**: free and bound Qt and Ft (several runs: one line style each, legend in the panel).
+4. **agglomerates + free**: number of clusters, free particles included.
+5. **largest agglomerate**: all particles, Qt only and Ft only (several runs: all particles).
+6. **largest / N**.
+7. **size categories**: fraction of particles in monomers, small, medium, large and very large clusters
+   (stacked; bounds from the particle number). One run only: with several runs the slot stays empty.
+8. **coordination**: mean bonds per bound Qt and per bound Ft (several runs: Qt solid, Ft dashed).
+9. **coordination at end of influx**: histogram of bonds per Qt and per Ft (from `coord_*.hist`; several runs
+   as steps, Qt solid, Ft dashed).
+10. **mean Rg** (nm), from the structure analysis.
+11. **Rg / Rg,ideal**, from the structure analysis.
+12. **Qt fraction**: Qt fraction per agglomerate, from the structure analysis; dashed line at 0.5.
 
 ### `agglomerate_distributions` (1 × 3)
 
@@ -432,7 +437,7 @@ Not saved by `make_report()`; draw them in the notebook (see the note in analysi
 
 - `fig_agglomerates_above_size_total(runs, …)`: the total panel of `agglomerates_above_size` alone, also for
   several runs.
-- `fig_bond_rates(run, rates=…)`: the two rate panels alone, for example with coarser bins
+- `fig_bond_rates(run, rates=…)`: the two rate panels alone (also for a list of runs), for example with coarser bins
   (`rates=bond_rates(run_dir, bin_s=…)`).
 - `quicklook(run_dir)` (control, section 5): a quick overview of a running or finished run, not saved.
 
@@ -442,11 +447,12 @@ Analysis section 5. Writes to the chosen `out_dir`:
 
 | File | Content |
 |---|---|
-| `figures/comparison/` | 3 × 4: potential energy, pressure, bonds, fraction bound (Qt solid, Ft dashed), agglomerates + free, mean size, largest, largest / N, mean Rg, Rg / Rg,ideal, coordination, Qt fraction; one colour per run, every panel also alone |
+| `figures/calcium/` | the `calcium` figure of one run (above, 3 × 2), one colour per run, every panel also alone |
+| `figures/overview/` | the `overview` of one run (above, 4 × 3, the size-categories slot empty), one colour per run, every panel also alone |
 | `figures/cluster_sizes/`, `figures/cluster_sizes_n/` | the four measures of `cluster_sizes` (above) as rows, columns all particles, Qt, Ft (4 × 3, 183 mm), one colour per run; `cluster_sizes_n` the same divided by N (N_Qt, N_Ft) |
 | `figures/agglomerates_above_size_total_density/` | agglomerates with ≥ n particles per 1000 µm³ (so runs with different boxes compare); colour per run, line style per threshold (at most 6) |
-| `comparison_table.csv`, `.tex` | final-state values (mean ± SD) of every run, side by side |
-| `report.pdf` | cover pages (every run with number, label, folder, creation date and git commit; the comparison table; all simulation parameters, one column per run), then the four figures |
+| `comparison_table.csv`, `.tex` | the final-state table of `summary_table` (same rows) for every run, side by side: CSV with the columns `<run> mean` and `<run> sd`, LaTeX as mean ± SD; a label used by several runs gets (1), (2), … |
+| `report.pdf` | cover pages (every run with number, label, folder, creation date and git commit; the comparison table; all simulation parameters, one column per run), then the figures above (calcium, overview, cluster sizes, agglomerates above size) |
 
 The legends name each run by the parameters that differ, in short form (`Qt 1280, Ft 5120, L 4000`; the short
 names are in `SHORT_NAMES` in `qtft/ensemble.py`). `comparison_table.*` uses the full form (`qt_per_um3=20.0, …`).
@@ -514,7 +520,7 @@ text draws ~10× slower).
   depth behind the outlined region, which would stack many particles: particles whose centre lies inside it in
   depth and whose sphere reaches into it in x and z. Periodic runs show wrapped positions (an agglomerate across
   a face appears on both sides).
-- **Graph:** the average cluster size of the analysis figures (`p_mean_size`): all particles / clusters, Qt per
+- **Graph:** the average cluster size of the analysis figures (thermo `mean_size`, row 1 of `cluster_sizes`): all particles / clusters, Qt per
   cluster with Qt, Ft per cluster with Ft, free particles counted as clusters of 1; from the thermo table
   (`output_every`), so finer than the frames. Right of the magnification: calcium and calmodulin loading f over
   time (`Params.calcium`, `Params.loading`: the formulas of `template.lmp`), which shows why the agglomerates
