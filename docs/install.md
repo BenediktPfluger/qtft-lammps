@@ -203,7 +203,7 @@ The simulation in this repository does not use the GPU.
    loads the result, `lammps_plugins/bond_break_random/bondbreakrandom.so`; `start()` refuses to run
    without it.
 
-4. Run the tests:
+4. Run the tests (only with a local `tests/` folder: the tests are not part of the repository):
 
    ```bash
    pytest -q                    # all tests, including short LAMMPS runs (about 5 min)

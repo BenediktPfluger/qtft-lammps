@@ -27,6 +27,9 @@ runs/
 # Claude Code project instructions (local only)
 CLAUDE.md
 
+# tests (local only)
+tests/
+
 # personal LRZ settings (email for Slurm), see docs/install.md, part B
 lrz_local.json
 
