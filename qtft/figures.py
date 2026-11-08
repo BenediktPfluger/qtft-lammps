@@ -1,4 +1,4 @@
-"""Figures and tables in Nature journal style (handover section 7).
+"""Figures and tables in Nature journal style (every figure and panel: docs/repo_structure.md, section 6).
 
 Every figure is drawn at its final size (89 mm single column, 183 mm double column, <= 170 mm high),
 Arial 7 pt labels / 6 pt ticks, 0.5 pt axes, inward ticks on all sides, 1 pt lines, frameless
@@ -26,7 +26,7 @@ from matplotlib.ticker import MultipleLocator, NullFormatter
 from matplotlib.transforms import offset_copy
 
 from .ensemble import (SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, SIZE_THRESHOLDS_QT_FT, TO_PER_M_S, cluster_sizes,
-                       _agglomerates_above_size_species, _thresholds, agglomerates_above_size, binding_rate,
+                       _agglomerates_above_size_species, _thresholds, _unique, agglomerates_above_size, binding_rate,
                        bond_rates, ensemble_stats, ensemble_stats_cached, final_table)
 from .params import Params
 from .read import read_histo
@@ -120,7 +120,9 @@ def load_run(run_dir: str | Path, label: str | None = None, color: str | None = 
 
 
 def load_runs(run_dirs, labels=None) -> list[RunData]:
-    labels = labels or [None] * len(run_dirs)
+    """load_run of several runs, one colour each; labels (default: the folder names) made unique with (1), (2), ...
+    as in final_table, so every run has its own legend entry."""
+    labels = _unique([lab or Path(r).expanduser().name for r, lab in zip(run_dirs, labels or [None] * len(run_dirs))])
     return [load_run(r, lab, RUN_COLORS[i % len(RUN_COLORS)]) for i, (r, lab) in enumerate(zip(run_dirs, labels))]
 
 
@@ -576,19 +578,20 @@ def _grid(panels, runs, nrows, ncols, width, height, titles=True, traces=False, 
     for ax in axes.flat[len(panels):]:
         ax.set_visible(False)
     if legend_below and len(runs) > 1:
-        handles, labels = _run_handles(axes.flat, runs)
-        fig.legend(handles, labels, loc="outside lower center", ncol=_legend_columns(fig, labels))
+        _run_legend(fig, runs)
     return fig
 
 
-def _run_handles(axes, runs):
-    """Legend handles and labels of the runs, in run order, from the first axes that has a line of each run."""
-    want = [r.label for r in runs]
-    for ax in axes:
-        found = dict(zip(*reversed(ax.get_legend_handles_labels())))
-        if all(label in found for label in want):
-            return [found[label] for label in want], want
-    return [], []
+def _run_handles(runs):
+    """Legend handles and labels of the runs, in run order: a solid line in the colour of each run (independent
+    of which panels have data)."""
+    return [plt.Line2D([], [], color=r.color) for r in runs], [r.label for r in runs]
+
+
+def _run_legend(fig, runs) -> None:
+    """The runs in a legend below the axes of the figure."""
+    handles, labels = _run_handles(runs)
+    fig.legend(handles, labels, loc="outside lower center", ncol=_legend_columns(fig, labels))
 
 
 def _legend_columns(fig, labels) -> int:
@@ -607,12 +610,12 @@ def _single_panels(panels, runs, folder: Path, traces=False):
         if is_time:
             phase_lines(ax, runs)
             _time_axis(ax, t_end)
-        if len(runs) > 1:                          # the runs: in the axes, or below them if the axes have a legend
-            handles, labels = _run_handles([ax], runs)
-            if handles and ax.get_legend() is None:
-                ax.legend(handles, labels)
-            elif handles:
-                fig.legend(handles, labels, loc="outside lower center", ncol=_legend_columns(fig, labels))
+        drawn = {r.label for r in runs} & set(ax.get_legend_handles_labels()[1])     # a line of some run
+        if len(runs) > 1 and drawn:                # the runs: in the axes, or below them if the axes have a legend
+            if ax.get_legend() is None:
+                ax.legend(*_run_handles(runs))
+            else:
+                _run_legend(fig, runs)
         save(fig, folder / _slug(title))
         plt.close(fig)
 
@@ -846,12 +849,14 @@ def _size_panel(measure: str, title: str, species: str | None, per_n: bool):
     return name, draw, True
 
 
-def fig_cluster_sizes(runs: list[RunData], out_dir: Path | None = None, traces=False) -> list:
+def fig_cluster_sizes(runs, out_dir: Path | None = None, traces=False) -> list:
     """Cluster sizes over time (rows SIZE_ROWS: mean size with the free particles, mean size over the bound
-    particles (clusters of >= 2), weight average with the free particles, weight average over the bound particles); /N divides
-    by the particles of the species (all: N, Qt: N_Qt, Ft: N_Ft). One run: one figure cluster_sizes, 4 x 2
-    (absolute | / N, each panel with all, Qt and Ft; 120 mm). Several runs: cluster_sizes and cluster_sizes_n
-    (/ N), each 4 x 3 (columns all, Qt, Ft; a colour per run; 183 mm). Panels also alone in <figure>/."""
+    particles (clusters of >= 2), weight average with the free particles, weight average over the bound
+    particles); /N divides by the particles of the species (all: N, Qt: N_Qt, Ft: N_Ft). One run: one figure
+    cluster_sizes, 4 x 2 (absolute | / N, each panel with all, Qt and Ft; 120 mm). Several runs: cluster_sizes
+    and cluster_sizes_n (/ N), each 4 x 3 (columns all, Qt, Ft; a colour per run; 183 mm). Panels also alone in
+    <figure>/."""
+    runs = _as_runs(runs)
     if len(runs) == 1:
         panels = [_size_panel(m, title, None, per_n) for m, title in SIZE_ROWS for per_n in (False, True)]
         return [_panel_figure("cluster_sizes", panels, runs, out_dir, 4, 2, ONE_HALF, 150 * MM, traces=traces)]
@@ -903,6 +908,21 @@ def _above_size_curve(r: RunData, species: str, n: int, density: bool):
             d[reps].to_numpy().T * scale)
 
 
+def _above_size_thresholds(n_min, n_min_qt, n_min_ft, n_qt_ft) -> tuple[dict, int, int]:
+    """Thresholds of fig_agglomerates_above_size: ({species: thresholds}, n Qt, n Ft of the pair of row 4)."""
+    if len(n_qt_ft) != 2:
+        raise ValueError(f"n_qt_ft must be one pair (>= n Qt, >= n Ft), not {n_qt_ft!r}")
+    n_qt, n_ft = (_thresholds(v)[0] for v in n_qt_ft)
+    return {"all": _thresholds(n_min), "qt": _thresholds(n_min_qt), "ft": _thresholds(n_min_ft)}, n_qt, n_ft
+
+
+def _count_above_size(run_dir: Path, ns: dict, n_qt: int, n_ft: int) -> None:
+    """Agglomerate counts of every threshold (and the pair) and cluster_sizes of a run in one pass over its
+    traj.dump frames, into the caches in <run>/analysis/ (nothing read when they are up to date)."""
+    _agglomerates_above_size_species(run_dir, {"all": ns["all"], "qt": ns["qt"] + [n_qt], "ft": ns["ft"] + [n_ft]},
+                                     sizes=True)
+
+
 def fig_agglomerates_above_size(runs, out_dir: Path | None = None, traces=False,
                                 n_min=SIZE_THRESHOLDS, n_min_qt=SIZE_THRESHOLDS_QT, n_min_ft=SIZE_THRESHOLDS,
                                 n_qt_ft=SIZE_THRESHOLDS_QT_FT):
@@ -913,16 +933,12 @@ def fig_agglomerates_above_size(runs, out_dir: Path | None = None, traces=False,
     row 4 Qt solid and Ft dashed. Saved as agglomerates_above_size.*; panels also alone in
     agglomerates_above_size/."""
     runs = _as_runs(runs)
-    if len(n_qt_ft) != 2:
-        raise ValueError(f"n_qt_ft must be one pair (>= n Qt, >= n Ft), not {n_qt_ft!r}")
-    n_qt, n_ft = (_thresholds(v)[0] for v in n_qt_ft)
-    ns = {"all": _thresholds(n_min), "qt": _thresholds(n_min_qt), "ft": _thresholds(n_min_ft)}
+    ns, n_qt, n_ft = _above_size_thresholds(n_min, n_min_qt, n_min_ft, n_qt_ft)
     if len(runs) > 1 and max(map(len, ns.values())) > len(THRESHOLD_STYLES):
         raise ValueError(f"several runs show at most {len(THRESHOLD_STYLES)} thresholds per species (one line "
                          f"style each), not {max(map(len, ns.values()))}")
-    for r in runs:                    # one pass over the dumps of each run (cached), also cluster_sizes
-        _agglomerates_above_size_species(r.run_dir, {"all": ns["all"], "qt": ns["qt"] + [n_qt],
-                                                     "ft": ns["ft"] + [n_ft]}, sizes=True)
+    for r in runs:
+        _count_above_size(r.run_dir, ns, n_qt, n_ft)
     names = {"all": "all particles", "qt": "Qt", "ft": "Ft"}
 
     def panel(species, density):
@@ -963,13 +979,14 @@ def fig_agglomerates_above_size(runs, out_dir: Path | None = None, traces=False,
                          traces=traces, legend_below=True)
 
 
-def fig_agglomerates_above_size_total(runs: list[RunData], out_dir: Path | None = None, traces=False,
+def fig_agglomerates_above_size_total(runs, out_dir: Path | None = None, traces=False,
                                       n_min=SIZE_THRESHOLDS, density: bool = False):
     """Number of agglomerates with >= n particles over time, one line per n in `n_min` (one number or a
     list; counted in the traj.dump frames by agglomerates_above_size), in the box or per 1000 um^3 of box
     volume (`density`) (89 mm). One run: one line per n, dark (smallest n) to light; several runs: one
     colour per run, one line style per n (at most 6). Saved as agglomerates_above_size_total.* (density:
     agglomerates_above_size_total_density.*)."""
+    runs = _as_runs(runs)
     ns = _thresholds(n_min)
     if len(runs) > 1 and len(ns) > len(THRESHOLD_STYLES):
         raise ValueError(f"several runs show at most {len(THRESHOLD_STYLES)} thresholds (one line style each), "
@@ -982,7 +999,7 @@ def fig_agglomerates_above_size_total(runs: list[RunData], out_dir: Path | None 
         _time_axis(ax, _t_end(runs))
         handles, labels = ax.get_legend_handles_labels()
         if len(runs) > 1:                                    # runs below the axes, thresholds in the corner
-            fig.legend(handles, labels, loc="outside lower center", ncol=_legend_columns(fig, labels))
+            _run_legend(fig, runs)
             if len(ns) > 1:
                 ax.legend([plt.Line2D([], [], color="0.3", ls=THRESHOLD_STYLES[i]) for i in range(len(ns))],
                           [f"≥ {n}" for n in ns], ncol=2, handlelength=3)
@@ -1219,9 +1236,12 @@ def _report_figures(runs: list[RunData], figs: Path, traces: bool, thresholds: t
     """The report figures of one run or several, in report order, into figs/<figure>/: calcium, overview, overlap,
     cluster sizes, agglomerates above size (thresholds = n_min, n_min_qt, n_min_ft, n_qt_ft), agglomerate
     distributions, FIB-SEM comparison, and for one run with a calcium step the binding rate. Writes
-    bond_rates.csv (and binding_rate.csv) of every run."""
+    bond_rates.csv (and binding_rate.csv) of every run. The agglomerate counts and cluster sizes of a run are read
+    from its dumps in one pass before the first figure that needs them."""
+    ns, n_qt, n_ft = _above_size_thresholds(*thresholds)
     for r in runs:
         r._rates = bond_rates(r.run_dir)                                                         # + csv
+        _count_above_size(r.run_dir, ns, n_qt, n_ft)                             # + csv (cached)
     figures = [fig_calcium(runs, figs, traces), fig_overview(runs, figs, traces=traces), fig_overlap(runs, figs),
                *fig_cluster_sizes(runs, figs, traces=traces),
                fig_agglomerates_above_size(runs, figs, traces, *thresholds),
@@ -1287,7 +1307,7 @@ def _comparison_report(run_dirs, out_dir, labels=None, structure_analysis=True, 
                        title="Comparison of runs", blocks=(), first=()) -> Path:
     """compare_report with further cover blocks (heading, text) before the runs and further figures before
     the comparison figures in report.pdf (closed afterwards)."""
-    from .ensemble import differing_labels, final_table, format_table
+    from .ensemble import differing_labels, format_table
     out_dir = Path(out_dir).expanduser()
     run_dirs = [Path(r).expanduser() for r in run_dirs]
     for r in run_dirs:

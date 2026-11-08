@@ -125,8 +125,8 @@ def cluster_table(data, p: Params) -> pd.DataFrame:
 
 
 def frame_metrics(data, table: pd.DataFrame, box, periodic: bool = True) -> dict:
-    """Per-frame structure metrics (handover definitions: Rg on clusters >= 3, spatial and
-    composition metrics on clusters >= 2). `periodic=False` (walls): plain distances between
+    """Per-frame structure metrics (Rg on clusters >= 3, spatial and composition metrics on
+    clusters >= 2). `periodic=False` (walls): plain distances between
     cluster centres."""
     big3 = table[table["size"] >= 3]
     big2 = table[table["size"] >= 2]

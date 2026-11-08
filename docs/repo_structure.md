@@ -469,7 +469,8 @@ Analysis section 5. Writes to the chosen `out_dir`:
 | `report.pdf` | cover pages (every run with number, label, folder, creation date and git commit; the comparison table; all simulation parameters, one column per run), then the figures above in the order of section 6 |
 
 The legends name each run by the parameters that differ, in short form (`Qt 1280, Ft 5120, L 4000`; the short
-names are in `SHORT_NAMES` in `qtft/ensemble.py`). `comparison_table.*` uses the full form (`qt_per_um3=20.0, …`).
+names are in `SHORT_NAMES` in `qtft/ensemble.py`), or by the given `labels`; a label used by several runs gets (1),
+(2), … as in the table. `comparison_table.*` uses the full form (`qt_per_um3=20.0, …`).
 The phase lines are drawn only if all runs have the same phase times. Every run first gets the analyses it is
 missing, saved in its own `analysis/`: the structure analysis (`structure_run`) and the overlap analysis
 (`overlap_run`), each every `every`-th frame (default 10) and only without `structure_timeseries.csv` or
@@ -563,7 +564,7 @@ launcher files belong to the whole sweep.
 | `sweep.json` | **The record of the sweep**: name, mode (`grid`), the values per parameter, base parameters, label and values of every run, git commit, creation time | `build_sweep()` |
 | `launcher.log`, `launcher.pid` | as for a run, for all replicas of the sweep (one queue; replicas named `<label>/rep_XX`) | `start(sweep)` |
 | `sweep_results.csv` | one row per run: swept parameters, finished replicas, mean and SD of final fraction bound, bonds, largest cluster fraction, mean cluster size, half-times (bonds, Qt, Ft; ms), percolation time, peak bonds and largest cluster, deagglomeration half-times (bonds, largest cluster; ms), peak cluster sizes of all particles from `cluster_sizes` (mean size over the bound particles, weight average with the free particles, weight average over the bound particles, weight average with the free particles / N; peak per replica, then mean and SD), and percolated replicas | `sweep_results()` (analysis, section 6) |
-| `analysis/` | the comparison of all runs with a finished replica (files as for `compare_report`, below), plus `figures/sweep_<result>/` (one result against the first swept parameter) and `report.pdf`: cover pages with the sweep results, the runs, the comparison table and the parameters, then the sweep plots and the comparison figures | `sweep_report(sweep)` (analysis, section 6) |
+| `analysis/` | the comparison of all runs with a finished replica (files as for `compare_report`, above), plus `figures/sweep_<result>/` (one result against the first swept parameter) and `report.pdf`: cover pages with the sweep results, the runs, the comparison table and the parameters, then the sweep plots and the comparison figures | `sweep_report(sweep)` (analysis, section 6) |
 
 `sweep_report(sweep, ys=…)` plots the results in `ys` (default: peak bonds, peak largest cluster, half-times of
 binding and of deagglomeration, peak weight-average size (bound particles), peak weight-average size / N; "final"
