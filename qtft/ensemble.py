@@ -440,9 +440,71 @@ def agglomerates_above_size(run_dir: str | Path, n_min=SIZE_THRESHOLDS, save: bo
     return _agglomerates_above_size_species(run_dir, {species: n_min}, save)[species]
 
 
-def _agglomerates_above_size_species(run_dir: str | Path, n_min: dict, save: bool = True) -> dict[str, pd.DataFrame]:
-    """agglomerates_above_size for several species at once, n_min = {species: thresholds}; the traj.dump frames are
-    read once for all species that are not cached. Returns {species: table}."""
+# cluster-size measures of cluster_sizes, each for all particles and per species (suffix _qt, _ft):
+#   mean_bound    mean size over the bound particles (at least one bond; they form the clusters of >= 2 particles,
+#                 agglomerates are >= 3): N_bound / n_bound clusters (Qt: Qt_bound / n_bound)
+#   weight        weight average, free particles included (a cluster of 1 each): sum s^2 / N (Qt: sum n_Qt^2 / N_Qt)
+#   weight_bound  weight average over the bound particles: sum_bound s^2 / N_bound (Qt: sum_bound n_Qt^2 / Qt_bound)
+CLUSTER_SIZES = [f"{m}{sp}" for m in ("mean_bound", "weight", "weight_bound") for sp in ("", "_qt", "_ft")]
+
+
+def _frame_sizes(cluster: np.ndarray, types: np.ndarray) -> list[float]:
+    """The CLUSTER_SIZES of one frame from the cluster ID and type of every particle (NaN for the measures
+    over the bound particles when there is none)."""
+    sizes = np.bincount(cluster)
+    qt = np.bincount(cluster[types == SPECIES_TYPE["qt"]], minlength=len(sizes))
+    ft = np.bincount(cluster[types == SPECIES_TYPE["ft"]], minlength=len(sizes))
+    agg = sizes >= 2                                                   # clusters of the bound particles
+    n_agg = agg.sum()
+    out = {}
+    for suffix, n in (("", sizes), ("_qt", qt), ("_ft", ft)):
+        bound = n[agg].sum()
+        out[f"mean_bound{suffix}"] = bound / n_agg if n_agg else np.nan
+        out[f"weight{suffix}"] = (n.astype(float) ** 2).sum() / n.sum() if n.sum() else np.nan
+        out[f"weight_bound{suffix}"] = (n[agg].astype(float) ** 2).sum() / bound if bound else np.nan
+    return [out[k] for k in CLUSTER_SIZES]
+
+
+def cluster_sizes(run_dir: str | Path, save: bool = True) -> pd.DataFrame:
+    """Cluster-size measures over time (CLUSTER_SIZES: mean size over the bound particles (clusters of >= 2), weight
+    average with the free particles and weight average over the bound particles, each for all particles, Qt and
+    Ft), from the cluster column of the traj.dump frames of every finished replica (resolution traj_every).
+    The mean size with the free particles is the thermo column mean_size.
+
+    Returns one row per frame: step, time_s, replicas, <measure>_mean, <measure>_sd (mean +- SD over the
+    replicas that have a value: the measures over the bound particles are NaN in a frame without bonds; SD NaN
+    with one replica) and the value of every replica (<replica>:<measure>). With `save`, written to
+    <run>/analysis/cluster_sizes.csv and reused while it holds the same replicas and is newer than their dumps.
+    """
+    return _agglomerates_above_size_species(run_dir, {}, save, sizes=True)["sizes"]
+
+
+def _cached_sizes(path: Path, reps: list[str], dumps: list[Path]) -> pd.DataFrame | None:
+    if not path.exists() or path.stat().st_mtime < max(d.stat().st_mtime for d in dumps):
+        return None
+    cached = pd.read_csv(path)
+    cached_reps = list(dict.fromkeys(c.split(":")[0] for c in cached.columns if ":" in c))
+    return cached if cached_reps == reps else None
+
+
+def _sizes_table(values: dict[str, dict[int, list[float]]], reps: list[str], p: Params) -> pd.DataFrame:
+    """cluster_sizes table from {replica: {step: CLUSTER_SIZES}}, on the frames of all replicas."""
+    steps = sorted(set.intersection(*(set(v) for v in values.values())))
+    table = {"step": steps, "time_s": np.array(steps) * p.timestep * 1e-9, "replicas": len(reps)}
+    per_rep = {}
+    for i, key in enumerate(CLUSTER_SIZES):
+        frame = pd.DataFrame({rep: [values[rep][s][i] for s in steps] for rep in reps})
+        table[f"{key}_mean"] = frame.mean(axis=1).to_numpy()
+        table[f"{key}_sd"] = frame.std(axis=1, ddof=1).to_numpy()
+        per_rep |= {f"{rep}:{key}": frame[rep].to_numpy() for rep in reps}
+    return pd.DataFrame(table | per_rep)
+
+
+def _agglomerates_above_size_species(run_dir: str | Path, n_min: dict, save: bool = True,
+                                     sizes: bool = False) -> dict[str, pd.DataFrame]:
+    """agglomerates_above_size for several species at once, n_min = {species: thresholds}, and with `sizes` also
+    cluster_sizes (key "sizes"); the traj.dump frames are read once for everything that is not cached.
+    Returns {species: table} (and "sizes")."""
     run_dir = Path(run_dir).expanduser()
     require_fetched(run_dir)
     p = Params.load(run_dir / "params.json")
@@ -469,21 +531,37 @@ def _agglomerates_above_size_species(run_dir: str | Path, n_min: dict, save: boo
                 if fresh:
                     ns = sorted(set(ns) | set(cached["n_min"]))
         todo[sp] = ns
-    if not todo:
+    sizes_path = run_dir / "analysis" / "cluster_sizes.csv"
+    if sizes:
+        cached = _cached_sizes(sizes_path, reps, dumps) if save else None
+        if cached is not None:
+            result["sizes"] = cached
+    sizes_todo = sizes and "sizes" not in result
+    if not todo and not sizes_todo:
         return result
 
     per_rep = {sp: {} for sp in todo}                                   # species -> replica -> {step: counts per n}
+    size_values = {}                                                    # replica -> {step: CLUSTER_SIZES}
     for rep, dump in zip(reps, dumps):
         counts = {sp: {} for sp in todo}
+        frames = {}
         for step, atoms in read_dump(dump):
             cluster = atoms["cluster"].to_numpy(dtype=int)
             types = atoms["type"].to_numpy(dtype=int)
             for sp, ns in todo.items():
-                sizes = np.bincount(cluster if sp == "all" else cluster[types == SPECIES_TYPE[sp]])
-                sizes = sizes[sizes > 0]
-                counts[sp][step] = [(sizes >= n).sum() for n in ns]
+                n = np.bincount(cluster if sp == "all" else cluster[types == SPECIES_TYPE[sp]])
+                n = n[n > 0]
+                counts[sp][step] = [(n >= k).sum() for k in ns]
+            if sizes_todo:
+                frames[step] = _frame_sizes(cluster, types)
         for sp in todo:
             per_rep[sp][rep] = counts[sp]
+        size_values[rep] = frames
+    if sizes_todo:
+        result["sizes"] = _sizes_table(size_values, reps, p)
+        if save:
+            sizes_path.parent.mkdir(exist_ok=True)
+            result["sizes"].to_csv(sizes_path, index=False)
     to_density = 1000 / (math.prod(p.box) * 1e-9)                       # box count -> per 1000 um^3
     for sp, ns in todo.items():
         steps = sorted(set.intersection(*(set(c) for c in per_rep[sp].values())))   # frames of all replicas
@@ -503,7 +581,7 @@ def _agglomerates_above_size_species(run_dir: str | Path, n_min: dict, save: boo
             paths[sp].parent.mkdir(exist_ok=True)
             table.to_csv(paths[sp], index=False)
         result[sp] = table[table["n_min"].isin(wanted[sp])].reset_index(drop=True)
-    return {sp: result[sp] for sp in wanted}
+    return {sp: result[sp] for sp in wanted} | ({"sizes": result["sizes"]} if sizes else {})
 
 
 # ------------------------------------------------------------------ index of all runs

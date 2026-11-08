@@ -6,8 +6,8 @@ legends, no grid. Saved as PDF + SVG (editable text) + PNG (300 dpi). Ensemble d
 a +-1 SD band, optionally the individual replicas. Time in ms (axes in s for long runs); dotted
 vertical lines mark the start and end of the calcium influx. Every figure is saved in its own folder,
 <name>/<name>.*; a figure of several panels also has every panel alone in <name>/<panel>.*.
-make_report and compare_report also collect all their figures in one report.pdf, after cover pages
-with the run names, the summary table and the simulation parameters.
+make_report, compare_report and sweep_report also collect all their figures in one report.pdf, after
+cover pages with the run names, the summary table and the simulation parameters.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MultipleLocator, NullFormatter
 
-from .ensemble import (SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, SIZE_THRESHOLDS_QT_FT, TO_PER_M_S,
+from .ensemble import (SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, SIZE_THRESHOLDS_QT_FT, TO_PER_M_S, cluster_sizes,
                        _agglomerates_above_size_species, _thresholds, agglomerates_above_size, binding_rate,
                        bond_rates, ensemble_stats, ensemble_stats_cached)
 from .params import Params
@@ -67,10 +67,18 @@ class RunData:
     coord_influx_end: dict = field(default_factory=dict)  # {"Qt"/"Ft": Series} mean count per replica, end of influx
     overlap: pd.DataFrame | None = None
     agglomerates: pd.DataFrame | None = None           # agglomerates_influx_end.csv (sizes and volumes)
+    _sizes: pd.DataFrame | None = field(default=None, repr=False)
 
     @property
     def n_total(self) -> int:
         return self.p.n_qt + self.p.n_ft
+
+    @property
+    def sizes(self) -> pd.DataFrame:
+        """cluster_sizes of the run (computed from traj.dump or read from its cache on first use)."""
+        if self._sizes is None:
+            self._sizes = cluster_sizes(self.run_dir)
+        return self._sizes
 
 
 def load_run(run_dir: str | Path, label: str | None = None, color: str | None = None) -> RunData:
@@ -213,7 +221,6 @@ def _species_panel(key, ylabel):
 p_bonds = _simple("Bonds", "bonds")
 p_clusters = _simple("n_clusters", "agglomerates + free particles")
 p_mean_size = _species_panel("mean_size", "mean cluster size")
-p_mean_size_n = _simple("mean_size", "mean size / N", scale_by_n=True)
 p_largest = _species_panel("largest", "largest agglomerate")
 p_largest_n = _simple("largest", "largest / N", scale_by_n=True)
 
@@ -278,7 +285,7 @@ def _structure_panel(key, ylabel, ref=None):
         if ref is not None:
             ax.axhline(ref, color="0.5", lw=0.5, ls="--")
         if not drawn:
-            _no_data(ax, "run structure analysis")
+            _no_data(ax, "no structure analysis (make_report or structure_run)")
         ax.set_ylabel(ylabel)
     return panel
 
@@ -515,8 +522,8 @@ OVERVIEW = [
 
 COMPARISON = [
     ("potential energy", p_energy, True), ("pressure", p_pressure, True), ("bonds", p_bonds, True),
-    ("agglomerates + free", p_clusters, True),
-    ("mean size", p_mean_size, True), ("mean size / N", p_mean_size_n, True),
+    ("fraction bound", p_fraction_bound, True), ("agglomerates + free", p_clusters, True),
+    ("mean size", p_mean_size, True),
     ("largest", p_largest, True), ("largest / N", p_largest_n, True),
     ("mean Rg", p_rg, True), ("Rg / Rg,ideal", p_rg_ratio, True),
     ("coordination", p_coordination, True), ("Qt fraction", p_qt_fraction, True),
@@ -636,15 +643,52 @@ def fig_comparison(runs: list[RunData], out_dir: Path | None = None):
     return _panel_figure("comparison", COMPARISON, runs, out_dir, 3, 4, DOUBLE, 140 * MM, legend_below=True)
 
 
-KINETICS = [("bonds", p_bonds, True), ("fraction bound", p_fraction_bound, True),
-            ("mean cluster size", p_mean_size, True)]
+# rows of fig_cluster_sizes: measure (cluster_sizes column, mean_size = thermo column) and title
+SIZE_ROWS = [("mean_size", "mean size"), ("mean_bound", "mean size (bound particles)"),
+             ("weight", "weight-average size"), ("weight_bound", "weight-average size (bound particles)")]
+SIZE_SPECIES = {"all": "", "Qt": "_qt", "Ft": "_ft"}      # column -> suffix of the measure
 
 
-def fig_kinetics(runs: list[RunData], out_dir: Path | None = None, traces=False):
-    """Bonds, fraction bound (Qt, Ft) and mean cluster size on one time axis (89 mm); panels also
-    alone in kinetics/."""
-    return _panel_figure("kinetics", KINETICS, runs, out_dir, 3, 1, SINGLE, 120 * MM, traces=traces,
-                         titles=False, sharex=True, legend_below=True)
+def _size_curve(r: RunData, measure: str, species: str, per_n: bool, traces: bool):
+    """Time [ms], mean, SD and (with traces) replica traces of a cluster-size measure of one species,
+    divided by the particles of that species with per_n."""
+    suffix = SIZE_SPECIES[species]
+    scale = 1 / {"all": r.n_total, "Qt": r.p.n_qt, "Ft": r.p.n_ft}[species] if per_n else 1.0
+    if measure == "mean_size":
+        return _series(r, f"mean_size{suffix}", scale, traces=traces)
+    d, key = r.sizes, measure + suffix
+    tr = d[[c for c in d.columns if c.endswith(f":{key}")]].to_numpy().T * scale if traces else None
+    return d["time_s"].to_numpy() * 1e3, d[f"{key}_mean"].to_numpy() * scale, d[f"{key}_sd"].to_numpy() * scale, tr
+
+
+def _size_panel(measure: str, title: str, species: str | None, per_n: bool):
+    """Panel of fig_cluster_sizes: one species for several runs (a colour per run), or (species None, one run)
+    all, Qt and Ft as three lines."""
+    def draw(ax, runs, traces=False):
+        curves = ([(runs[0], name, runs[0].color if name == "all" else LINE[name], name) for name in SIZE_SPECIES]
+                  if species is None else [(r, species, r.color, r.label) for r in runs])
+        for r, sp, color, label in curves:
+            t, m, s, tr = _size_curve(r, measure, sp, per_n, traces)
+            band(ax, t, m, s, color, label, traces=tr if traces else None)
+        ax.set_ylabel(title + (" / N" if per_n else ""))
+        if species is None:
+            ax.legend()
+    name = title + (" / N" if per_n else "") + (f", {species}" if species else "")
+    return name, draw, True
+
+
+def fig_cluster_sizes(runs: list[RunData], out_dir: Path | None = None, traces=False) -> list:
+    """Cluster sizes over time (rows SIZE_ROWS: mean size with the free particles, mean size over the bound
+    particles (clusters of >= 2), weight average with the free particles, weight average over the bound particles); /N divides
+    by the particles of the species (all: N, Qt: N_Qt, Ft: N_Ft). One run: one figure cluster_sizes, 4 x 2
+    (absolute | / N, each panel with all, Qt and Ft; 120 mm). Several runs: cluster_sizes and cluster_sizes_n
+    (/ N), each 4 x 3 (columns all, Qt, Ft; a colour per run; 183 mm). Panels also alone in <figure>/."""
+    if len(runs) == 1:
+        panels = [_size_panel(m, title, None, per_n) for m, title in SIZE_ROWS for per_n in (False, True)]
+        return [_panel_figure("cluster_sizes", panels, runs, out_dir, 4, 2, ONE_HALF, 150 * MM, traces=traces)]
+    return [_panel_figure(name, [_size_panel(m, title, sp, per_n) for m, title in SIZE_ROWS for sp in SIZE_SPECIES],
+                          runs, out_dir, 4, 3, DOUBLE, 150 * MM, traces=traces, legend_below=True)
+            for name, per_n in (("cluster_sizes", False), ("cluster_sizes_n", True))]
 
 
 # line styles of the thresholds in fig_agglomerates_above_size_total with several runs
@@ -702,7 +746,8 @@ def fig_agglomerates_above_size(run: RunData, out_dir: Path | None = None, trace
     n_qt, n_ft = (_thresholds(v)[0] for v in n_qt_ft)
     ns = {"all": _thresholds(n_min), "qt": _thresholds(n_min_qt), "ft": _thresholds(n_min_ft)}
     _agglomerates_above_size_species(run.run_dir, {"all": ns["all"], "qt": ns["qt"] + [n_qt],
-                                                   "ft": ns["ft"] + [n_ft]})   # one pass over the dumps (cached)
+                                                   "ft": ns["ft"] + [n_ft]},
+                                     sizes=True)       # one pass over the dumps (cached), also cluster_sizes
     names = {"all": "all particles", "qt": "Qt", "ft": "Ft"}
 
     def panel(species, density):
@@ -851,6 +896,9 @@ SWEEP_LABELS = {
     "t_percolation_ms": "percolation time (ms)", "bonds_peak": "bonds (peak)",
     "largest_peak": "largest cluster (peak)", "t_half_unbind_bonds_ms": "deagglomeration half-time, bonds (ms)",
     "t_half_unbind_largest_ms": "deagglomeration half-time, largest cluster (ms)",
+    "mean_bound_peak": "mean size (bound particles) (peak)", "weight_peak": "weight-average size (peak)",
+    "weight_bound_peak": "weight-average size (bound particles) (peak)",
+    "weight_frac_peak": "weight-average size / N (peak)",
 }
 
 
@@ -1006,7 +1054,7 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
                fig_agglomerate_distributions(run, figs),
                fig_agglomerates_above_size(run, figs, traces, n_min, n_min_qt, n_min_ft, n_qt_ft),
                fig_fibsem_comparison(run, figs, spatial=qt_spatial_run(run_dir)),
-               fig_kinetics([run], figs, traces=traces), fig_overlap(run, figs), *rate]
+               *fig_cluster_sizes([run], figs, traces=traces), fig_overlap(run, figs), *rate]
 
     table = summary_table(run)
     table.to_csv(out / "summary_table.csv")
@@ -1028,15 +1076,30 @@ def make_report(run_dir: str | Path, every: int = 10, structure_analysis: bool =
     return out
 
 
-def compare_report(run_dirs, out_dir: str | Path, labels=None) -> Path:
+def compare_report(run_dirs, out_dir: str | Path, labels=None, structure_analysis: bool = True,
+                   every: int = 10) -> Path:
     """Comparison figures (out_dir/figures/<figure>/) and table of several runs into out_dir, and all
-    figures in out_dir/report.pdf after cover pages with the runs, the table and their parameters."""
+    figures in out_dir/report.pdf after cover pages with the runs, the table and their parameters.
+    structure_analysis: first run structure_run (every `every`-th frame) for every run without
+    analysis/structure_timeseries.csv, for the Rg and Qt fraction panels."""
+    return _comparison_report(run_dirs, out_dir, labels, structure_analysis, every)
+
+
+def _comparison_report(run_dirs, out_dir, labels=None, structure_analysis=True, every=10,
+                       title="Comparison of runs", blocks=(), first=()) -> Path:
+    """compare_report with further cover blocks (heading, text) before the runs and further figures before
+    the comparison figures in report.pdf (closed afterwards)."""
     from .ensemble import compare, differing_labels
+    from .structure import structure_run
     out_dir = Path(out_dir).expanduser()
     run_dirs = [Path(r).expanduser() for r in run_dirs]
+    if structure_analysis:
+        for r in run_dirs:
+            if not (r / "analysis" / "structure_timeseries.csv").exists():
+                structure_run(r, every=every)
     runs = load_runs(run_dirs, labels or differing_labels(run_dirs, short=True)[0])
     figs = out_dir / "figures"
-    figures = [fig_comparison(runs, figs), fig_kinetics(runs, figs),
+    figures = [*first, fig_comparison(runs, figs), *fig_cluster_sizes(runs, figs),
                fig_agglomerates_above_size_total(runs, figs, density=True)]
     table = compare(run_dirs)
     table.to_csv(out_dir / "comparison_table.csv")
@@ -1044,7 +1107,8 @@ def compare_report(run_dirs, out_dir: str | Path, labels=None) -> Path:
 
     names = [f"run {i}" for i in range(1, len(runs) + 1)]
     params = pd.DataFrame({name: r.p.to_dict() for name, r in zip(names, runs)}).astype(str)
-    cover = _text_pages("Comparison of runs", out_dir.name, [
+    cover = _text_pages(title, out_dir.name, [
+        *blocks,
         ("Runs", "\n\n".join(f"{name}: {r.label}\n{_run_record(r.run_dir)}" for name, r in zip(names, runs))
          + f"\n\nreport     {_now()}"),
         ("Final state (mean ± SD over replicas)", table.set_axis(names, axis=1).to_string()),
@@ -1053,3 +1117,29 @@ def compare_report(run_dirs, out_dir: str | Path, labels=None) -> Path:
     for f in figures:
         plt.close(f)
     return out_dir
+
+
+# results of sweep_results plotted by sweep_report; "final" values are those at the end of the whole
+# protocol (after the pump-out), so peaks and half-times describe a calcium cycle better
+SWEEP_PLOTS = ["bonds_peak", "largest_peak", "t_half_bonds_ms", "t_half_unbind_bonds_ms", "weight_bound_peak",
+               "weight_frac_peak"]
+
+
+def sweep_report(sweep_dir: str | Path, ys=SWEEP_PLOTS, structure_analysis: bool = True, every: int = 10) -> Path:
+    """Analysis of a parameter sweep into <sweep>/analysis/: sweep_results (<sweep>/sweep_results.csv), one
+    fig_sweep plot per result in ys and the comparison of all runs with a finished replica (as compare_report,
+    with its structure_analysis and every); report.pdf holds cover pages with the sweep results, the sweep plots
+    and the comparison figures."""
+    from .sweep import sweep_results
+    sweep_dir = Path(sweep_dir).expanduser()
+    out_dir = sweep_dir / "analysis"
+    results = sweep_results(sweep_dir)
+    done = results[results["replicas done"] > 0]
+    if done.empty:
+        raise ValueError(f"{sweep_dir.name}: no run of the sweep has a finished replica yet")
+    plots = [fig_sweep(results, y=y, out_dir=out_dir / "figures") for y in ys]
+    table = done[[*results.attrs["swept"], "replicas done", *ys]]
+    return _comparison_report([sweep_dir / run for run in done.index], out_dir, structure_analysis=structure_analysis,
+                              every=every, title=f"Sweep {sweep_dir.name}",
+                              blocks=[("Sweep results (mean over replicas; all values and SD in "
+                                       "sweep_results.csv)", table.to_string())], first=plots)

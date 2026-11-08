@@ -72,6 +72,7 @@ runs/
 │   └── <sweep name>/
 │       ├── sweep.json, launcher.log, launcher.pid, sweep_results.csv
 │       ├── job.slurm, replicas.txt, slurm_job.json    only with executor = "lrz" (one job array for the whole sweep)
+│       ├── analysis/                only after sweep_report(): as for a comparison, plus figures/sweep_<result>/
 │       └── <label>/                 one run folder per combination
 ├── benchmark/                       only after benchmark()
 └── tuning/                          only after alpha_sweep()
@@ -238,6 +239,7 @@ Everything here lives in `<run>/analysis/`. It is written by `ensemble_stats()` 
 |---|---|---|
 | `agglomerates_above_size.csv` | number of agglomerates with ≥ n particles over time, for several n (cached) | `make_report()`, `compare_report()` |
 | `agglomerates_above_size_qt.csv`, `_ft.csv` | the same with the size counted in Qt or in Ft only (cached) | `make_report()` |
+| `cluster_sizes.csv` | per `traj.dump` frame, mean and SD over replicas and the value of every replica (`<replica>:<measure>`): mean size over the bound particles (clusters of ≥ 2), weight average with the free particles, weight average over the bound particles, each for all particles, Qt and Ft (cached; read in the same pass as the agglomerate counts) | `make_report()`, `compare_report()`, `sweep_report()` |
 | `agglomerates_influx_end.csv` | every agglomerate of ≥ 3 particles at the end of the influx, with size, composition and volume | `make_report()` |
 | `structure_timeseries.csv` | per analysed frame, mean and SD over replicas: Rg, Rg/Rg_ideal, nearest-neighbour distances between and within clusters, Qt fraction per cluster | `make_report()` (OVITO) |
 | `structure_per_replica.csv` | the same per replica | `make_report()` (OVITO) |
@@ -399,13 +401,20 @@ Shown in analysis section 4.
 4. **Qt clustering scale (Ripley's L)**: L(r) − r of all Qt in the first frame and at the end of the influx, up
    to 500 nm, with the maximum and its position in the legend.
 
-### `kinetics` (3 × 1)
+### `cluster_sizes` (4 × 2, 120 mm wide)
 
-The main kinetics on one time axis, 89 mm wide. Not shown in the notebook; in `report.pdf`.
+Four cluster-size measures (rows), absolute (left) and divided by the particle number (right), each panel with
+all particles, Qt and Ft. /N divides by N for all particles, by N_Qt for Qt and by N_Ft for Ft. Not shown in the
+notebook; in `report.pdf`.
 
-1. **bonds**.
-2. **fraction bound**: Qt (solid) and Ft (dashed).
-3. **mean cluster size**.
+1. **mean size**: particles / clusters, a free particle counts as a cluster of 1 (thermo `mean_size`; Qt: Qt per
+   cluster with Qt).
+2. **mean size (bound particles)**: bound particles (at least one bond) / the clusters they form, i.e. the clusters
+   of ≥ 2 particles (the agglomerates of the other figures are ≥ 3); gaps where nothing is bound.
+3. **weight-average size**: Σs² / Σs over all clusters, free particles included; the size of the cluster a
+   randomly chosen particle belongs to (Qt: Σ n_Qt² / N_Qt).
+4. **weight-average size (bound particles)**: the same over the bound particles only, independent of
+   how many particles are free.
 
 ### `overlap` (1 panel)
 
@@ -434,15 +443,17 @@ Analysis section 5. Writes to the chosen `out_dir`:
 
 | File | Content |
 |---|---|
-| `figures/comparison/` | 3 × 4: potential energy, pressure, bonds, agglomerates + free, mean size, mean size / N, largest, largest / N, mean Rg, Rg / Rg,ideal, coordination, Qt fraction; one colour per run, every panel also alone |
-| `figures/kinetics/` | the kinetics figure (above) with one colour per run |
+| `figures/comparison/` | 3 × 4: potential energy, pressure, bonds, fraction bound (Qt solid, Ft dashed), agglomerates + free, mean size, largest, largest / N, mean Rg, Rg / Rg,ideal, coordination, Qt fraction; one colour per run, every panel also alone |
+| `figures/cluster_sizes/`, `figures/cluster_sizes_n/` | the four measures of `cluster_sizes` (above) as rows, columns all particles, Qt, Ft (4 × 3, 183 mm), one colour per run; `cluster_sizes_n` the same divided by N (N_Qt, N_Ft) |
 | `figures/agglomerates_above_size_total_density/` | agglomerates with ≥ n particles per 1000 µm³ (so runs with different boxes compare); colour per run, line style per threshold (at most 6) |
 | `comparison_table.csv`, `.tex` | final-state values (mean ± SD) of every run, side by side |
-| `report.pdf` | cover pages (every run with number, label, folder, creation date and git commit; the comparison table; all simulation parameters, one column per run), then the three figures |
+| `report.pdf` | cover pages (every run with number, label, folder, creation date and git commit; the comparison table; all simulation parameters, one column per run), then the four figures |
 
 The legends name each run by the parameters that differ, in short form (`Qt 1280, Ft 5120, L 4000`; the short
 names are in `SHORT_NAMES` in `qtft/ensemble.py`). `comparison_table.*` uses the full form (`qt_per_um3=20.0, …`).
-Cluster sizes are drawn for all particles only; the phase lines only if all runs have the same phase times.
+The phase lines are drawn only if all runs have the same phase times. Runs without
+`analysis/structure_timeseries.csv` first get the structure analysis (`structure_run`, every `every`-th frame,
+default 10; `structure_analysis=False` skips it, the Rg and Qt fraction panels then stay empty).
 
 ---
 
@@ -528,9 +539,14 @@ launcher files belong to the whole sweep.
 |---|---|---|
 | `sweep.json` | **The record of the sweep**: name, mode (`grid`), the values per parameter, base parameters, label and values of every run, git commit, creation time | `build_sweep()` |
 | `launcher.log`, `launcher.pid` | as for a run, for all replicas of the sweep (one queue; replicas named `<label>/rep_XX`) | `start(sweep)` |
-| `sweep_results.csv` | one row per run: swept parameters, finished replicas, mean and SD of final fraction bound, bonds, largest cluster fraction, mean cluster size, half-times (bonds, Qt, Ft; ms), percolation time and percolated replicas | `sweep_results()` (analysis, section 6) |
+| `sweep_results.csv` | one row per run: swept parameters, finished replicas, mean and SD of final fraction bound, bonds, largest cluster fraction, mean cluster size, half-times (bonds, Qt, Ft; ms), percolation time, peak bonds and largest cluster, deagglomeration half-times (bonds, largest cluster; ms), peak cluster sizes of all particles from `cluster_sizes` (mean size over the bound particles, weight average with the free particles, weight average over the bound particles, weight average with the free particles / N; peak per replica, then mean and SD), and percolated replicas | `sweep_results()` (analysis, section 6) |
+| `analysis/` | the comparison of all runs with a finished replica (files as for `compare_report`, below), plus `figures/sweep_<result>/` (one result against the first swept parameter) and `report.pdf`: cover pages with the sweep results, the runs, the comparison table and the parameters, then the sweep plots and the comparison figures | `sweep_report(sweep)` (analysis, section 6) |
 
-`fig_sweep(results, y, out_dir=…)` saves its plot to `<out_dir>/sweep_<y>/`.
+`sweep_report(sweep, ys=…)` plots the results in `ys` (default: peak bonds, peak largest cluster, half-times of
+binding and of deagglomeration, peak weight-average size (bound particles), peak weight-average size / N; "final"
+values are those after the pump-out). Like `compare_report`, it first runs the structure analysis for every run
+without it (`structure_analysis=True`, `every=10`). `fig_sweep(results, y, out_dir=…)` draws one such plot alone and
+saves it to `<out_dir>/sweep_<y>/`.
 
 ### Benchmark `runs/benchmark/`
 
