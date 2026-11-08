@@ -36,7 +36,7 @@ qtft-lammps/
 │   ├── install.md           installation on this PC and on LRZ
 │   └── repo_structure.md    this page
 ├── environment.yml          conda environment "lammps"
-├── pytest.ini               pytest settings
+├── pytest.ini               pytest settings   gitignored
 ├── README.md
 ├── lrz_local.json           personal LRZ settings (email for Slurm)   gitignored
 └── runs/                    all simulation output (section 2)          gitignored
