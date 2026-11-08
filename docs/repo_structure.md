@@ -15,7 +15,7 @@ Contents:
 7. [Other outputs](#7-other-outputs)
 
 "Written by" names the function that writes a file, or LAMMPS. The notebook sections refer to
-`control.ipynb` (control) and `analysis.ipynb` (analysis).
+`simulate_hek.ipynb` (simulation) and `analysis.ipynb` (analysis).
 
 ---
 
@@ -23,7 +23,7 @@ Contents:
 
 ```
 qtft-lammps/
-├── control.ipynb            set parameters, build, run, monitor, sweeps, benchmark
+├── simulate_hek.ipynb       set parameters, build, run, monitor, sweeps, benchmark
 ├── analysis.ipynb           ensemble statistics, report, FIB-SEM comparison, comparison of runs, sweeps, FIB-SEM export
 ├── animation.ipynb          video and stills of one replica
 ├── qtft/                    the Python package (all code; modules: see the README)
@@ -117,7 +117,7 @@ the git commit. Written by `build_run()`, whenever a replica finishes, and by `f
 
 ## 3. Simulation input
 
-Written by `build_run()` (control, section 2) before LAMMPS starts.
+Written by `build_run()` (simulation, section 2) before LAMMPS starts.
 
 | File | Content | Written by |
 |---|---|---|
@@ -191,7 +191,7 @@ Kinetic energy and temperature are not logged: they have no meaning in overdampe
 | `rep_XX/status` | one word: `built` → `queued` → `running` → `done`, `failed` or `stopped`; its last change is the end time of the replica | `build_run()`, the launcher; on LRZ `job.slurm` |
 | `rep_XX/pid` | process ID of LAMMPS, used by `stop()` (LRZ: the Slurm job ID of the array task); its time is the start time | the launcher; on LRZ `job.slurm` |
 | `rep_XX/lammps.out` | terminal output of LAMMPS and MPI; usually almost empty. **Look here first when a run fails** | the launcher |
-| `launcher.log` | log of the background launcher: start and end of every replica, a summary every minute (done, running, queued, estimated end) and a line per running replica; follow it with `tail -f launcher.log` | `start()` (control, section 3) |
+| `launcher.log` | log of the background launcher: start and end of every replica, a summary every minute (done, running, queued, estimated end) and a line per running replica; follow it with `tail -f launcher.log` | `start()` (simulation, section 3) |
 | `launcher.pid` | process ID of the launcher, used by `stop()` | `start()` |
 | `slurm_job.json` | only with `executor = "lrz"`: Slurm job ID, cluster, folder on LRZ, submission time; used by `progress`, `watch`, `stop`, `fetch` | `start()` |
 | `slurm-<job>_<task>.out` | only with `executor = "lrz"`: output of the job script of one array task | Slurm on LRZ |
@@ -457,7 +457,7 @@ Not saved by `make_report()`; draw them in the notebook (see the note in analysi
   with `density=True`, per 1000 µm³), also for several runs.
 - `fig_bond_rates(run, rates=…)`: the two rate panels alone (also for a list of runs), for example with coarser bins
   (`rates=bond_rates(run_dir, bin_s=…)`).
-- `quicklook(run_dir)` (control, section 5): a quick overview of a running or finished run, not saved.
+- `quicklook(run_dir)` (simulation, section 5): a quick overview of a running or finished run, not saved.
 
 ### Comparison of runs: `compare_report(runs, out_dir)`
 
@@ -556,7 +556,7 @@ text draws ~10× slower).
 
 ### Parameter sweep `runs/sweeps/<sweep name>/`
 
-Only after `build_sweep()` (control, section 4). One run folder per combination of the listed values, named
+Only after `build_sweep()` (simulation, section 4). One run folder per combination of the listed values, named
 after the swept values only (for example `temperature300_k_on2e-06/`), with the structure of a run folder; the
 launcher files belong to the whole sweep.
 
@@ -575,13 +575,13 @@ values are those after the pump-out). Like `compare_report`, it first runs the a
 
 ### Benchmark `runs/benchmark/`
 
-Only after `benchmark()` (control, section 6). One folder per measurement, named after the number of hardware
+Only after `benchmark()` (simulation, section 6). One folder per measurement, named after the number of hardware
 threads filled (`16cores/`, `8cores/`), each with one short run folder per tested setting and `results.csv`
 (speed, timing breakdown, projected run times). Benchmark runs are not listed in `index.csv`.
 
 ### Force-constant sweep `runs/tuning/`
 
-Only after `alpha_sweep()` (control, section 7). One folder per sweep (default `sweep/`) with `sweep.json`,
+Only after `alpha_sweep()` (simulation, section 7). One folder per sweep (default `sweep/`) with `sweep.json`,
 `launcher.log` and `launcher.pid` as for a parameter sweep, and one run folder per setting, `alpha<α>_dt<Δt>ns/`
 (including `analysis/` after the evaluation). `sweep_table()` writes `sweep_summary.csv`: one row per run and
 pair family with α, force constant, predicted and measured overlap depth (mean, 95th percentile, max; nm),

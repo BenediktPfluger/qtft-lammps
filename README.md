@@ -25,7 +25,7 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 1. Install everything as described in [docs/install.md](docs/install.md), including the unbinding plugin
    (`lammps_plugins/bond_break_random/build.sh`; again after every LAMMPS update).
 2. `conda activate lammps`, open the repo in VS Code.
-3. Open `control.ipynb`: set the parameters (Qt and Ft as densities per µm³), check the derived values (they
+3. Open `simulate_hek.ipynb`: set the parameters (Qt and Ft as densities per µm³), check the derived values (they
    start with the resulting particle numbers), build and run. For a parameter
    study, list values per parameter in section 4 (`build_sweep`): one run per combination. Runs go to this
    PC (`executor="local"`) or to the LRZ Linux cluster (`executor="lrz"`; download the results with `fetch`).
@@ -43,7 +43,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 
 | Path | Purpose |
 |---|---|
-| `control.ipynb` | set all parameters, build the LAMMPS input, run (locally or on LRZ), monitor; parameter sweeps, quick look, performance measurement, force-constant sweep |
+| `simulate_hek.ipynb` | set all parameters, build the LAMMPS input, run (locally or on LRZ), monitor; parameter sweeps, quick look, performance measurement, force-constant sweep |
 | `analysis.ipynb` | index of all runs, ensemble statistics, full report (figures, tables, `report.pdf`), comparison with 3D FIB-SEM, comparison of runs, parameter sweeps, FIB-SEM export |
 | `animation.ipynb` | video of one replica: set the run folder name, `animate` writes `rep_XX/animation/animation.mp4` (and optional stills) |
 | `docs/install.md` | installation: WSL, Ubuntu, conda, LAMMPS, VS Code on this PC; SSH and LAMMPS on LRZ |
