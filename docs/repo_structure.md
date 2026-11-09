@@ -486,13 +486,14 @@ empty), the agglomerates at the end of the influx (`agglomerates_influx_end.csv`
 
 ### FIB-SEM export `rep_XX/fibsem/`
 
-Only after `fibsem_export_run(run_dir)` (analysis, section 7). The final frame in the schema of the FIB-SEM
-segmentation pipeline.
+Only after `fibsem_export_run(run_dir)` (analysis, section 7). The frame at the end of the influx (the last
+`traj.dump` frame at or before it, the run end without an influx; the same frame as for `fibsem_comparison`) in
+the schema of the FIB-SEM segmentation pipeline.
 
 | File | Content | Written by |
 |---|---|---|
 | `sim_encapsulin_centroids_clustered.csv` | one row per encapsulin: `label, z_nm, y_nm, x_nm, z_vox, y_vox, x_vox, radius_nm, volume_nm3, cluster, is_clustered` | `fibsem_export()` (OVITO) |
-| `sim_metadata.json` | counts, cluster-size histogram, box and offset, frame, bond check, all parameters, `boundary`, `wall_stiffness`, `wall_leaks` | `fibsem_export()` |
+| `sim_metadata.json` | counts, cluster-size histogram, box and offset, frame (`frame` in words, `step`, `time_s` since the production start), `source_trajectory` (relative to `runs/<group>/`), bond check, all parameters, `boundary`, `wall_stiffness`, `wall_leaks` | `fibsem_export()` |
 | `check_xy.png` | x–y scatter of the encapsulins coloured by cluster, with the box or walls as dashed outline | `fibsem_export()` |
 
 In a periodic box the clusters are unwrapped across the box and shifted to the origin. With walls the

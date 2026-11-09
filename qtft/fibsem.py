@@ -1,4 +1,7 @@
-"""Export the final frame of a run in the schema of the FIB-SEM segmentation pipeline.
+"""Export the frame at the end of the calcium influx in the schema of the FIB-SEM segmentation pipeline.
+
+The frame is the last traj.dump frame at or before Params.influx_end_step (the run end without an influx),
+the same frame as for the FIB-SEM comparison and the agglomerate distributions.
 
 Only encapsulins (Qt) are exported; ferritin is below FIB-SEM resolution but still defines the
 cluster connectivity (Qt-Ft-Qt bridges). Cluster IDs are the connected components of the bond
@@ -36,10 +39,11 @@ MAX_FAILED_FRACTION = 0.05    # abort the export if more bonds fail
 
 
 def fibsem_export(rep_dir: str | Path, voxel_nm: float = 4.0, plot: bool = True) -> Path:
-    """Write <rep>/fibsem/sim_encapsulin_centroids_clustered.csv, sim_metadata.json and a check plot."""
+    """Write <rep>/fibsem/sim_encapsulin_centroids_clustered.csv, sim_metadata.json and a check plot of the
+    frame at the end of the influx."""
     rep_dir = Path(rep_dir).expanduser()
     p = Params.load(rep_dir.parent / "params.json")
-    step, data = next(load_frames(rep_dir, last_only=True))
+    step, data = next(load_frames(rep_dir, at_step=p.influx_end_step))
 
     ids = np.asarray(data.particles["Particle Identifier"])
     types = particle_types(data)
@@ -105,8 +109,10 @@ def fibsem_export(rep_dir: str | Path, voxel_nm: float = 4.0, plot: bool = True)
         leaks = {"n_encapsulins_beyond_wall": int((depth > 0).sum()),
                  "max_depth_nm": float(max(depth.max(), 0.0)) if len(depth) else 0.0}
     meta = {
-        "source_trajectory": str(rep_dir / "traj.dump"),
-        "final_step": int(step), "final_time_us": step * p.timestep * 1e-3,
+        "source_trajectory": f"{rep_dir.parent.name}/{rep_dir.name}/traj.dump",   # relative: no local path
+        "frame": (f"end of the influx: last traj.dump frame at or before {p.influx_end_step * p.timestep * 1e-9:g} s"
+                  if p.t_influx_s > 0 else "run end (no influx)"),
+        "step": int(step), "time_s": step * p.timestep * 1e-9,     # production step and time since its start
         "n_encapsulins": int(len(table)),
         "n_clustered": int(table["is_clustered"].sum()),
         "n_free": int((~table["is_clustered"]).sum()),
