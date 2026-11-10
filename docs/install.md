@@ -101,7 +101,7 @@ nbstripout --install
 # keep the cell ids (otherwise every commit renumbers them 0, 1, 2, ...)
 git config filter.nbstripout.clean "$(git config filter.nbstripout.clean) --keep-id"
 git config diff.ipynb.textconv "$(git config diff.ipynb.textconv) --keep-id"
-git check-attr filter simulate_hek.ipynb # simulate_hek.ipynb: filter: nbstripout
+git check-attr filter 01_simulate_hek.ipynb # 01_simulate_hek.ipynb: filter: nbstripout
 ```
 
 Notebooks are committed without outputs: from now on `git add` stores the notebooks without their outputs,
@@ -341,7 +341,7 @@ PC: the 3 µm run takes about 35 h there instead of 24 h here.
 ## 13. Run on LRZ from the notebook
 
 1. Open the connection: `ssh lrz` in a terminal (section 9).
-2. In the parameter cell of `simulate_hek.ipynb`, set `executor="lrz"` and `max_parallel=None`, so that all
+2. In the parameter cell of `01_simulate_hek.ipynb`, set `executor="lrz"` and `max_parallel=None`, so that all
    replicas run at once (a number limits the job array; `check()` warns about it).
 3. As usual: `build_run` → `start` → `watch`.
 

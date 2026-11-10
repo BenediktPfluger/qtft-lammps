@@ -15,7 +15,8 @@ Contents:
 7. [Other outputs](#7-other-outputs)
 
 "Written by" names the function that writes a file, or LAMMPS. The notebook sections refer to
-`simulate_hek.ipynb` (simulation) and `analysis.ipynb` (analysis).
+`01_simulate_hek.ipynb` (simulation; `02_simulate_neurons.ipynb` has the same sections) and
+`04_analysis.ipynb` (analysis).
 
 ---
 
@@ -23,23 +24,24 @@ Contents:
 
 ```
 qtft-lammps/
-├── simulate_hek.ipynb       set parameters, build, run, monitor, sweeps, benchmark
-├── analysis.ipynb           ensemble statistics, report, FIB-SEM comparison, comparison of runs, sweeps, FIB-SEM export
-├── animation.ipynb          video and stills of one replica
-├── qtft/                    the Python package (all code; modules: see the README)
-├── template.lmp             LAMMPS input template: model structure with {{placeholders}}, no numbers
-├── job_template.slurm       Slurm job script template for runs on LRZ
+├── 01_simulate_hek.ipynb     set parameters, build, run, monitor, sweeps, benchmark (HEK293T optoCRAC cycle)
+├── 02_simulate_neurons.ipynb the same for one spontaneous calcium event in neurons
+├── 03_animation.ipynb        video and stills of one replica
+├── 04_analysis.ipynb         ensemble statistics, report, FIB-SEM comparison, comparison of runs, sweeps, FIB-SEM export
+├── qtft/                     the Python package (all code; modules: see the README)
+├── template.lmp              LAMMPS input template: model structure with {{placeholders}}, no numbers
+├── job_template.slurm        Slurm job script template for runs on LRZ
 ├── lammps_plugins/
-│   └── bond_break_random/   LAMMPS plugin fix bond/break/random: C++ source, build.sh (the built .so is not committed)
-├── tests/                   pytest tests (slow ones run short LAMMPS simulations)   gitignored
+│   └── bond_break_random/    LAMMPS plugin fix bond/break/random: C++ source, build.sh (the built .so is not committed)
+├── tests/                    pytest tests (slow ones run short LAMMPS simulations)   gitignored
 ├── docs/
-│   ├── install.md           installation on this PC and on LRZ
-│   └── repo_structure.md    this page
-├── environment.yml          conda environment "lammps"
-├── pytest.ini               pytest settings   gitignored
+│   ├── install.md            installation on this PC and on LRZ
+│   └── repo_structure.md     this page
+├── environment.yml           conda environment "lammps"
+├── pytest.ini                pytest settings   gitignored
 ├── README.md
-├── lrz_local.json           personal LRZ settings (email for Slurm)   gitignored
-└── runs/                    all simulation output (section 2)          gitignored
+├── lrz_local.json            personal LRZ settings (email for Slurm)   gitignored
+└── runs/                     all simulation output (section 2)          gitignored
 ```
 
 ---

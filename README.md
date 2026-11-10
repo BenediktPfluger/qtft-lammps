@@ -25,14 +25,15 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 1. Install everything as described in [docs/install.md](docs/install.md), including the unbinding plugin
    (`lammps_plugins/bond_break_random/build.sh`; again after every LAMMPS update).
 2. `conda activate lammps`, open the repo in VS Code.
-3. Open `simulate_hek.ipynb`: set the parameters (Qt and Ft as densities per µm³), check the derived values (they
-   start with the resulting particle numbers), build and run. For a parameter
-   study, list values per parameter in section 4 (`build_sweep`): one run per combination. Runs go to this
-   PC (`executor="local"`) or to the LRZ Linux cluster (`executor="lrz"`; download the results with `fetch`).
-4. Analyse finished runs in `analysis.ipynb`: `make_report` writes all tables and figures to
+3. Open `01_simulate_hek.ipynb` (HEK293T cells; `02_simulate_neurons.ipynb` for neurons): set the parameters
+   (Qt and Ft as densities per µm³), check the derived values (they start with the resulting particle
+   numbers), build and run. For a parameter study, list values per parameter in section 4 (`build_sweep`):
+   one run per combination. Runs go to this PC (`executor="local"`) or to the LRZ Linux cluster
+   (`executor="lrz"`; download the results with `fetch`).
+4. Analyse finished runs in `04_analysis.ipynb`: `make_report` writes all tables and figures to
    `<run>/analysis/`, including `report.pdf` with every figure for a review at a glance; `sweep_report` does
    the same for a parameter sweep (results against the swept parameter and the comparison of its runs).
-   Render a video of a run in `animation.ipynb` (needs ffmpeg).
+   Render a video of a run in `03_animation.ipynb` (needs ffmpeg).
 
 Simulation output is written to `runs/` inside the repository (gitignored, never committed):
 `runs/single/` for runs with one replica, `runs/ensemble/` for runs with several,
@@ -43,9 +44,10 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 
 | Path | Purpose |
 |---|---|
-| `simulate_hek.ipynb` | set all parameters, build the LAMMPS input, run (locally or on LRZ), monitor; parameter sweeps, quick look, performance measurement, force-constant sweep |
-| `analysis.ipynb` | index of all runs, ensemble statistics, full report (figures, tables, `report.pdf`), comparison with 3D FIB-SEM, comparison of runs, parameter sweeps, FIB-SEM export |
-| `animation.ipynb` | video of one replica: set the run folder name, `animate` writes `rep_XX/animation/animation.mp4` (and optional stills) |
+| `01_simulate_hek.ipynb` | HEK293T cells (optoCRAC cycle): set all parameters, build the LAMMPS input, run (locally or on LRZ), monitor; parameter sweeps, quick look, performance measurement, force-constant sweep |
+| `02_simulate_neurons.ipynb` | the same for neurons: one spontaneous calcium event instead of the HEK293T optoCRAC cycle |
+| `03_animation.ipynb` | video of one replica: set the run folder name, `animate` writes `rep_XX/animation/animation.mp4` (and optional stills) |
+| `04_analysis.ipynb` | index of all runs, ensemble statistics, full report (figures, tables, `report.pdf`), comparison with 3D FIB-SEM, comparison of runs, parameter sweeps, FIB-SEM export |
 | `docs/install.md` | installation: WSL, Ubuntu, conda, LAMMPS, VS Code on this PC; SSH and LAMMPS on LRZ |
 | `docs/repo_structure.md` | folder structure, every input and output file of a run, and every figure with its panels |
 | `environment.yml` | the conda environment `lammps` (compilers, MPI, Python packages, OVITO, ffmpeg, pytest, nbstripout) |

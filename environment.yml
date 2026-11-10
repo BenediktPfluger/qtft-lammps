@@ -20,7 +20,7 @@ dependencies:
   - pandas
   - pyyaml
   - matplotlib
-  - ffmpeg         # animation video (animation.ipynb)
+  - ffmpeg         # animation video (03_animation.ipynb)
   - ipykernel
   # development
   - pytest
