@@ -66,6 +66,7 @@ runs/
 │       │   ├── log.lammps, traj.dump, bonds.dump, rdf.dat, coord_qt.hist, coord_ft.hist, final.data
 │       │   ├── fibsem/              only after the FIB-SEM export
 │       │   └── animation/           only after animate()
+│       ├── fibsem/                  only after fibsem_export_run(): all replicas pooled
 │       └── analysis/                only after the analysis
 │           ├── *.csv, *.json, ensemble_series.npz, summary_table.tex, report.pdf
 │           └── figures/
@@ -204,9 +205,9 @@ cancelled one to `stopped`. `stop()` fetches the status files first and never ov
 `start()` runs only the replicas that are not `done` (built, failed or stopped; on LRZ only their array tasks).
 For an LRZ run it first checks `job.slurm` and the connection, so a failing submission changes nothing. Then it
 removes their old outputs (logs, dumps, `rdf.dat`, histograms, `final.data`, `pid`, `fibsem/`,
-`animation/`; on LRZ as well) and the files in the run's `analysis/` folder, which were computed from them;
-`analysis/figures/` stays until the next `make_report()`. To repeat a whole run, build it again with
-`build_run(p, overwrite=True)`.
+`animation/`; on LRZ as well), the files in the run's `analysis/` folder and the pooled `<run>/fibsem/`,
+which were computed from them; `analysis/figures/` stays until the next `make_report()`. To repeat a whole
+run, build it again with `build_run(p, overwrite=True)`.
 
 ---
 
@@ -486,22 +487,43 @@ empty), the agglomerates at the end of the influx (`agglomerates_influx_end.csv`
 
 ## 7. Other outputs
 
-### FIB-SEM export `rep_XX/fibsem/`
+### FIB-SEM export `fibsem/`
 
-Only after `fibsem_export_run(run_dir)` (analysis, section 7). The frame at the end of the influx (the last
+Only after `fibsem_export_run(run_dir)` (analysis, section 7): the frame at the end of the influx (the last
 `traj.dump` frame at or before it, the run end without an influx; the same frame as for `fibsem_comparison`) in
-the schema of the FIB-SEM segmentation pipeline.
+the schema of the FIB-SEM segmentation pipeline. Every replica is exported to `rep_XX/fibsem/`, and all replicas
+pooled to `<run>/fibsem/`. `fibsem_export(rep_dir)` exports a single replica, also an unfinished one, for checking.
+
+Only encapsulins are exported; ferritin still connects the clusters. Clusters are the connected components of
+the bond graph, numbered by size within a replica (1 = largest). Positions are read with `qtft.read` and
+unwrapped with `structure.unwrap_clusters` (minimum image along a spanning tree of the bonds; the image flags
+of `traj.dump` are not used). A cluster that spans the box (periodic: wraps around it; walls: touches both
+opposite walls) is `percolating`; its unwrapped shape is not defined.
+
+Before anything is written, every replica must be `done` and pass all checks, otherwise `ExportError` is
+raised and no file is written:
+- `traj.dump` has the columns of `template.lmp`, the particle counts are `n_qt` / `n_ft` with unique IDs;
+- fragment check: the bond-graph clusters equal the LAMMPS fragments (`cluster` column), 1 : 1;
+- bond check: minimum-image bond length ≤ 1.5 × (r_i + r_j) for all but 5 % of the bonds;
+- unwrap check: in non-percolating clusters every unwrapped bond vector equals its minimum image;
+- all replicas at the same step.
 
 | File | Content | Written by |
 |---|---|---|
-| `sim_encapsulin_centroids_clustered.csv` | one row per encapsulin: `label, z_nm, y_nm, x_nm, z_vox, y_vox, x_vox, radius_nm, volume_nm3, cluster, is_clustered` | `fibsem_export()` (OVITO) |
-| `sim_metadata.json` | counts, cluster-size histogram, box and offset, frame (`frame` in words, `step`, `time_s` since the production start), `source_trajectory` (relative to `runs/<group>/`), bond check, all parameters, `boundary`, `wall_stiffness`, `wall_leaks` | `fibsem_export()` |
-| `check_xy.png` | x–y scatter of the encapsulins coloured by cluster, with the box or walls as dashed outline | `fibsem_export()` |
+| `sim_encapsulin_centroids_clustered.csv` | one row per encapsulin: `label, particle_id, z_nm, y_nm, x_nm, z_vox, y_vox, x_vox, radius_nm, volume_nm3, cluster, is_clustered, cluster_size_particles` (incl. Ft)`, spans` (axes, empty = none)`, percolating, touches_wall, wall_gap_nm`; pooled additionally `replica, label_in_replica, cluster_in_replica`, with `label` and `cluster` run-wide | `fibsem_export_run()`, `fibsem_export()` |
+| `sim_metadata.json` | source run and `source_trajectories` (relative to `runs/`), frame (`frame` in words, `step`, `time_s` since the production start, `influx_end_step`, gap to it), counts (encapsulins, clustered, free, clusters, percolating, touching a wall, largest cluster with and without Ft, size histogram), box, `boundary`, `wall_stiffness`, `wall_leaks`, voxel size, `unwrap_method`, bond, unwrap and fragment checks, `per_replica` (offset, counts, checks), all parameters | `fibsem_export_run()`, `fibsem_export()` |
+| `check_xy.png` | x–y scatter of the encapsulins coloured by cluster (free grey, percolating black), with the box or walls as dashed outline; per replica only | `fibsem_export_run()`, `fibsem_export()` |
 
-In a periodic box the clusters are unwrapped across the box and shifted to the origin. With walls the
-positions stay in the box frame, with the walls at 0 and the box size. `wall_stiffness` holds k of Qt and Ft
-for harmonic walls; `wall_leaks` the spheres sticking out of the box and the largest depth (null in a
-periodic box).
+In a periodic box every replica is shifted so that the lower corner of the bounding box of its encapsulin
+spheres (non-percolating clusters) is at the origin (`per_replica` → `offset_applied_xyz_nm`); this breaks the
+periodicity between clusters. With walls the positions stay in the box frame, with the walls at 0 and the box
+size; `touches_wall` means a particle surface (Qt or Ft) of the cluster within 5 nm of a face (`wall_gap_nm`:
+the smallest gap, empty in a periodic box). `wall_stiffness` holds k of Qt and Ft for harmonic walls;
+`wall_leaks` the spheres sticking out of the box and the largest depth (null in a periodic box).
+
+`spans` is empty for a cluster that does not span the box, and `wall_gap_nm` in a periodic box. pandas reads
+these empty fields as NaN; read the CSV with `pd.read_csv(path, keep_default_na=False)` to keep `spans` as
+strings (`wall_gap_nm` then too: convert it with `pd.to_numeric`), or use `fillna("")` on `spans`.
 
 ### Animation `rep_XX/animation/`
 

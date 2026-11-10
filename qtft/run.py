@@ -81,8 +81,8 @@ def _set_status(rep: Path, status: str) -> None:
 
 
 def _clear_outputs(reps: list[Path]) -> None:
-    """Remove the outputs of replicas that run again, and the analysis files of their runs (cached results
-    of the old outputs; the figures stay until the next make_report)."""
+    """Remove the outputs of replicas that run again, and the analysis files and the pooled FIB-SEM export
+    of their runs (computed from the old outputs; the figures stay until the next make_report)."""
     for rep in reps:
         for name in remote.REPLICA_OUTPUTS:
             path = rep / name
@@ -94,6 +94,7 @@ def _clear_outputs(reps: list[Path]) -> None:
         for path in (run / "analysis").glob("*"):
             if path.is_file():
                 path.unlink()
+        shutil.rmtree(run / "fibsem", ignore_errors=True)
 
 
 def _lrz(params: dict) -> bool:

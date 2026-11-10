@@ -41,11 +41,10 @@ PROBE_XY_NM, PROBE_Z_NM = 60.0, 150.0      # envelope probe: half the lattice-SI
 VOXEL_NM = 10.0         # voxel edge of the volume grid [nm]
 
 
-def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True, last_only: bool = False,
-                at_step: int | None = None):
+def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True, last_only: bool = False):
     """Yield (step, OVITO DataCollection) for every `every`-th frame of traj.dump (always including
-    the last one if `last`; only the last one if `last_only`; only the last one at or before step
-    `at_step` if given), with bonds from bonds.dump and bond-based cluster analysis applied.
+    the last one if `last`; only the last one if `last_only`), with bonds from bonds.dump and
+    bond-based cluster analysis applied.
 
     Afterwards `data.particles.positions` are unwrapped per cluster (periodic box; with walls they
     are unchanged), `data.particles['Cluster']`
@@ -58,18 +57,12 @@ def load_frames(rep_dir: str | Path, every: int = 1, last: bool = True, last_onl
     rep_dir = Path(rep_dir)
     pipeline = import_file(str(rep_dir / "traj.dump"))
     n = pipeline.source.num_frames
+    frames = [n - 1] if last_only else list(range(0, n, every))
+    if last and frames[-1] != n - 1:
+        frames.append(n - 1)
     all_steps = dump_steps(rep_dir / "traj.dump")
     if len(all_steps) != n:
         raise ValueError(f"{rep_dir / 'traj.dump'}: OVITO sees {n} frames, the file has {len(all_steps)}")
-    if at_step is not None:
-        before = [f for f, s in enumerate(all_steps) if s <= at_step]
-        if not before:
-            raise ValueError(f"{rep_dir / 'traj.dump'}: no frame at or before step {at_step}")
-        frames = before[-1:]
-    else:
-        frames = [n - 1] if last_only else list(range(0, n, every))
-        if last and frames[-1] != n - 1:
-            frames.append(n - 1)
     steps = {all_steps[f]: f for f in frames}
     bonds = {s: b for s, b in read_bonds(rep_dir / "bonds.dump") if s in steps}
 
