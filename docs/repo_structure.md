@@ -27,7 +27,7 @@ qtft-lammps/
 ├── 01_simulate_hek.ipynb     set parameters, build, run, monitor, sweeps, benchmark (HEK293T optoCRAC cycle)
 ├── 02_simulate_neurons.ipynb the same for one spontaneous calcium event in neurons
 ├── 03_animation.ipynb        video and stills of one replica
-├── 04_analysis.ipynb         ensemble statistics, report, FIB-SEM comparison, comparison of runs, sweeps, FIB-SEM export
+├── 04_analysis.ipynb         ensemble statistics, report, FIB-SEM comparison, comparison of runs, sweeps, FIB-SEM and SEM export
 ├── qtft/                     the Python package (all code; modules: see the README)
 ├── template.lmp              LAMMPS input template: model structure with {{placeholders}}, no numbers
 ├── job_template.slurm        Slurm job script template for runs on LRZ
@@ -67,6 +67,7 @@ runs/
 │       │   ├── fibsem/              only after the FIB-SEM export
 │       │   └── animation/           only after animate()
 │       ├── fibsem/                  only after fibsem_export_run(): all replicas pooled
+│       ├── sem/                     only after sem_export_run(): all replicas pooled
 │       └── analysis/                only after the analysis
 │           ├── *.csv, *.json, ensemble_series.npz, summary_table.tex, report.pdf
 │           └── figures/
@@ -205,7 +206,7 @@ cancelled one to `stopped`. `stop()` fetches the status files first and never ov
 `start()` runs only the replicas that are not `done` (built, failed or stopped; on LRZ only their array tasks).
 For an LRZ run it first checks `job.slurm` and the connection, so a failing submission changes nothing. Then it
 removes their old outputs (logs, dumps, `rdf.dat`, histograms, `final.data`, `pid`, `fibsem/`,
-`animation/`; on LRZ as well), the files in the run's `analysis/` folder and the pooled `<run>/fibsem/`,
+`animation/`; on LRZ as well), the files in the run's `analysis/` folder and the pooled `<run>/fibsem/` and `<run>/sem/`,
 which were computed from them; `analysis/figures/` stays until the next `make_report()`. To repeat a whole
 run, build it again with `build_run(p, overwrite=True)`.
 
@@ -489,11 +490,12 @@ empty), the agglomerates at the end of the influx (`agglomerates_influx_end.csv`
 
 ### FIB-SEM export `fibsem/`
 
-Only after `fibsem_export_run(run_dir)` (analysis, section 7): the frame at the end of the influx (the last
+Only after `fibsem_export_run(run_dir)` (analysis, section 7; independent of the SEM export): the frame at the end of the influx (the last
 `traj.dump` frame at or before it, the run end without an influx; the same frame as for `fibsem_comparison`) in
 the schema of the FIB-SEM segmentation pipeline. Every replica is exported to `rep_XX/fibsem/`, and all replicas
 pooled to `<run>/fibsem/`. `fibsem_export(rep_dir)` exports a single replica, also an unfinished one, for checking.
 
+Frame, checks and clusters come from `qtft/export.py`, shared with the SEM export (below).
 Only encapsulins are exported; ferritin still connects the clusters. Clusters are the connected components of
 the bond graph, numbered by size within a replica (1 = largest). Positions are read with `qtft.read` and
 unwrapped with `structure.unwrap_clusters` (minimum image along a spanning tree of the bonds; the image flags
@@ -524,6 +526,29 @@ the smallest gap, empty in a periodic box). `wall_stiffness` holds k of Qt and F
 `spans` is empty for a cluster that does not span the box, and `wall_gap_nm` in a periodic box. pandas reads
 these empty fields as NaN; read the CSV with `pd.read_csv(path, keep_default_na=False)` to keep `spans` as
 strings (`wall_gap_nm` then too: convert it with `pd.to_numeric`), or use `fillna("")` on `spans`.
+
+### SEM export `sem/`
+
+Only after `sem_export_run(run_dir)` (analysis, section 8; independent of the FIB-SEM export): the same frame,
+the same checks and the same clusters as the FIB-SEM export (all from `qtft/export.py`), for virtual 2D sections
+cut from the simulation box in Colab. The encapsulins keep their **position in the box**: in a periodic box
+wrapped into [0, L) along every axis, with walls as dumped (walls at 0 and L); nothing is unwrapped or shifted.
+The clusters therefore keep their arrangement relative to each other; a cluster crossing a periodic face
+appears split at opposite faces. Only Qt are exported; the true 3D clusters (bond graph incl. Ft) come along
+for checking how 2D linking in a section splits or merges them. Section thickness, visible depth, detection
+diameter and field of view are parameters of the slicing, not of the export. Only the pooled export is written
+(no per-replica folders).
+
+In addition to the checks of the FIB-SEM export, the box in `traj.dump` must equal `Params.box` with its origin
+at 0, and every exported centre must lie in the box; otherwise `ExportError` is raised and no file is written.
+
+| File | Content | Written by |
+|---|---|---|
+| `sem_qt_positions.csv` | one row per encapsulin of all replicas: `label` (run-wide), `replica, particle_id, x_nm, y_nm, z_nm, radius_nm, cluster` (run-wide)`, cluster_in_replica` (by size, 1 = largest)`, cluster_size_qt, cluster_size_particles` (incl. Ft)`, is_clustered, spans` (axes, empty = none)`, percolating, touches_wall, wall_gap_nm` (empty in a periodic box); same cluster IDs as `sim_encapsulin_centroids_clustered.csv` | `sem_export_run()` |
+| `sem_metadata.json` | source run and `source_trajectories`, frame (`frame` in words, `step`, `time_s`, `influx_end_step`, gap to it), `boundary`, `periodic`, `wall_touch_nm`, box size, origin and volume, `coordinates` (how the positions are given), Qt radius and diameter, Qt per replica and per µm³, counts as in `sim_metadata.json`, `columns` (meaning of every CSV column, worded for a periodic box or walls), `checks` (wrap per replica: number of centres wrapped back into the box and how far they were outside; bond, unwrap and fragment checks), `per_replica` counts, all parameters | `sem_export_run()` |
+| `check_sem.png` | x–y, x–z and y–z projections of the encapsulins of the first replica in the box (free grey, clusters coloured, percolating black), box or walls dashed | `sem_export_run()` |
+
+Read the CSV with `pd.read_csv(path, keep_default_na=False)`, as for the FIB-SEM export.
 
 ### Animation `rep_XX/animation/`
 
