@@ -25,7 +25,7 @@ from pathlib import Path
 from .params import Params, data_path
 
 REPLICA_OUTPUTS = ("log.lammps", "lammps.out", "log.cite", "traj.dump", "bonds.dump", "rdf.dat", "coord_qt.hist",
-                   "coord_ft.hist", "final.data", "pid", "fibsem", "animation")   # removed before a replica runs again
+                   "coord_ft.hist", "final.data", "pid", "fibsem", "sem", "animation")   # removed before a replica runs again
 
 LRZ = {
     "host": "lrz",                                 # Host entry in ~/.ssh/config (ControlMaster: one 2FA login)

@@ -65,6 +65,7 @@ runs/
 │       │   ├── in.lammps, status, pid, lammps.out
 │       │   ├── log.lammps, traj.dump, bonds.dump, rdf.dat, coord_qt.hist, coord_ft.hist, final.data
 │       │   ├── fibsem/              only after the FIB-SEM export
+│       │   ├── sem/                 only after the SEM export
 │       │   └── animation/           only after animate()
 │       ├── fibsem/                  only after fibsem_export_run(): all replicas pooled
 │       ├── sem/                     only after sem_export_run(): all replicas pooled
@@ -205,7 +206,7 @@ cancelled one to `stopped`. `stop()` fetches the status files first and never ov
 
 `start()` runs only the replicas that are not `done` (built, failed or stopped; on LRZ only their array tasks).
 For an LRZ run it first checks `job.slurm` and the connection, so a failing submission changes nothing. Then it
-removes their old outputs (logs, dumps, `rdf.dat`, histograms, `final.data`, `pid`, `fibsem/`,
+removes their old outputs (logs, dumps, `rdf.dat`, histograms, `final.data`, `pid`, `fibsem/`, `sem/`,
 `animation/`; on LRZ as well), the files in the run's `analysis/` folder and the pooled `<run>/fibsem/` and `<run>/sem/`,
 which were computed from them; `analysis/figures/` stays until the next `make_report()`. To repeat a whole
 run, build it again with `build_run(p, overwrite=True)`.
@@ -534,19 +535,21 @@ the same checks and the same clusters as the FIB-SEM export (all from `qtft/expo
 cut from the simulation box in Colab. The encapsulins keep their **position in the box**: in a periodic box
 wrapped into [0, L) along every axis, with walls as dumped (walls at 0 and L); nothing is unwrapped or shifted.
 The clusters therefore keep their arrangement relative to each other; a cluster crossing a periodic face
-appears split at opposite faces. Only Qt are exported; the true 3D clusters (bond graph incl. Ft) come along
+appears split at opposite faces. Positions are rounded to 1e-6 nm before the final wrap, so no value reads back
+as L. Only Qt are exported; the true 3D clusters (bond graph incl. Ft) come along
 for checking how 2D linking in a section splits or merges them. Section thickness, visible depth, detection
-diameter and field of view are parameters of the slicing, not of the export. Only the pooled export is written
-(no per-replica folders).
+diameter and field of view are parameters of the slicing, not of the export. As for the FIB-SEM export, every
+replica is exported to `rep_XX/sem/` and all replicas pooled to `<run>/sem/`; `sem_export(rep_dir)` exports a
+single replica, also an unfinished one, for checking.
 
 In addition to the checks of the FIB-SEM export, the box in `traj.dump` must equal `Params.box` with its origin
 at 0, and every exported centre must lie in the box; otherwise `ExportError` is raised and no file is written.
 
 | File | Content | Written by |
 |---|---|---|
-| `sem_qt_positions.csv` | one row per encapsulin of all replicas: `label` (run-wide), `replica, particle_id, x_nm, y_nm, z_nm, radius_nm, cluster` (run-wide)`, cluster_in_replica` (by size, 1 = largest)`, cluster_size_qt, cluster_size_particles` (incl. Ft)`, is_clustered, spans` (axes, empty = none)`, percolating, touches_wall, wall_gap_nm` (empty in a periodic box); same cluster IDs as `sim_encapsulin_centroids_clustered.csv` | `sem_export_run()` |
-| `sem_metadata.json` | source run and `source_trajectories`, frame (`frame` in words, `step`, `time_s`, `influx_end_step`, gap to it), `boundary`, `periodic`, `wall_touch_nm`, box size, origin and volume, `coordinates` (how the positions are given), Qt radius and diameter, Qt per replica and per µm³, counts as in `sim_metadata.json`, `columns` (meaning of every CSV column, worded for a periodic box or walls), `checks` (wrap per replica: number of centres wrapped back into the box and how far they were outside; bond, unwrap and fragment checks), `per_replica` counts, all parameters | `sem_export_run()` |
-| `check_sem.png` | x–y, x–z and y–z projections of the encapsulins of the first replica in the box (free grey, clusters coloured, percolating black), box or walls dashed | `sem_export_run()` |
+| `sem_qt_positions.csv` | one row per encapsulin: `label, particle_id, x_nm, y_nm, z_nm, radius_nm, cluster` (by size, 1 = largest)`, cluster_size_qt, cluster_size_particles` (incl. Ft)`, is_clustered, spans` (axes, empty = none)`, percolating, touches_wall, wall_gap_nm` (empty in a periodic box); pooled additionally `replica, label_in_replica, cluster_in_replica`, with `label` and `cluster` run-wide; same cluster IDs as `sim_encapsulin_centroids_clustered.csv` | `sem_export_run()`, `sem_export()` |
+| `sem_metadata.json` | source run and `source_trajectories`, frame (`frame` in words, `step`, `time_s`, `influx_end_step`, gap to it), `boundary`, `periodic`, `wall_touch_nm`, box size, origin and volume, `coordinates` (how the positions are given), `position_resolution_nm`, Qt radius and diameter, Qt per replica and per µm³, counts as in `sim_metadata.json`, `columns` (meaning of every CSV column, worded for a periodic box or walls), `checks` (wrap per replica: number of centres wrapped back into the box and how far they were outside; bond, unwrap and fragment checks), `per_replica` counts, all parameters | `sem_export_run()`, `sem_export()` |
+| `check_sem.png` | x–y, x–z and y–z projections of the encapsulins in the box (free grey, clusters coloured, percolating black), box or walls dashed; per replica only | `sem_export_run()`, `sem_export()` |
 
 Read the CSV with `pd.read_csv(path, keep_default_na=False)`, as for the FIB-SEM export.
 
