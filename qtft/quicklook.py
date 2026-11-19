@@ -13,7 +13,7 @@ from .overlap import FAMILIES, overlap_frame
 from .params import Params
 from .read import load_thermo, read_dump
 
-# (thermo column, axis label, scale factor)
+# (thermo column, axis label, scale factor; "kT": divided by k_BT)
 PANELS = [
     ("Bonds", "bonds", 1),
     ("frac_bound", "fraction bound", 1),
@@ -21,6 +21,7 @@ PANELS = [
     ("largest", "largest cluster (particles)", 1),
     ("mean_size", "mean cluster size", 1),
     ("bond_max", "max bond length (nm)", 1),
+    ("ebond_per_bond", "bond energy per bond (k_BT)", "kT"),
     ("PotEng", "potential energy (zJ)", 1),
     ("pvir", "virial pressure (Pa)", 1e6),       # units nano: 1 pressure unit = 1 MPa
 ]
@@ -44,8 +45,9 @@ def _overlap(rep: Path, p: Params, every: int) -> pd.DataFrame:
 
 
 def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10):
-    """Thermo time series, potential energy, pressure and (with `overlap`) the mean overlap depth
-    of each pair family from every `overlap_every`-th trajectory frame, all replicas overlaid.
+    """Thermo time series, bond energy per bond (thermal value: k_BT/2 for free bonds, 5/2 k_BT for anchored
+    bonds; more where bonds are strained), potential energy, pressure and (with `overlap`) the mean overlap depth
+    of each pair family from every `overlap_every`-th trajectory frame, all replicas overlaid; legend on the right.
     With harmonic walls the mean wall depth of Qt and Ft is drawn dashed in the Qt–Qt and Ft–Ft panels.
     Dotted vertical lines: start and end of the calcium influx.
     Runs on LRZ: the logs are fetched from there first; the overlap panels need fetch(run_dir)."""
@@ -53,8 +55,8 @@ def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10
     p = Params.load(run_dir / "params.json")
     if p.executor == "lrz":
         remote.sync(run_dir)
-    fig, axes = plt.subplots(3, 4, figsize=(14, 8.5), sharex=True)
-    thermo_axes, overlap_axes, legend_ax = axes.flat[:8], axes.flat[8:11], axes.flat[11]
+    fig, axes = plt.subplots(3, 4, figsize=(15, 8.5), sharex=True)
+    thermo_axes, overlap_axes = axes.flat[:9], axes.flat[9:]
     for ax, (_, label, _) in zip(thermo_axes, PANELS):
         ax.set_ylabel(label)
     walls = {"Qt-Qt": "Qt-wall", "Ft-Ft": "Ft-wall"} if p.boundary == "harmonic" else {}
@@ -69,7 +71,7 @@ def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10
         except ValueError:
             continue
         for ax, (col, _, scale) in zip(thermo_axes, PANELS):
-            ax.plot(df["time_ms"], df[col] * scale, lw=1, label=rep.name)
+            ax.plot(df["time_ms"], df[col] * (1 / p.kT if scale == "kT" else scale), lw=1, label=rep.name)
         ov = _overlap(rep, p, overlap_every) if overlap and (rep / "traj.dump").exists() else pd.DataFrame()
         for ax, family in zip(overlap_axes, FAMILIES):
             if len(ov):
@@ -78,17 +80,15 @@ def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10
                 if family in walls:
                     sel = ov[ov["family"] == walls[family]]
                     ax.plot(sel["time_ms"], sel[OVERLAP], lw=1, ls="--", color=line.get_color())
-    axes[1, 3].tick_params(labelbottom=True)       # the legend panel below it has no axis
     end_ms = p.prod_steps * p.timestep * 1e-6
     unit, factor = time_unit(end_ms)                # data in ms; long runs show s (shared x axis)
     if factor != 1.0:
         axes[0, 0].xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v * factor:g}"))
-    for ax in [*axes[-1, :3], axes[1, 3]]:
+    for ax in axes[-1]:
         ax.set_xlabel(f"time ({unit})")
     handles, labels = thermo_axes[0].get_legend_handles_labels()
-    legend_ax.axis("off")
     if handles:
-        legend_ax.legend(handles, labels, frameon=False, fontsize=8, loc="center")
+        fig.legend(handles, labels, frameon=False, fontsize=8, loc="center right")
     if overlap and p.executor == "lrz" and not any((r / "traj.dump").exists() for r in run_dir.glob("rep_*")):
         for ax in overlap_axes:
             ax.text(0.5, 0.5, "LRZ run: fetch(run_dir)\nfor the overlap", transform=ax.transAxes,
@@ -96,5 +96,5 @@ def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10
     for t in {p.t_on_s * 1e3, p.t_off_s * 1e3} - {0.0, end_ms}:                    # phase boundaries
         for ax in [*thermo_axes, *overlap_axes]:
             ax.axvline(t, color="0.6", lw=0.6, ls=":")
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 0.93, 1))       # room for the legend
     return fig

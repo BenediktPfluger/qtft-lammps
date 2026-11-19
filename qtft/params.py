@@ -33,6 +33,7 @@ REPO_DIR = Path(__file__).resolve().parent.parent
 EXECUTION_SETTINGS = {"n_replicas", "mpi_procs", "max_parallel", "master_seed", "data_dir", "group",
                       "run_name", "lmp_command", "mpirun_command", "executor", "slurm_time", "slurm_mem"}
 EXECUTORS = ("local", "lrz")
+ANCHOR_SETTINGS = {"anchor_wobble_nm", "anchor_wobble_share_qt"}   # act only with bond_geometry "anchored"
 SLURM_MAX_DAYS = 7      # time limit of the LRZ partition serial_long
 
 

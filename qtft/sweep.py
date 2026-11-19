@@ -23,7 +23,7 @@ import pandas as pd
 
 from .build import build_run, git_info, write_job
 from .ensemble import ensemble_stats, size_peaks
-from .params import EXECUTION_SETTINGS, Params, box_label, data_path
+from .params import ANCHOR_SETTINGS, EXECUTION_SETTINGS, Params, box_label, data_path
 RESULTS = ["final_frac_bound", "final_Bonds", "final_largest_frac", "final_mean_size",
            "t_half_bonds_ms", "t_half_qt_ms", "t_half_ft_ms", "t_percolation_ms",
            "bonds_peak", "largest_peak", "t_half_unbind_bonds_ms", "t_half_unbind_largest_ms",
@@ -50,8 +50,11 @@ def build_sweep_from(p: Params, overrides: list[dict], labels: list[str], group:
         raise ValueError(f"run labels are not unique: {labels}")
     variants = [dataclasses.replace(p, **o, group=group, run_name=label) for o, label in zip(overrides, labels)]
     errors = []
-    for q in variants:
+    for q, o in zip(variants, overrides):
         errors += [f"{q.run_name}: {msg}" for lvl, msg in q.check() if lvl == "ERROR"]
+        if not q.anchored and o.keys() & ANCHOR_SETTINGS:      # would build runs with the same physics
+            errors.append(f"{q.run_name}: {', '.join(sorted(o.keys() & ANCHOR_SETTINGS))} act only with "
+                          "bond_geometry 'anchored' (set it in the base parameters)")
     if errors:
         raise ValueError("invalid variants:\n  " + "\n  ".join(errors))
 

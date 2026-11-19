@@ -463,7 +463,8 @@ Not saved by `make_report()`; draw them in the notebook (see the note in analysi
   with `density=True`, per 1000 µm³), also for several runs.
 - `fig_bond_rates(run, rates=…)`: the two rate panels alone (also for a list of runs), for example with coarser bins
   (`rates=bond_rates(run_dir, bin_s=…)`).
-- `quicklook(run_dir)` (simulation, section 5): a quick overview of a running or finished run, not saved.
+- `quicklook(run_dir)` (simulation, section 5): a quick overview of a running or finished run, not saved; among the
+  panels the bond energy per bond in k_BT (relaxed bonds: ≈ 1/2 free, ≈ 5/2 anchored).
 
 ### Comparison of runs: `compare_report(runs, out_dir)`
 

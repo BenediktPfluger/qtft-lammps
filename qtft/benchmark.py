@@ -72,7 +72,8 @@ def benchmark(p: Params, procs=None, cores: int | None = None, steps: int = 2000
               Open MPI refuses more processes than physical cores in one mpirun)
     cores:    hardware threads to fill (default: all of this machine)
     steps:    production steps per measurement (equilibration is kept short)
-    variants: optional {label: {param: value}} to compare settings, e.g. {"skin 20": {"neighbor_skin": 20}}
+    variants: optional {label: {param: value}} to compare settings, e.g. {"skin 20": {"neighbor_skin": 20}};
+              both bond geometries: {"free": {}, "anchored": {"bond_geometry": "anchored"}}
     name:     folder under <data_dir>/benchmark/ (default: "<cores>cores")
 
     A setting whose replicas fail is reported and skipped.
