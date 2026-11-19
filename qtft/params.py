@@ -76,6 +76,12 @@ class Params:
     # --- bonds, bond_style harmonic: E = K (r - r0)^2 ------------------------
     bond_k: float = 4.3              # K [zJ/nm^2]
     bond_r0: float | None = None     # r0 [nm]; None -> r_Qt + r_Ft
+    bond_geometry: str = "free"      # "free": point particles, a bound Ft slides over the Qt surface;
+                                     # "anchored": oriented particles, each bond end is anchored in its particle
+                                     # (bond_style harmonic/anchor, lammps_plugins/), a bound Ft only wobbles
+    anchor_wobble_nm: float = 5.0    # anchored: RMS thermal offset delta of the attachment points [nm],
+                                     # delta^2 = 2 kT (r_Qt^2 / K_anchor_Qt + r_Ft^2 / K_anchor_Ft)
+    anchor_wobble_share_qt: float = 0.5   # anchored: share of delta^2 from the Qt end (the rest from the Ft end)
 
     # --- binding, fix bond/create --------------------------------------------
     k_on: float = 1.86e-6            # binding rate per pair at full calmodulin loading (f = 1) [1/ns]
@@ -277,6 +283,62 @@ class Params:
         """Per-step overshoot against a fixed wall (E = k x^2, only the particle moves)."""
         return 2 * k * self.timestep / gamma
 
+    # ------------------------------------------------- anchored bonds
+    @property
+    def anchored(self) -> bool:
+        return self.bond_geometry == "anchored"
+
+    @property
+    def k_anchor_qt(self) -> float:
+        """Anchor stiffness of the Qt end, E = K (1 - cos theta) [zJ]: its share of delta^2,
+        2 kT r_Qt^2 / K = share delta^2."""
+        return 2 * self.kT * self.radius_qt ** 2 / (self.anchor_wobble_share_qt * self.anchor_wobble_nm ** 2)
+
+    @property
+    def k_anchor_ft(self) -> float:
+        """Anchor stiffness of the Ft end [zJ]: the rest of delta^2."""
+        return 2 * self.kT * self.radius_ft ** 2 / ((1 - self.anchor_wobble_share_qt) * self.anchor_wobble_nm ** 2)
+
+    @property
+    def theta_rms_qt(self) -> float:
+        """RMS tilt of the bond against the Qt anchor [rad] (small angles: <theta^2> = 2 kT / K)."""
+        return math.sqrt(2 * self.kT / self.k_anchor_qt)
+
+    @property
+    def theta_rms_ft(self) -> float:
+        """RMS tilt of the bond against the Ft anchor [rad]."""
+        return math.sqrt(2 * self.kT / self.k_anchor_ft)
+
+    @property
+    def D_rot_qt(self) -> float:
+        """Rotational diffusion coefficient of Qt [rad^2/ns], Stokes-Einstein from D: 3 D / (4 r^2)."""
+        return 3 * self.D_qt / (4 * self.radius_qt ** 2)
+
+    @property
+    def D_rot_ft(self) -> float:
+        """Rotational diffusion coefficient of Ft [rad^2/ns]."""
+        return 3 * self.D_ft / (4 * self.radius_ft ** 2)
+
+    @property
+    def gamma_rot_qt(self) -> float:
+        """Rotational friction of Qt [zJ ns] (fix brownian/asphere gamma_r_eigen)."""
+        return self.kT / self.D_rot_qt
+
+    @property
+    def gamma_rot_ft(self) -> float:
+        """Rotational friction of Ft [zJ ns]."""
+        return self.kT / self.D_rot_ft
+
+    @property
+    def alpha_rot_qt(self) -> float:
+        """Per-step overshoot of a Qt orientation with maxbond_qt anchored bonds (torque constant K each)."""
+        return self.maxbond_qt * self.k_anchor_qt * self.timestep / self.gamma_rot_qt
+
+    @property
+    def alpha_rot_ft(self) -> float:
+        """Per-step overshoot of an Ft orientation with maxbond_ft anchored bonds."""
+        return self.maxbond_ft * self.k_anchor_ft * self.timestep / self.gamma_rot_ft
+
     def size_bounds(self) -> tuple[int, int, int]:
         """Upper bounds of the 'small', 'medium' and 'large' cluster size classes."""
         n = self.n_qt + self.n_ft
@@ -314,6 +376,18 @@ class Params:
                 "effective c_max [uM]": round(self.ca_rest_uM + (self.ca_peak_uM - self.ca_rest_uM)
                                               * lam / (lam - k_dark), 4) if lam > k_dark else float("nan"),
             }
+        bonds = {"bond geometry": self.bond_geometry}
+        if self.anchored:
+            bonds |= {
+                "anchor wobble delta [nm] (share Qt)": (self.anchor_wobble_nm, self.anchor_wobble_share_qt),
+                "K_anchor Qt / Ft [zJ]": (round(self.k_anchor_qt, 1), round(self.k_anchor_ft, 1)),
+                "theta_rms Qt / Ft [deg]": (round(math.degrees(self.theta_rms_qt), 2),
+                                            round(math.degrees(self.theta_rms_ft), 2)),
+                "D_rot Qt / Ft [rad^2/ns]": (f"{self.D_rot_qt:.4g}", f"{self.D_rot_ft:.4g}"),
+                "gamma_rot Qt / Ft [zJ ns]": (f"{self.gamma_rot_qt:.4g}", f"{self.gamma_rot_ft:.4g}"),
+                "alpha rot Qt": self.alpha_rot_qt,
+                "alpha rot Ft": self.alpha_rot_ft,
+            }
         return {
             "particles Qt / Ft": (self.n_qt, self.n_ft),
             "box volume [um^3]": round(self.volume_um3, 4),
@@ -327,6 +401,7 @@ class Params:
             "alpha Ft-Ft": self.alpha(self.k_ff, gf, gf),
             "alpha Qt-Ft": self.alpha(self.k_qf, gq, gf),
             "alpha bond": self.alpha(self.bond_k, gq, gf),
+            **bonds,
             **walls,
             "RMS step Qt [nm/axis]": math.sqrt(2 * self.D_qt * self.timestep),
             "RMS step Ft [nm/axis]": math.sqrt(2 * self.D_ft * self.timestep),
@@ -363,6 +438,16 @@ class Params:
             return [("ERROR", "k_off values must be >= 0 and break_every >= 1")]
         if self.bond_break not in ("random", "longest"):
             return [("ERROR", f"bond_break '{self.bond_break}' unknown: use 'random' or 'longest'")]
+        if self.bond_geometry not in ("free", "anchored"):
+            return [("ERROR", f"bond_geometry '{self.bond_geometry}' unknown: use 'free' or 'anchored'")]
+        if self.anchored:
+            if self.anchor_wobble_nm <= 0:
+                return [("ERROR", "anchor_wobble_nm must be > 0")]
+            if not 0 < self.anchor_wobble_share_qt < 1:
+                return [("ERROR", "anchor_wobble_share_qt must lie between 0 and 1 (both ends wobble)")]
+            if self.bond_break == "longest":
+                return [("ERROR", "bond_geometry 'anchored' needs bond_break 'random': fix bond/break does not "
+                                  "move the anchors with the bonds")]
         if self.executor not in EXECUTORS:
             return [("ERROR", f"executor '{self.executor}' unknown: use 'local' or 'lrz'")]
         if self.executor == "lrz":
@@ -392,6 +477,16 @@ class Params:
                 out.append(("ERROR", f"{name} = {a:.2f} >= 2: unstable, reduce dt or k"))
             elif a > 1:
                 out.append(("WARNING", f"{name} = {a:.2f} > 1: steps overshoot, consider smaller dt or k"))
+        for name in ("alpha rot Qt", "alpha rot Ft"):            # all bonds of a particle add up (coordination cap)
+            if name not in d:
+                continue
+            a = d[name]
+            if a > 1.5:
+                out.append(("ERROR", f"{name} = {a:.2f} > 1.5 at the coordination cap: orientation unstable, "
+                                     "reduce dt, maxbond or the anchor stiffness (larger anchor_wobble_nm)"))
+            elif a > 0.7:
+                out.append(("WARNING", f"{name} = {a:.2f} > 0.7 at the coordination cap: orientation steps "
+                                       "start to overshoot"))
         if self.p_bind > 0.1:
             out.append(("WARNING", f"p_bind = {self.p_bind:.3f} > 0.1: per-step probability starts to saturate"))
         if self.p_break_max >= 0.1:
@@ -476,14 +571,21 @@ class Params:
     def auto_name(self) -> str:
         """Run name: Qt and Ft density [1/um^3], box edge [nm], k_on [1/s], k_off Ca-loaded / Ca-free [1/s],
         calcium rest-peak and half-loading K [uM], rise time and pump-out time constant [s], phase durations
-        baseline-influx-pump-out [s], timestep, boundary."""
+        baseline-influx-pump-out [s], timestep, boundary; anchored bonds add the wobble delta [nm] and, if it is
+        not 0.5, the share of the Qt end (free runs keep the names they had before anchored bonds existed)."""
         rho_qt, rho_ft = self.density_per_um3
         return (f"Qt{_g3(rho_qt)}_Ft{_g3(rho_ft)}_L{box_label(self.box_length)}"
                 f"_kon{self.k_on * 1e9:g}_koff{self.k_off_ca_per_s:g}-{self.k_off_free_per_s:g}"
                 f"_Ca{self.ca_rest_uM:g}-{self.ca_peak_uM:g}uM_K{self.ca_K_uM:g}"
                 f"_rise{self.ca_rise_s:g}tau{self.ca_tau_s:g}"
                 f"_t{self.t_baseline_s:g}-{self.t_influx_s:g}-{self.t_pumpout_s:g}s"
-                f"_dt{self.timestep:g}ns_{self.boundary}")
+                f"_dt{self.timestep:g}ns_{self.boundary}{self._anchor_label()}")
+
+    def _anchor_label(self) -> str:
+        if not self.anchored:
+            return ""
+        share = "" if self.anchor_wobble_share_qt == 0.5 else f"-q{self.anchor_wobble_share_qt:g}"
+        return f"_anch{self.anchor_wobble_nm:g}nm{share}"
 
     @property
     def name(self) -> str:

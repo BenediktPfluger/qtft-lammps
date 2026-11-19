@@ -22,7 +22,9 @@ TEMPLATE = REPO_DIR / "template.lmp"
 JOB_TEMPLATE = REPO_DIR / "job_template.slurm"
 PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 PLUGIN = REPO_DIR / "lammps_plugins" / "qtft_styles" / "qtftstyles.so"
-SEED_NAMES = ("seed_place_qt", "seed_place_ft", "seed_bd_qt", "seed_bd_ft", "seed_bind", "seed_break")
+# new streams are appended: generate_state(n) starts with generate_state(n - 1), so the earlier seeds stay
+SEED_NAMES = ("seed_place_qt", "seed_place_ft", "seed_bd_qt", "seed_bd_ft", "seed_bind", "seed_break",
+              "seed_quat_qt", "seed_quat_ft")
 
 
 def replica_seeds(master_seed: int, n_replicas: int) -> list[dict]:
@@ -44,10 +46,17 @@ def _lmp_help(lmp_command: str) -> str:
         return ""
 
 
+def plugin_styles(p: Params) -> list[str]:
+    """The styles of our plugin that the run uses."""
+    return (["bond/break/random"] if p.bond_break == "random" else []) + (["harmonic/anchor"] if p.anchored else [])
+
+
 def plugin_to_load(p: Params) -> Path | None:
-    """The plugin with fix bond/break/random if the run needs it and lmp does not have the style built in
-    (build it with lammps_plugins/qtft_styles/build.sh). LAMMPS on LRZ has the style built in."""
-    if p.bond_break != "random" or p.executor == "lrz" or "bond/break/random" in _lmp_help(p.lmp_command):
+    """The plugin (fix bond/break/random, bond_style harmonic/anchor) if the run uses one of its styles and lmp
+    does not have them all built in (build it with lammps_plugins/qtft_styles/build.sh). LAMMPS on LRZ has the
+    styles built in."""
+    styles = plugin_styles(p)
+    if not styles or p.executor == "lrz" or all(s in _lmp_help(p.lmp_command) for s in styles):
         return None
     return PLUGIN
 
@@ -72,6 +81,10 @@ def template_values(p: Params, replica: int, seeds: dict) -> dict:
         "k_ff": p.k_ff, "cut_ff": p.cut_ff,
         "k_qf": p.k_qf, "cut_qf": p.cut_qf,
         "bond_k": p.bond_k, "bond_r0": p.r0,
+        "bond_geometry": p.bond_geometry,
+        "k_anchor_qt": p.k_anchor_qt, "k_anchor_ft": p.k_anchor_ft,
+        "diam_qt": 2 * p.radius_qt, "diam_ft": 2 * p.radius_ft,
+        "gamma_rot_qt": p.gamma_rot_qt, "gamma_rot_ft": p.gamma_rot_ft,
         "neighbor_skin": p.neighbor_skin,
         "comm_cutoff": p.comm_cut,
         "n_qt": p.n_qt, "n_ft": p.n_ft,

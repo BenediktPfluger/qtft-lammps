@@ -147,7 +147,7 @@ simulation. All files except `log.lammps` are written at the `traj.dump` steps (
 | `bonds.dump` | all bonds (`atom1 atom2`) | `template.lmp`: `dump local` |
 | `rdf.dat` | Qt–Ft g(r) and coordination number (200 bins up to 121.5 nm by default); snapshots, not time averages | `template.lmp`: `compute rdf` |
 | `coord_qt.hist`, `coord_ft.hist` | histogram of bonds per Qt (0 … `maxbond_qt`) and per Ft (0 … `maxbond_ft`) | `template.lmp`: `fix ave/histo` |
-| `final.data` | final state: box, positions, type labels (1 Qt, 2 Ft), all bonds, coefficients. Opens in OVITO with bonds; can continue a run with `read_data` | `template.lmp`: `write_data` |
+| `final.data` | final state: box, positions, type labels (1 Qt, 2 Ft), all bonds, coefficients; anchored runs also the orientations (`Ellipsoids` section; the anchors of the bonds are not stored and are set again from the current geometry by `read_data`). Opens in OVITO with bonds; can continue a run with `read_data` | `template.lmp`: `write_data` |
 | `log.cite` | references for the LAMMPS features used (only some LAMMPS versions) | LAMMPS |
 
 Columns of `traj.dump`:
@@ -183,6 +183,7 @@ counter restarts at 0 for the production, and every segment repeats the last ste
 | `v_f_mono` … `v_f_vlarge` | fraction of particles in monomers, small, medium, large and very large clusters |
 | `v_deg_qt_mean`, `v_deg_ft_mean`, `v_deg_qt_max`, `v_deg_ft_max` | mean (over bound particles) and maximum bonds per Qt and Ft |
 | `v_bond_mean`, `v_bond_max` | mean and maximum bond length (nm) |
+| `v_ebond_per_bond` | bond energy per bond (zJ); free bonds: stretching only (≈ k_BT/2 when relaxed), anchored bonds: stretching and bending of both ends (≈ 5/2 k_BT) |
 | `S/CPU`, `CPULeft` | steps per second, and the time left of the current production segment (s) |
 
 Kinetic energy and temperature are not logged: they have no meaning in overdamped Brownian dynamics.

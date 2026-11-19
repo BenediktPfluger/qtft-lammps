@@ -1,13 +1,16 @@
 # Qt-Ft agglomeration: overdamped Brownian dynamics with stochastic Qt-Ft bonding
 # Generated from template.lmp by qtft/build.py. Units: nm, ns, zJ, pN, ag.
 # Atom types: 1 = Qt (encapsulin), 2 = Ft (ferritin). Bond type 1 = Qt-Ft.
+# Bond geometry {{bond_geometry}}: "free" = point particles, a bound Ft slides over the Qt surface;
+# "anchored" = oriented particles, each bond end is anchored in its particle's body frame (a bound Ft only wobbles).
 # Run: {{run_name}} / replica {{replica}}
 
 # ---------------------------------------------------------------- 1. initialisation
 units           nano
-atom_style      bond
-# fix bond/break/random for bond_break = random (here: {{bond_break}}) from the plugin in lammps_plugins/,
-# unless it is built into lmp
+# anchored: hybrid with ellipsoid for the orientation (quaternion) and torque of every particle
+if "{{bond_geometry}} == anchored" then "atom_style hybrid bond ellipsoid" else "atom_style bond"
+# own styles from the plugin in lammps_plugins/, unless they are built into lmp: fix bond/break/random for
+# bond_break = random (here: {{bond_break}}), bond_style harmonic/anchor for bond_geometry = anchored
 if "{{load_plugin}} == 1" then "plugin load {{plugin_path}}"
 boundary        {{boundary_flags}}   # p p p = periodic box, f f f = walls ({{boundary}})
 
@@ -15,8 +18,8 @@ boundary        {{boundary_flags}}   # p p p = periodic box, f f f = walls ({{bo
 # room for bonds and topological neighbours created later by fix bond/create
 region          box block 0 {{box_x}} 0 {{box_y}} 0 {{box_z}}
 create_box      2 box bond/types 1 extra/bond/per/atom {{extra_bond}} extra/special/per/atom {{extra_special}}
-mass            1 1.0     # masses have no effect in Brownian dynamics
-mass            2 1.0
+mass            1 1.0     # masses have no effect in Brownian dynamics (anchored: hybrid needs the per-type
+mass            2 1.0     # masses and the per-atom masses set after create_atoms; it uses the per-atom ones)
 labelmap        atom 1 Qt 2 Ft   # type names in traj.dump and final.data (OVITO shows Qt / Ft)
 
 # ---------------------------------------------------------------- 3. force field
@@ -26,9 +29,15 @@ pair_coeff      1 1 {{k_qq}} {{cut_qq}}
 pair_coeff      2 2 {{k_ff}} {{cut_ff}}
 pair_coeff      1 2 {{k_qf}} {{cut_qf}}
 
-# harmonic bond E = K (r - r0)^2
-bond_style      harmonic
-bond_coeff      1 {{bond_k}} {{bond_r0}}
+# free: harmonic bond E = K (r - r0)^2
+# anchored: E = K (r - r0)^2 + K_qt (1 - cos theta_qt) + K_ft (1 - cos theta_ft), theta = angle between the bond
+# and the anchor of that end (fixed in the body frame, set to the bond direction when the bond forms)
+if "{{bond_geometry}} == anchored" then &
+  "bond_style harmonic/anchor" &
+  "bond_coeff 1 {{bond_k}} {{bond_r0}} {{k_anchor_qt}} {{k_anchor_ft}}" &
+else &
+  "bond_style harmonic" &
+  "bond_coeff 1 {{bond_k}} {{bond_r0}}"
 
 # directly bonded pairs: repulsion off (weight tiny but non-zero, so the pair stays in the
 # neighbor list for compute rdf); pairs 2 or 3 bonds apart keep their full repulsion
@@ -57,12 +66,26 @@ if "${n_created} != ${n_expected}" then &
 group           Qt type 1
 group           Ft type 2
 
+# anchored: every particle a sphere with an orientation (ellipsoid with three equal diameters), random at start
+if "{{bond_geometry}} == anchored" then &
+  "set type 1 shape {{diam_qt}} {{diam_qt}} {{diam_qt}}" &
+  "set type 2 shape {{diam_ft}} {{diam_ft}} {{diam_ft}}" &
+  "set type * mass 1.0" &
+  "set type 1 quat/random {{seed_quat_qt}}" &
+  "set type 2 quat/random {{seed_quat_ft}}"
+
 # ---------------------------------------------------------------- 6. dynamics
 # overdamped Langevin (Euler-Maruyama): dr = F/gamma dt + sqrt(2 kT dt/gamma) xi, gamma = kT/D
-# fix brownian is the only integrator and acts as the thermostat; no fix nve/langevin/nvt
+# fix brownian (anchored: fix brownian/asphere) is the only integrator and acts as the thermostat; no fix nve/langevin/nvt
+# anchored: fix brownian/asphere, the same translation plus the rotation with gamma_rot = kT/D_rot,
+# D_rot = 3 D / (4 r^2) (Stokes-Einstein), isotropic (three equal eigenvalues)
 timestep        {{timestep}}
-fix             bd_qt Qt brownian {{temperature}} {{seed_bd_qt}} rng gaussian gamma_t {{gamma_qt}}
-fix             bd_ft Ft brownian {{temperature}} {{seed_bd_ft}} rng gaussian gamma_t {{gamma_ft}}
+if "{{bond_geometry}} == anchored" then &
+  "fix bd_qt Qt brownian/asphere {{temperature}} {{seed_bd_qt}} rng gaussian gamma_t_eigen {{gamma_qt}} {{gamma_qt}} {{gamma_qt}} gamma_r_eigen {{gamma_rot_qt}} {{gamma_rot_qt}} {{gamma_rot_qt}}" &
+  "fix bd_ft Ft brownian/asphere {{temperature}} {{seed_bd_ft}} rng gaussian gamma_t_eigen {{gamma_ft}} {{gamma_ft}} {{gamma_ft}} gamma_r_eigen {{gamma_rot_ft}} {{gamma_rot_ft}} {{gamma_rot_ft}}" &
+else &
+  "fix bd_qt Qt brownian {{temperature}} {{seed_bd_qt}} rng gaussian gamma_t {{gamma_qt}}" &
+  "fix bd_ft Ft brownian {{temperature}} {{seed_bd_ft}} rng gaussian gamma_t {{gamma_ft}}"
 
 # walls on all six box faces (only with boundary f f f); they constrain positions or add forces,
 # they are not integrators
@@ -137,6 +160,8 @@ compute         bstat all reduce max c_blen inputs local
 compute         bave all reduce ave c_blen inputs local
 variable        bond_max equal (bonds>0)*c_bstat      # 0 while there are no bonds
 variable        bond_mean equal (bonds>0)*c_bave
+# bond energy per bond (anchored: stretching plus bending of both ends; thermal: kT/2 per degree of freedom)
+variable        ebond_per_bond equal ebond/(bonds+(bonds==0))
 
 # pressure from forces only (kinetic part is meaningless in overdamped dynamics)
 compute         pvir all pressure NULL virial
@@ -147,7 +172,7 @@ thermo_style    custom step pe evdwl ebond c_pvir bonds &
                 v_n_qt_bound v_n_ft_bound v_frac_bound v_n_clusters v_mean_size v_largest &
                 v_mean_size_qt v_mean_size_ft v_largest_qt v_largest_ft &
                 v_f_mono v_f_small v_f_medium v_f_large v_f_vlarge &
-                v_deg_qt_mean v_deg_ft_mean v_deg_qt_max v_deg_ft_max v_bond_mean v_bond_max &
+                v_deg_qt_mean v_deg_ft_mean v_deg_qt_max v_deg_ft_max v_bond_mean v_bond_max v_ebond_per_bond &
                 spcpu cpuremain
 thermo_modify   line yaml norm no flush yes
 thermo          {{output_every}}
@@ -200,7 +225,7 @@ thermo_style    custom step pe evdwl ebond c_pvir bonds &
                 v_n_qt_bound v_n_ft_bound v_frac_bound v_n_clusters v_mean_size v_largest &
                 v_mean_size_qt v_mean_size_ft v_largest_qt v_largest_ft &
                 v_f_mono v_f_small v_f_medium v_f_large v_f_vlarge &
-                v_deg_qt_mean v_deg_ft_mean v_deg_qt_max v_deg_ft_max v_bond_mean v_bond_max &
+                v_deg_qt_mean v_deg_ft_mean v_deg_qt_max v_deg_ft_max v_bond_mean v_bond_max v_ebond_per_bond &
                 v_ca v_f v_k_on_s v_k_off_s v_n_broken spcpu cpuremain
 # every segment start warns about bonds created across the periodic boundary ("Inconsistent image
 # flags", harmless: the analysis uses the minimum image) and about fix bond/create together with
