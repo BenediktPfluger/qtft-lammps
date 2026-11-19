@@ -405,7 +405,8 @@ measures as rows, columns all particles, Qt and Ft, one colour per run.
 ### `multivalency` (3 × 2, 120 mm wide)
 
 How the bonds are arranged, over time (from `multivalency.csv` and the thermo data), one colour per run (legend
-below); made to compare the free and the anchored bond geometry. Not shown in the notebook; in `report.pdf`.
+below); made to compare the free and the anchored bond geometry. In `report.pdf`, and in analysis section 5
+(cell free vs anchored).
 
 1. **bound Ft with ≥ 2 bonds** and 2. **≥ 3 bonds** (% of the bound Ft).
 3. **Ft per Qt**: bonded Ft per Qt, mean over all Qt (= bonds / N_Qt).
