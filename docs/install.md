@@ -235,8 +235,8 @@ To view this guide formatted in VS Code, open it and press `Ctrl+Shift+V`.
 
 Runs with `Params(executor="lrz")` are built on this PC and run on LRZ as one Slurm job array
 (`job.slurm` from `job_template.slurm`, one task per replica, partition `serial_long`, at most 7 days). LAMMPS
-on LRZ is a minimal build of the same version, with `fix bond/break/random` compiled in, so no plugin is
-needed there. All LRZ settings (host, folders, modules, Slurm partition) are in `LRZ` in `qtft/remote.py`.
+on LRZ is a minimal build of the same version, with the project's own styles (`fix bond/break/random`,
+`bond_style harmonic/anchor`) compiled in, so no plugin is needed there. All LRZ settings (host, folders, modules, Slurm partition) are in `LRZ` in `qtft/remote.py`.
 
 ## 8. Prerequisites
 
@@ -300,12 +300,16 @@ git -C ~/src/lammps describe --tags      # e.g. stable_30Sep2026
    git clone -b stable_30Sep2026 --depth 1 https://github.com/lammps/lammps.git ~/src/lammps
    ```
 
-2. **In WSL**, copy the unbinding fix into the LAMMPS source on LRZ, so that it is compiled in:
+2. **In WSL**, copy the project's own styles (`fix bond/break/random`, `bond_style harmonic/anchor`) into the
+   LAMMPS source on LRZ, so that they are compiled in:
 
    ```bash
    cd ~/qtft-lammps
-   scp lammps_plugins/qtft_styles/fix_bond_break_random.{h,cpp} lrz:src/lammps/src/
+   scp lammps_plugins/qtft_styles/{fix_bond_break_random,bond_harmonic_anchor}.{h,cpp} lrz:src/lammps/src/
    ```
+
+   After a change to these files, copy them again and repeat step 3; `cmake -S cmake -B build ...` must run again
+   when a file is new, so that it is compiled.
 
 3. **On LRZ**, configure and compile (about 4 minutes on the login node):
 
@@ -331,12 +335,16 @@ LAMMPS on LRZ starts only inside a Slurm job; on the login node even `lmp -h` ab
 `PMI2_Job_GetId returned 14`. Run it as a short interactive job:
 
 ```bash
-srun -p cm4_inter -n 1 -t 00:05:00 ~/src/lammps/build/lmp -h | grep -c bond/break/random     # prints 1
+srun -p cm4_inter -n 1 -t 00:05:00 ~/src/lammps/build/lmp -h | grep -c -e bond/break/random -e harmonic/anchor   # prints 2
 ```
 
 A small input built on this PC with `executor="lrz"` gave byte-identical dumps on LRZ (2 and 8 MPI
 processes, partitions `cm4_inter` and `serial_long`) and on this PC with the same LAMMPS version
-(2026-10-25). In `serial_long` (Xeon Platinum 8380, shared node) a process is about 0.68 × as fast as on this
+(2026-10-25). After adding `bond_style harmonic/anchor` (2026-11-19) the free model is still byte-identical between
+LRZ and this PC; anchored runs (`bond_geometry="anchored"`) agree to rounding (10⁻¹² nm after 3000 steps), not bit
+for bit: the two GCC versions (15.2 on LRZ, 12.4 in conda here) contract the floating-point operations of the
+rotation and anchor code differently into fused multiply-adds. Such last-bit differences grow in a long run as any
+perturbation does; the statistics are the same. In `serial_long` (Xeon Platinum 8380, shared node) a process is about 0.68 × as fast as on this
 PC: the 3 µm run takes about 35 h there instead of 24 h here.
 
 ## 13. Run on LRZ from the notebook

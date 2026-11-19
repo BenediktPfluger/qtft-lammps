@@ -3,8 +3,8 @@
 The run folder is built locally (build_run) and mirrored on LRZ below LRZ["root"] in the LRZ home:
 runs/<group>/<run name>/ there corresponds to <data_dir>/<group>/<run name>/ here. job.slurm (from
 job_template.slurm) runs every replica as one task of a Slurm job array and writes the same status
-files as the local launcher. LAMMPS on LRZ has fix bond/break/random built in, so the input loads no
-plugin. Setup (ssh, LAMMPS build): docs/install.md, part B "LRZ Linux cluster".
+files as the local launcher. LAMMPS on LRZ has the plugin styles (fix bond/break/random, bond_style
+harmonic/anchor) built in, so the input loads no plugin. Setup (ssh, LAMMPS build): docs/install.md, part B "LRZ Linux cluster".
 
 All commands go through ssh/rsync to the host LRZ["host"] in non-interactive mode (BatchMode): they
 use the connection opened once with `ssh lrz` in a terminal (ControlMaster, 2FA) and fail at once,
@@ -34,7 +34,7 @@ LRZ = {
     "partition": "serial_long",                    # ... partition (max. 7 days, 1 node per job) ...
     "qos": "cm4_serial_long",                      # ... and the QOS it requires
     "modules": "gcc/15.2.0 intel-mpi/2021.12.0",   # the Spack gcc modules cannot compile <mutex>
-    "lmp": "$HOME/src/lammps/build/lmp",           # built with the fix compiled in
+    "lmp": "$HOME/src/lammps/build/lmp",           # built with the plugin styles compiled in
     "mail_user": "",                               # email for Slurm; set in lrz_local.json, never in git
     "mail_type": "BEGIN,END,FAIL",                 # for a job array: once for the whole array
 }
