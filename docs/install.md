@@ -191,7 +191,8 @@ The simulation in this repository does not use the GPU.
 
    All five names must be printed.
 
-3. Build the LAMMPS plugin `qtftstyles.so` with the project's own styles (`fix bond/break/random`):
+3. Build the LAMMPS plugin `qtftstyles.so` with the project's own styles (`fix bond/break/random`,
+   `bond_style harmonic/anchor`):
 
    ```bash
    cd ~/qtft-lammps

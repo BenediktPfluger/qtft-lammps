@@ -52,7 +52,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `docs/repo_structure.md` | folder structure, every input and output file of a run, and every figure with its panels |
 | `environment.yml` | the conda environment `lammps` (compilers, MPI, Python packages, OVITO, ffmpeg, pytest, nbstripout) |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
-| `lammps_plugins/qtft_styles/` | LAMMPS plugin `qtftstyles.so` with the project's own styles: `fix bond/break/random` (C++ source, `build.sh`; the built `.so` is not committed) |
+| `lammps_plugins/qtft_styles/` | LAMMPS plugin `qtftstyles.so` with the project's own styles: `fix bond/break/random`, `bond_style harmonic/anchor` (C++ source, `build.sh`; the built `.so` is not committed) |
 | `qtft/params.py` | all parameters with defaults, derived values (particle numbers from the densities, γ = k_BT/D, α, p, …) and checks |
 | `qtft/build.py` | fills the template → `rep_XX/in.lammps`, writes `params.json`, derives seeds |
 | `qtft/run.py`, `qtft/launcher.py` | start runs or whole sweeps in the background (one queue, at most `max_parallel` replicas at once), live progress (`watch`, `launcher.log`), stop |
