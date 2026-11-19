@@ -26,10 +26,10 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
    (`lammps_plugins/qtft_styles/build.sh`; again after every LAMMPS update).
 2. `conda activate lammps`, open the repo in VS Code.
 3. Open `01_simulate_hek.ipynb` (HEK293T cells; `02_simulate_neurons.ipynb` for neurons): set the parameters
-   (Qt and Ft as densities per µm³), check the derived values (they start with the resulting particle
-   numbers), build and run. For a parameter study, list values per parameter in section 4 (`build_sweep`):
-   one run per combination. Runs go to this PC (`executor="local"`) or to the LRZ Linux cluster
-   (`executor="lrz"`; download the results with `fetch`).
+   (Qt and Ft as densities per µm³; `bond_geometry` "free" or "anchored", see "Model in short"), check the
+   derived values (they start with the resulting particle numbers), build and run. For a parameter study, list
+   values per parameter in section 4 (`build_sweep`): one run per combination. Runs go to this PC
+   (`executor="local"`) or to the LRZ Linux cluster (`executor="lrz"`; download the results with `fetch`).
 4. Analyse finished runs in `04_analysis.ipynb`: `make_report` writes all tables and figures to
    `<run>/analysis/`, including `report.pdf` with every figure for a review at a glance; `sweep_report` does
    the same for a parameter sweep (results against the swept parameter and the comparison of its runs).
