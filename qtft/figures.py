@@ -25,9 +25,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MultipleLocator, NullFormatter
 from matplotlib.transforms import offset_copy
 
-from .ensemble import (SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, SIZE_THRESHOLDS_QT_FT, TO_PER_M_S, cluster_sizes,
-                       _agglomerates_above_size_species, _thresholds, _unique, agglomerates_above_size, binding_rate,
-                       bond_rates, ensemble_stats, ensemble_stats_cached, final_table)
+from .ensemble import (QT_CONTACT_MARGIN_NM, SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, SIZE_THRESHOLDS_QT_FT, TO_PER_M_S,
+                       cluster_sizes, _agglomerates_above_size_species, _thresholds, _unique, agglomerates_above_size,
+                       binding_rate, bond_rates, ensemble_stats, ensemble_stats_cached, final_table, multivalency)
 from .params import Params
 from .read import read_histo
 from .spatial import QT_MIN, density_estimate, peak, qt_spatial_run
@@ -72,6 +72,7 @@ class RunData:
     overlap: pd.DataFrame | None = None
     agglomerates: pd.DataFrame | None = None           # agglomerates_influx_end.csv (sizes and volumes)
     _sizes: pd.DataFrame | None = field(default=None, repr=False)
+    _multi: pd.DataFrame | None = field(default=None, repr=False)
     _rates: dict | None = field(default=None, repr=False)
 
     @property
@@ -84,6 +85,13 @@ class RunData:
         if self._sizes is None:
             self._sizes = cluster_sizes(self.run_dir)
         return self._sizes
+
+    @property
+    def multi(self) -> pd.DataFrame:
+        """multivalency of the run (computed from traj.dump or read from its cache on first use)."""
+        if self._multi is None:
+            self._multi = multivalency(self.run_dir)
+        return self._multi
 
     @property
     def rates(self) -> dict:
@@ -868,6 +876,45 @@ def fig_cluster_sizes(runs, out_dir: Path | None = None, traces=False) -> list:
             for name, per_n in (("cluster_sizes", False), ("cluster_sizes_n", True))]
 
 
+def _multi_panel(key: str, ylabel: str, scale: float = 1.0):
+    """Panel of fig_multivalency: one multivalency measure, a colour per run."""
+    def panel(ax, runs, traces=False):
+        for r in runs:
+            d = r.multi
+            tr = d[[c for c in d.columns if c.endswith(f":{key}")]].to_numpy().T * scale if traces else None
+            band(ax, d["time_s"].to_numpy() * 1e3, d[f"{key}_mean"].to_numpy() * scale,
+                 d[f"{key}_sd"].to_numpy() * scale, r.color, r.label, traces=tr)
+        ax.set_ylabel(ylabel)
+    return panel
+
+
+def p_energy_per_bond(ax, runs, traces=False):
+    """Bond energy per bond in k_BT (thermo column ebond_per_bond); relaxed bonds: 1/2 free, 5/2 anchored."""
+    for r in runs:
+        t, m, s, tr = _series(r, "ebond_per_bond", 1 / r.p.kT, traces=traces)
+        band(ax, t, m, s, r.color, r.label, traces=tr if traces else None)
+    ax.set_ylabel("bond energy per bond (k_BT)")
+
+
+MULTIVALENCY_PANELS = [
+    ("bound Ft with ≥ 2 bonds", _multi_panel("ft_bonds2", "bound Ft with ≥ 2 bonds (%)", 100), True),
+    ("bound Ft with ≥ 3 bonds", _multi_panel("ft_bonds3", "bound Ft with ≥ 3 bonds (%)", 100), True),
+    ("Ft per Qt", _multi_panel("ft_per_qt", "Ft per Qt"), True),
+    ("Qt in contact per Qt", _multi_panel("qt_neighbours", f"Qt within 2 r_Qt + {QT_CONTACT_MARGIN_NM:g} nm"), True),
+    ("largest agglomerate", _simple("largest", "largest agglomerate"), True),
+    ("bond energy per bond", p_energy_per_bond, True),
+]
+
+
+def fig_multivalency(runs, out_dir: Path | None = None, traces=False):
+    """How the bonds are arranged over time (ensemble.multivalency): bound Ft with >= 2 and >= 3 bonds, Ft per Qt,
+    Qt in contact per Qt, largest agglomerate and bond energy per bond; 3 x 2, a colour per run (legend below),
+    120 mm; the comparison of the free and the anchored bond geometry. Panels also alone in multivalency/."""
+    runs = _as_runs(runs)
+    return _panel_figure("multivalency", MULTIVALENCY_PANELS, runs, out_dir, 3, 2, ONE_HALF, 130 * MM,
+                         traces=traces, legend_below=True)
+
+
 # line styles of the thresholds with several runs (fig_agglomerates_above_size, _total)
 THRESHOLD_STYLES = ["-", "--", ":", "-.", (0, (5, 1, 1, 1, 1, 1)), (0, (8, 2))]
 SPECIES_UNIT = {"all": "", "qt": " Qt", "ft": " Ft"}     # what the thresholds count, in labels
@@ -920,10 +967,10 @@ def _above_size_thresholds(n_min, n_min_qt, n_min_ft, n_qt_ft) -> tuple[dict, in
 
 
 def _count_above_size(run_dir: Path, ns: dict, n_qt: int, n_ft: int) -> None:
-    """Agglomerate counts of every threshold (and the pair) and cluster_sizes of a run in one pass over its
-    traj.dump frames, into the caches in <run>/analysis/ (nothing read when they are up to date)."""
+    """Agglomerate counts of every threshold (and the pair), cluster_sizes and multivalency of a run in one pass
+    over its traj.dump frames, into the caches in <run>/analysis/ (nothing read when they are up to date)."""
     _agglomerates_above_size_species(run_dir, {"all": ns["all"], "qt": ns["qt"] + [n_qt], "ft": ns["ft"] + [n_ft]},
-                                     sizes=True)
+                                     sizes=True, multi=True)
 
 
 def fig_agglomerates_above_size(runs, out_dir: Path | None = None, traces=False,
@@ -1237,7 +1284,7 @@ def _analyse(run_dir: Path, every: int, structure_analysis: bool, overlap_analys
 
 def _report_figures(runs: list[RunData], figs: Path, traces: bool, thresholds: tuple) -> list:
     """The report figures of one run or several, in report order, into figs/<figure>/: calcium, overview, overlap,
-    cluster sizes, agglomerates above size (thresholds = n_min, n_min_qt, n_min_ft, n_qt_ft), agglomerate
+    cluster sizes, multivalency, agglomerates above size (thresholds = n_min, n_min_qt, n_min_ft, n_qt_ft), agglomerate
     distributions, FIB-SEM comparison, and for one run with a calcium step the binding rate. Writes
     bond_rates.csv (and binding_rate.csv) of every run. The agglomerate counts and cluster sizes of a run are read
     from its dumps in one pass before the first figure that needs them."""
@@ -1246,7 +1293,7 @@ def _report_figures(runs: list[RunData], figs: Path, traces: bool, thresholds: t
         r._rates = bond_rates(r.run_dir)                                                         # + csv
         _count_above_size(r.run_dir, ns, n_qt, n_ft)                             # + csv (cached)
     figures = [fig_calcium(runs, figs, traces), fig_overview(runs, figs, traces=traces), fig_overlap(runs, figs),
-               *fig_cluster_sizes(runs, figs, traces=traces),
+               *fig_cluster_sizes(runs, figs, traces=traces), fig_multivalency(runs, figs, traces=traces),
                fig_agglomerates_above_size(runs, figs, traces, *thresholds),
                fig_agglomerate_distributions(runs, figs),
                fig_fibsem_comparison(runs, figs, spatial=[qt_spatial_run(r.run_dir) for r in runs])]

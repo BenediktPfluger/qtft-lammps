@@ -245,6 +245,7 @@ Everything here lives in `<run>/analysis/`. It is written by `ensemble_stats()` 
 | `agglomerates_above_size.csv` | number of agglomerates with ≥ n particles over time, for several n (cached) | `make_report()`, `compare_report()`, `sweep_report()` |
 | `agglomerates_above_size_qt.csv`, `_ft.csv` | the same with the size counted in Qt or in Ft only (cached) | `make_report()`, `compare_report()`, `sweep_report()` |
 | `cluster_sizes.csv` | per `traj.dump` frame, mean and SD over replicas and the value of every replica (`<replica>:<measure>`): mean size over the bound particles (clusters of ≥ 2), weight average with the free particles, weight average over the bound particles, each for all particles, Qt and Ft (cached; read in the same pass as the agglomerate counts) | `make_report()`, `compare_report()`, `sweep_report()` |
+| `multivalency.csv` | per `traj.dump` frame, in the form of `cluster_sizes.csv`: fraction of the bound Ft with ≥ 2 and ≥ 3 bonds, Ft per Qt, Qt in contact per Qt (centre distance < 2 r_Qt + 2 nm) (cached; read in the same pass) | `make_report()`, `compare_report()`, `sweep_report()`, `multivalency()` |
 | `agglomerates_influx_end.csv` | every agglomerate of ≥ 3 particles at the end of the influx, with size, composition and volume | `make_report()`; `compare_report()`, `sweep_report()` if missing |
 | `structure_timeseries.csv` | per analysed frame, mean and SD over replicas: Rg, Rg/Rg_ideal, nearest-neighbour distances between and within clusters, Qt fraction per cluster | `make_report()` (OVITO); `compare_report()`, `sweep_report()` if missing |
 | `structure_per_replica.csv` | the same per replica | `make_report()` (OVITO) |
@@ -314,7 +315,7 @@ files are cached.
 
 | File | Content | Written by |
 |---|---|---|
-| `summary_table.csv`, `.tex` | final-state table (`final_table`, the same rows in every report): bonds, fraction bound (all, Qt, Ft), clusters, mean and largest size, peak bonds, largest and cluster sizes, half-times of binding and of deagglomeration, percolation, Rg, Rg / Rg,ideal and Qt fraction of the last analysed frame; columns `mean`, `sd` over replicas, NaN where a value is missing | `make_report()` |
+| `summary_table.csv`, `.tex` | final-state table (`final_table`, the same rows in every report): bonds, fraction bound (all, Qt, Ft), clusters, mean and largest size, peak bonds, largest and cluster sizes, half-times of binding and of deagglomeration, percolation, bound Ft with ≥ 2 and ≥ 3 bonds, Ft per Qt and Qt in contact per Qt at the end of the influx, Rg, Rg / Rg,ideal and Qt fraction of the last analysed frame; columns `mean`, `sd` over replicas, NaN where a value is missing | `make_report()` |
 | `bonds_timeseries.csv` | bonds over time: step, time (µs, ms), mean, SD | `make_report()` |
 | `report.json` | settings of the report (`every`, replicas) | `make_report()` |
 | `report.pdf` | cover pages and every figure of section 6, one per page (see below) | `make_report()` |
@@ -401,6 +402,17 @@ notebook; in `report.pdf`.
 With several runs two figures, `cluster_sizes` and `cluster_sizes_n` (/ N), each 4 × 3 (183 mm): the four
 measures as rows, columns all particles, Qt and Ft, one colour per run.
 
+### `multivalency` (3 × 2, 120 mm wide)
+
+How the bonds are arranged, over time (from `multivalency.csv` and the thermo data), one colour per run (legend
+below); made to compare the free and the anchored bond geometry. Not shown in the notebook; in `report.pdf`.
+
+1. **bound Ft with ≥ 2 bonds** and 2. **≥ 3 bonds** (% of the bound Ft).
+3. **Ft per Qt**: bonded Ft per Qt, mean over all Qt (= bonds / N_Qt).
+4. **Qt in contact per Qt**: other Qt within 2 r_Qt + 2 nm, mean over all Qt.
+5. **largest agglomerate** (particles).
+6. **bond energy per bond** (k_BT; relaxed bonds: ≈ 1/2 free, ≈ 5/2 anchored).
+
 ### `agglomerates_above_size` (4 × 2, 120 mm wide)
 
 Number of agglomerates above a size threshold over time, one line per threshold. Left column: in the box
@@ -472,7 +484,7 @@ Analysis section 5. Writes to the chosen `out_dir`:
 
 | File | Content |
 |---|---|
-| `figures/<figure>/` | the figures of one run (section 6) in the same order and with the same panels, one colour per run (legend below), every panel also alone: `calcium`, `overview` (the size-categories slot empty), `overlap`, `cluster_sizes` and `cluster_sizes_n` (4 × 3 each, see `cluster_sizes`), `agglomerates_above_size`, `agglomerate_distributions` (per 1000 µm³), `fibsem_comparison`; no `binding_rate` |
+| `figures/<figure>/` | the figures of one run (section 6) in the same order and with the same panels, one colour per run (legend below), every panel also alone: `calcium`, `overview` (the size-categories slot empty), `overlap`, `cluster_sizes` and `cluster_sizes_n` (4 × 3 each, see `cluster_sizes`), `multivalency`, `agglomerates_above_size`, `agglomerate_distributions` (per 1000 µm³), `fibsem_comparison`; no `binding_rate` |
 | `comparison_table.csv`, `.tex` | the final-state table of `summary_table` (same rows) for every run, side by side: CSV with the columns `<run> mean` and `<run> sd`, LaTeX as mean ± SD; a label used by several runs gets (1), (2), … |
 | `report.pdf` | cover pages (every run with number, label, folder, creation date and git commit; the comparison table; all simulation parameters, one column per run), then the figures above in the order of section 6 |
 
