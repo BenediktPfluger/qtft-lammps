@@ -1,7 +1,7 @@
-# Plugin fix bond/break/random. Needs the LAMMPS source of exactly the version of the lmp that loads it
-# (headers only): cmake -S . -B build -D LAMMPS_SOURCE_DIR=<lammps>/src; see build.sh.
+# Plugin qtftstyles: the LAMMPS styles of qtft-lammps (fix bond/break/random). Needs the LAMMPS source of
+# exactly the version of the lmp that loads it (headers only): cmake -S . -B build -D LAMMPS_SOURCE_DIR=<lammps>/src; see build.sh.
 cmake_minimum_required(VERSION 3.20)
-project(bondbreakrandom VERSION 1.0 LANGUAGES CXX)
+project(qtftstyles VERSION 1.1 LANGUAGES CXX)
 
 if(NOT LAMMPS_SOURCE_DIR)
   message(FATAL_ERROR "Set LAMMPS_SOURCE_DIR to the src/ folder of the LAMMPS source")
@@ -15,7 +15,7 @@ list(APPEND CMAKE_MODULE_PATH ${LAMMPS_SOURCE_DIR}/../examples/plugins)
 include(CheckIncludeFileCXX)
 include(LAMMPSInterfaceCXX)
 
-add_library(bondbreakrandom MODULE plugin.cpp fix_bond_break_random.cpp)
-target_link_libraries(bondbreakrandom PRIVATE lammps)
-set_target_properties(bondbreakrandom PROPERTIES PREFIX "" SUFFIX ".so" LINK_FLAGS "-rdynamic"
+add_library(qtftstyles MODULE plugin.cpp fix_bond_break_random.cpp)
+target_link_libraries(qtftstyles PRIVATE lammps)
+set_target_properties(qtftstyles PROPERTIES PREFIX "" SUFFIX ".so" LINK_FLAGS "-rdynamic"
                       LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

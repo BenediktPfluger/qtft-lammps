@@ -7,6 +7,7 @@
 #include "atom.h"
 #include "comm.h"
 #include "error.h"
+#include "fix_bond_history.h"
 #include "force.h"
 #include "input.h"
 #include "modify.h"
@@ -108,11 +109,18 @@ void FixBondBreakRandom::init()
   // every bond must be stored exactly once, so that it is tested exactly once
   if (!force->newton_bond) error->all(FLERR, "Fix bond/break/random requires newton_bond on");
 
-  // only bonds; no angles, dihedrals or impropers to remove, no per-bond history
+  // only bonds; no angles, dihedrals or impropers to remove
   if (atom->nangles || atom->ndihedrals || atom->nimpropers)
     error->all(FLERR, "Fix bond/break/random does not support angles, dihedrals or impropers");
-  if (modify->get_fix_by_style("BOND_HISTORY").size())
-    error->all(FLERR, "Fix bond/break/random does not support bond history");
+
+  // per-bond history (fix BOND_HISTORY, created by bond styles that store data per bond)
+  histories.clear();
+  for (auto &f : modify->get_fix_by_style("BOND_HISTORY")) {
+    auto *h = dynamic_cast<FixBondHistory *>(f);
+    if (!h) error->all(FLERR, "Fix bond/break/random: fix {} is not a bond history", f->id);
+    histories.push_back(h);
+  }
+
   if (utils::strmatch(update->integrate_style, "^respa"))
     error->all(FLERR, "Fix bond/break/random does not support run_style respa");
 
@@ -171,7 +179,10 @@ void FixBondBreakRandom::post_integrate()
           for (int k = m; k < num_bond[i] - 1; k++) {
             bond_atom[i][k] = bond_atom[i][k + 1];
             bond_type[i][k] = bond_type[i][k + 1];
+            for (auto *h : histories) h->shift_history(i, k, k + 1);
           }
+          // the freed last slot starts without history (a bond created there later is new)
+          for (auto *h : histories) h->delete_history(i, num_bond[i] - 1);
           num_bond[i]--;
           mine.push_back(tag[i]);
           mine.push_back(jtag);

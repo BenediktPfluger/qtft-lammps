@@ -8,6 +8,10 @@
    once per attempt, and an atom can lose several bonds in one attempt. Output vector: [1] bonds broken
    in the last attempt, [2] bonds broken since the fix was defined. Based on fix bond/break (LAMMPS, MC
    package, stable 30 Sep 2026); the special lists (1-2, 1-3, 1-4) are updated the same way.
+
+   Bond history (fix BOND_HISTORY, e.g. the anchors of an anchored bond style): the stored values move with
+   their bond when later slots shift down, and the freed last slot is cleared, so that a bond created there
+   later starts without history. Without such a fix the behaviour (and the random numbers) are unchanged.
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
@@ -52,6 +56,7 @@ class FixBondBreakRandom : public Fix {
   tagint *copy;                        // special list of one atom during its rebuild
 
   class RanMars *random;
+  std::vector<class FixBondHistory *> histories;    // per-bond history fixes, found in init()
 
   double probability();
   void check_ghosts();

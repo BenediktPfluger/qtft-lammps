@@ -32,7 +32,7 @@ qtft-lammps/
 ├── template.lmp              LAMMPS input template: model structure with {{placeholders}}, no numbers
 ├── job_template.slurm        Slurm job script template for runs on LRZ
 ├── lammps_plugins/
-│   └── bond_break_random/    LAMMPS plugin fix bond/break/random: C++ source, build.sh (the built .so is not committed)
+│   └── qtft_styles/          LAMMPS plugin qtftstyles.so (fix bond/break/random): C++ source, build.sh (the built .so is not committed)
 ├── tests/                    pytest tests (slow ones run short LAMMPS simulations)   gitignored
 ├── docs/
 │   ├── install.md            installation on this PC and on LRZ

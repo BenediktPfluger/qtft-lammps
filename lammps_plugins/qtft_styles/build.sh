@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build bondbreakrandom.so for the lmp of the active conda env (lammps).
+# Build qtftstyles.so (the LAMMPS styles of qtft-lammps) for the lmp of the active conda env (lammps).
 # Usage: ./build.sh [LAMMPS source folder]   (default ~/src/lammps; must be the same version as lmp)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -14,4 +14,4 @@ fi
 
 cmake -S "$here" -B "$here/build" -D LAMMPS_SOURCE_DIR="$src/src" -D CMAKE_BUILD_TYPE=Release
 cmake --build "$here/build" -j 4
-echo "built $here/bondbreakrandom.so for LAMMPS $want"
+echo "built $here/qtftstyles.so for LAMMPS $want"

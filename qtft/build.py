@@ -21,7 +21,7 @@ from .remote import LRZ
 TEMPLATE = REPO_DIR / "template.lmp"
 JOB_TEMPLATE = REPO_DIR / "job_template.slurm"
 PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
-PLUGIN = REPO_DIR / "lammps_plugins" / "bond_break_random" / "bondbreakrandom.so"
+PLUGIN = REPO_DIR / "lammps_plugins" / "qtft_styles" / "qtftstyles.so"
 SEED_NAMES = ("seed_place_qt", "seed_place_ft", "seed_bd_qt", "seed_bd_ft", "seed_bind", "seed_break")
 
 
@@ -46,7 +46,7 @@ def _lmp_help(lmp_command: str) -> str:
 
 def plugin_to_load(p: Params) -> Path | None:
     """The plugin with fix bond/break/random if the run needs it and lmp does not have the style built in
-    (build it with lammps_plugins/bond_break_random/build.sh). LAMMPS on LRZ has the style built in."""
+    (build it with lammps_plugins/qtft_styles/build.sh). LAMMPS on LRZ has the style built in."""
     if p.bond_break != "random" or p.executor == "lrz" or "bond/break/random" in _lmp_help(p.lmp_command):
         return None
     return PLUGIN

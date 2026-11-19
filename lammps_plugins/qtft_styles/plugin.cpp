@@ -1,3 +1,5 @@
+// Plugin qtftstyles: registers the LAMMPS styles of qtft-lammps
+
 #include "lammpsplugin.h"
 
 #include "version.h"
@@ -6,7 +8,7 @@
 
 using namespace LAMMPS_NS;
 
-static Fix *bondbreakrandom_creator(LAMMPS *lmp, int argc, char **argv)
+static Fix *fix_bond_break_random_creator(LAMMPS *lmp, int argc, char **argv)
 {
   return new FixBondBreakRandom(lmp, argc, argv);
 }
@@ -21,7 +23,7 @@ extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc)
   plugin.name = "bond/break/random";
   plugin.info = "fix bond/break/random: every bond breaks independently with probability p (qtft-lammps)";
   plugin.author = "Benedikt Pfluger";
-  plugin.creator.v2 = (lammpsplugin_factory2 *) &bondbreakrandom_creator;
+  plugin.creator.v2 = (lammpsplugin_factory2 *) &fix_bond_break_random_creator;
   plugin.handle = handle;
   (*register_plugin)(&plugin, lmp);
 }

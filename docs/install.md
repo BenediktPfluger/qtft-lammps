@@ -191,16 +191,16 @@ The simulation in this repository does not use the GPU.
 
    All five names must be printed.
 
-3. Build the unbinding plugin (`fix bond/break/random`):
+3. Build the LAMMPS plugin `qtftstyles.so` with the project's own styles (`fix bond/break/random`):
 
    ```bash
    cd ~/qtft-lammps
-   lammps_plugins/bond_break_random/build.sh
+   lammps_plugins/qtft_styles/build.sh
    ```
 
    It compiles against the LAMMPS source in `~/src/lammps` (or the folder given as argument), which must be
    the same version as `lmp` (the script checks this). Every run with `bond_break="random"` (the default)
-   loads the result, `lammps_plugins/bond_break_random/bondbreakrandom.so`; `start()` refuses to run
+   loads the result, `lammps_plugins/qtft_styles/qtftstyles.so`; `start()` refuses to run
    without it.
 
 4. Run the tests (only with a local `tests/` folder: the tests are not part of the repository):
@@ -303,7 +303,7 @@ git -C ~/src/lammps describe --tags      # e.g. stable_30Sep2026
 
    ```bash
    cd ~/qtft-lammps
-   scp lammps_plugins/bond_break_random/fix_bond_break_random.{h,cpp} lrz:src/lammps/src/
+   scp lammps_plugins/qtft_styles/fix_bond_break_random.{h,cpp} lrz:src/lammps/src/
    ```
 
 3. **On LRZ**, configure and compile (about 4 minutes on the login node):
@@ -409,7 +409,7 @@ OMP_NUM_THREADS=2 mpirun -np 4 lmp -sf omp -in in.myscript      # MPI + OpenMP
 | CMake version too old | use the CMake of the environment (`conda activate lammps`) |
 | `ImportError` or `liblammps.so` not found in Python | build with `BUILD_SHARED_LIBS=on`, then run the `install-python` target again |
 | CMake error about conflicting files in `src/` | `cd ~/src/lammps/src && make no-all purge`, then configure again |
-| `LAMMPS plugin not found` from `start()`, or `plugin load` fails | build the plugin (again after a LAMMPS update): `lammps_plugins/bond_break_random/build.sh` |
+| `LAMMPS plugin not found` from `start()`, or `plugin load` fails | build the plugin (again after a LAMMPS update): `lammps_plugins/qtft_styles/build.sh` |
 | notebook outputs appear in a commit | `nbstripout --install` in the repository (section 4) |
 | `no connection to LRZ` from the notebook | the shared connection has expired (after 8 h) or was never opened: `ssh lrz` in a terminal |
 | LRZ: `cannot convert '<brace-enclosed initializer list>' to 'unsigned int'` when building | `module load gcc/15.2.0` (section 11), delete `build/` and configure again |
@@ -427,7 +427,7 @@ Update both installations together, so that runs on this PC and on LRZ use the s
    cd ~/src/lammps && git pull
    conda activate lammps
    cmake --build build -j $(nproc) && cmake --install build && cmake --build build --target install-python
-   ~/qtft-lammps/lammps_plugins/bond_break_random/build.sh      # the plugin must match the new version
+   ~/qtft-lammps/lammps_plugins/qtft_styles/build.sh            # the plugin must match the new version
    git -C ~/src/lammps describe --tags                          # the new tag
    ```
 
