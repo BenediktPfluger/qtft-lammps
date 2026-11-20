@@ -431,6 +431,7 @@ OMP_NUM_THREADS=2 mpirun -np 4 lmp -sf omp -in in.myscript      # MPI + OpenMP
 | LRZ: `PMI server not found` or `PMI2_Job_GetId returned 14` | LAMMPS was started outside Slurm, or `srun` without `--mpi=pmi2` |
 | LRZ: `LAMMPS not found on LRZ` from `start()` | build LAMMPS on LRZ (section 11) |
 | LRZ: `Unrecognized bond style 'harmonic/anchor'` or `Unrecognized fix style 'bond/break/random'` | copy the project's styles into the LAMMPS source on LRZ again (section 11, step 2), run the configure step again and rebuild |
+| LRZ, anchored run: `Bond style does not have extra field requested by compute bond/local` | `bond_style harmonic/anchor` on LRZ is older than the bond angles in `bonds.dump`: copy the styles again (section 11, step 2) and rebuild |
 
 ## Updating LAMMPS
 

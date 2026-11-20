@@ -22,8 +22,8 @@
    a_qt, a_ft the anchors in the lab frame; total force and angular momentum are conserved. No twist term.
 
    Needs atom style ellipsoid (e.g. hybrid bond ellipsoid; quaternion and torque per atom, every bonded atom
-   an ellipsoid) and newton_bond on. single() returns the radial part only (orientations are not available),
-   so compute bond/local shows only K (r - r0)^2; the thermo keyword ebond is complete.
+   an ellipsoid) and newton_bond on. single() returns the full energy (engpot of compute bond/local) with the
+   radial force, and as extra values (compute bond/local b1 b2) theta_qt and theta_ft in rad.
 ------------------------------------------------------------------------- */
 
 #ifdef BOND_CLASS

@@ -202,3 +202,30 @@ def read_bonds(path: str | Path, start: int = 0):
                     f.readline()
                 rows = [f.readline().split()[1:3] for _ in range(n)]
                 yield step, np.array(rows, dtype=int).reshape(n, 2)
+
+
+def read_bond_angles(path: str | Path, start: int = 0):
+    """Iterate over frames of bonds.dump of an anchored run: yields (step, atom IDs (n_bonds, 2) int,
+    angles (n_bonds, 2) float: theta_qt, theta_ft in rad, the angle between the bond and the anchor of each end).
+    Frames before step `start` are skipped without parsing them. A free run has no angle columns: ValueError."""
+    with open(path) as f:
+        while True:
+            line = f.readline()
+            if not line:
+                return
+            if line.startswith("ITEM: TIMESTEP"):
+                step = int(f.readline())
+                f.readline()
+                n = int(f.readline())
+                if step < start:
+                    for _ in islice(f, 5 + n):
+                        pass
+                    continue
+                for _ in range(4):
+                    f.readline()
+                columns = f.readline().split()[2:]            # "ITEM: ENTRIES index atom1 atom2 ..."
+                if "theta_qt" not in columns:
+                    raise ValueError(f"{path}: no bond angles (theta_qt, theta_ft): not an anchored run")
+                cols = [columns.index(c) for c in ("atom1", "atom2", "theta_qt", "theta_ft")]
+                rows = np.array([f.readline().split() for _ in range(n)], dtype=float).reshape(n, len(columns))
+                yield step, rows[:, cols[:2]].astype(int), rows[:, cols[2:]]

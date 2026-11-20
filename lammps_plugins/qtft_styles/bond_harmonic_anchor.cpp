@@ -7,6 +7,7 @@
 #include "atom.h"
 #include "atom_vec_ellipsoid.h"
 #include "comm.h"
+#include "domain.h"
 #include "error.h"
 #include "fix_bond_history.h"
 #include "force.h"
@@ -15,6 +16,7 @@
 #include "modify.h"
 #include "neighbor.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -37,6 +39,10 @@ BondHarmonicAnchor::BondHarmonicAnchor(LAMMPS *_lmp) :
   // placeholder at this position in the fix list; init_style() replaces it by the history fix, as BondBPM does
   id_fix_dummy = utils::strdup(ID_DUMMY);
   modify->add_fix(fmt::format("{} all DUMMY", id_fix_dummy));
+
+  // extra values of single() for compute bond/local b1 b2: theta_qt, theta_ft (rad)
+  single_extra = 2;
+  svector = new double[2];
 }
 
 /* ---------------------------------------------------------------------- */
@@ -46,6 +52,7 @@ BondHarmonicAnchor::~BondHarmonicAnchor()
   if (id_fix_dummy && modify->get_fix_by_id(id_fix_dummy)) modify->delete_fix(id_fix_dummy);
   if (history && modify->get_fix_by_id(ID_HISTORY)) modify->delete_fix(ID_HISTORY);
   delete[] id_fix_dummy;
+  delete[] svector;
 
   if (allocated) {
     memory->destroy(setflag);
@@ -270,15 +277,67 @@ void BondHarmonicAnchor::write_data(FILE *fp)
 }
 
 /* ----------------------------------------------------------------------
-   radial part only: the bending terms need the orientations, which single() does not get
+   full bond energy (stretching and both bending terms) with the radial force; svector = theta_qt, theta_ft
+   (rad). i, j are local indices (compute bond/local: i is the owned atom that stores the bond, j its partner,
+   perhaps a ghost).
+   A bond not yet evaluated by compute() has no anchors yet: angles 0 (its anchors will be the current bond
+   direction), energy the stretching part.
 ------------------------------------------------------------------------- */
 
-double BondHarmonicAnchor::single(int type, double rsq, int /*i*/, int /*j*/, double &fforce)
+double BondHarmonicAnchor::single(int type, double rsq, int i, int j, double &fforce)
 {
   double r = sqrt(rsq);
   double dr = r - r0[type];
   fforce = (r > 0.0) ? -2.0 * k[type] * dr / r : 0.0;
-  return k[type] * dr * dr;
+  svector[0] = svector[1] = 0.0;
+  double energy = k[type] * dr * dr;
+  if (r == 0.0 || !history) return energy;
+
+  // the stored anchors: in the bond slot of the atom that stores the bond (i, else j)
+  tagint *tag = atom->tag;
+  int store = -1, m = -1;
+  for (int s : {i, j}) {
+    if (s >= atom->nlocal) continue;    // bond lists are kept for owned atoms only
+    tagint partner = (s == i) ? tag[j] : tag[i];
+    for (int n = 0; n < atom->num_bond[s] && m < 0; n++)
+      if (atom->bond_atom[s][n] == partner && atom->bond_type[s][n] == type) m = n;
+    if (m >= 0) {
+      store = s;
+      break;
+    }
+  }
+  if (m < 0) error->one(FLERR, "Bond harmonic/anchor: bond {}-{} not found for single()", tag[i], tag[j]);
+  double a[NHISTORY];
+  for (int d = 0; d < NHISTORY; d++) a[d] = history->get_atom_value(store, m, d);
+  if (a[0] * a[0] + a[1] * a[1] + a[2] * a[2] < 0.25) return energy;
+
+  // Qt end and Ft end as in compute()
+  int *atype = atom->type;
+  int q = i, t = j;
+  if (atype[j] < atype[i] || (atype[j] == atype[i] && tag[j] < tag[i])) {
+    q = j;
+    t = i;
+  }
+  int *ellipsoid = atom->ellipsoid;
+  if (ellipsoid[q] < 0 || ellipsoid[t] < 0)
+    error->one(FLERR, "Bond harmonic/anchor: atom {} or {} is not an ellipsoid", tag[i], tag[j]);
+  AtomVecEllipsoid::Bonus *bonus = avec->bonus;
+  double rot_q[3][3], rot_t[3][3];
+  MathExtra::quat_to_mat(bonus[ellipsoid[q]].quat, rot_q);
+  MathExtra::quat_to_mat(bonus[ellipsoid[t]].quat, rot_t);
+
+  double **x = atom->x;
+  double b[3] = {x[t][0] - x[q][0], x[t][1] - x[q][1], x[t][2] - x[q][2]};    // Qt -> Ft
+  domain->minimum_image(FLERR, b);
+  MathExtra::norm3(b);
+  double a_q[3], a_t[3];    // anchors in the lab frame
+  MathExtra::matvec(rot_q, &a[0], a_q);
+  MathExtra::matvec(rot_t, &a[3], a_t);
+  double cos_q = std::max(-1.0, std::min(1.0, MathExtra::dot3(a_q, b)));
+  double cos_t = std::max(-1.0, std::min(1.0, -MathExtra::dot3(a_t, b)));
+  svector[0] = acos(cos_q);
+  svector[1] = acos(cos_t);
+  return energy + k_qt[type] * (1.0 - cos_q) + k_ft[type] * (1.0 - cos_t);
 }
 
 /* ---------------------------------------------------------------------- */

@@ -186,9 +186,16 @@ reset_timestep  0
 dump            traj all custom {{traj_every}} traj.dump id typelabel x y z ix iy iz v_rad c_frag c_nb
 dump_modify     traj sort id colname typelabel type colname v_rad radius colname c_frag cluster colname c_nb nbonds
 
+# bonds.dump: atom IDs per bond; anchored also theta_qt, theta_ft (rad), the angles between the bond and the
+# anchor of each end (from bond_style harmonic/anchor single(); both computes list the bonds in the same order)
 compute         bpairs all property/local batom1 batom2
-dump            bonds all local {{traj_every}} bonds.dump index c_bpairs[1] c_bpairs[2]
-dump_modify     bonds colname c_bpairs[1] atom1 colname c_bpairs[2] atom2
+if "{{bond_geometry}} == anchored" then &
+  "compute bang all bond/local b1 b2" &
+  "dump bonds all local {{traj_every}} bonds.dump index c_bpairs[1] c_bpairs[2] c_bang[1] c_bang[2]" &
+  "dump_modify bonds colname c_bpairs[1] atom1 colname c_bpairs[2] atom2 colname c_bang[1] theta_qt colname c_bang[2] theta_ft" &
+else &
+  "dump bonds all local {{traj_every}} bonds.dump index c_bpairs[1] c_bpairs[2]" &
+  "dump_modify bonds colname c_bpairs[1] atom1 colname c_bpairs[2] atom2"
 
 compute         rdf all rdf {{rdf_bins}} 1 2 cutoff {{rdf_cutoff}}
 fix             rdf_out all ave/time {{traj_every}} 1 {{traj_every}} c_rdf[*] file rdf.dat mode vector

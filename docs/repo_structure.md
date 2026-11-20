@@ -145,7 +145,7 @@ simulation. All files except `log.lammps` are written at the `traj.dump` steps (
 |---|---|---|
 | `log.lammps` | full log: input commands, setup, timing, and the **thermo table** every `output_every` steps (YAML; columns below). Main source of all time series | LAMMPS |
 | `traj.dump` | trajectory: `id type x y z ix iy iz radius cluster nbonds`. **Open in OVITO** | `template.lmp`: `dump custom` |
-| `bonds.dump` | all bonds (`atom1 atom2`) | `template.lmp`: `dump local` |
+| `bonds.dump` | all bonds (`atom1 atom2`); anchored runs also `theta_qt theta_ft`, the angles (rad) between the bond and the anchor of each end (`compute bond/local b1 b2` from `bond_style harmonic/anchor`) | `template.lmp`: `dump local` |
 | `rdf.dat` | Qt–Ft g(r) and coordination number (200 bins up to 121.5 nm by default); snapshots, not time averages | `template.lmp`: `compute rdf` |
 | `coord_qt.hist`, `coord_ft.hist` | histogram of bonds per Qt (0 … `maxbond_qt`) and per Ft (0 … `maxbond_ft`) | `template.lmp`: `fix ave/histo` |
 | `final.data` | final state: box, positions, type labels (1 Qt, 2 Ft), all bonds, coefficients; anchored runs also the orientations (`Ellipsoids` section; the anchors of the bonds are not stored and are set again from the current geometry by `read_data`). Opens in OVITO with bonds; can continue a run with `read_data` | `template.lmp`: `write_data` |
