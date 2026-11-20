@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -889,7 +890,9 @@ def _multi_panel(key: str, ylabel: str, scale: float = 1.0):
 
 
 def p_energy_per_bond(ax, runs, traces=False):
-    """Bond energy per bond in k_BT (thermo column ebond_per_bond); relaxed bonds: 1/2 free, 5/2 anchored."""
+    """Bond energy per bond in k_BT (thermo column ebond_per_bond). Relaxed bonds at dt = 500 ns: ≈ 0.8 free,
+    ≈ 2.8 anchored: the exact values 1/2 and 5/2 (one radial and four angular degrees of freedom), widened by the
+    finite Brownian time step, the radial part by 1/(1 - alpha/2) ≈ 1.5 at alpha bond = 0.70."""
     for r in runs:
         t, m, s, tr = _series(r, "ebond_per_bond", 1 / r.p.kT, traces=traces)
         band(ax, t, m, s, r.color, r.label, traces=tr if traces else None)
@@ -1211,7 +1214,9 @@ def _tex(text: str) -> str:
 
 
 def _slug(text: str) -> str:
-    return "".join(c if c.isalnum() else "_" for c in text).strip("_").lower()
+    """File name of a panel: '≥' as 'ge', every run of other characters as one '_' (`bound_ft_with_ge_2_bonds`)."""
+    text = str(text).replace("≥", " ge ").replace("≤", " le ")
+    return re.sub(r"_+", "_", "".join(c if c.isascii() and c.isalnum() else "_" for c in text)).strip("_").lower()
 
 
 # ---------------------------------------------------------------------------- report.pdf

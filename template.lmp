@@ -160,7 +160,8 @@ compute         bstat all reduce max c_blen inputs local
 compute         bave all reduce ave c_blen inputs local
 variable        bond_max equal (bonds>0)*c_bstat      # 0 while there are no bonds
 variable        bond_mean equal (bonds>0)*c_bave
-# bond energy per bond (anchored: stretching plus bending of both ends; thermal: kT/2 per degree of freedom)
+# bond energy per bond (anchored: stretching plus bending of both ends; thermal: kT/2 per degree of freedom,
+# widened by the finite time step, at dt = 500 ns about 0.8 kT free, 2.8 kT anchored)
 variable        ebond_per_bond equal ebond/(bonds+(bonds==0))
 
 # pressure from forces only (kinetic part is meaningless in overdamped dynamics)

@@ -45,8 +45,8 @@ def _overlap(rep: Path, p: Params, every: int) -> pd.DataFrame:
 
 
 def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10):
-    """Thermo time series, bond energy per bond (thermal value: k_BT/2 for free bonds, 5/2 k_BT for anchored
-    bonds; more where bonds are strained), potential energy, pressure and (with `overlap`) the mean overlap depth
+    """Thermo time series, bond energy per bond (thermal value at dt = 500 ns: ≈ 0.8 k_BT for free bonds,
+    ≈ 2.8 k_BT for anchored bonds, see p_energy_per_bond; more where bonds are strained), potential energy, pressure and (with `overlap`) the mean overlap depth
     of each pair family from every `overlap_every`-th trajectory frame, all replicas overlaid; legend on the right.
     With harmonic walls the mean wall depth of Qt and Ft is drawn dashed in the Qt–Qt and Ft–Ft panels.
     Dotted vertical lines: start and end of the calcium influx.

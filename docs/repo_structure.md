@@ -184,7 +184,7 @@ counter restarts at 0 for the production, and every segment repeats the last ste
 | `v_f_mono` … `v_f_vlarge` | fraction of particles in monomers, small, medium, large and very large clusters |
 | `v_deg_qt_mean`, `v_deg_ft_mean`, `v_deg_qt_max`, `v_deg_ft_max` | mean (over bound particles) and maximum bonds per Qt and Ft |
 | `v_bond_mean`, `v_bond_max` | mean and maximum bond length (nm) |
-| `v_ebond_per_bond` | bond energy per bond (zJ); free bonds: stretching only (≈ k_BT/2 when relaxed), anchored bonds: stretching and bending of both ends (≈ 5/2 k_BT) |
+| `v_ebond_per_bond` | bond energy per bond (zJ); free bonds: stretching only, anchored bonds: stretching and bending of both ends; relaxed bonds at Δt = 500 ns ≈ 0.8 k_BT free, ≈ 2.8 k_BT anchored (k_BT/2 per degree of freedom, widened by the finite time step) |
 | `S/CPU`, `CPULeft` | steps per second, and the time left of the current production segment (s) |
 
 Kinetic energy and temperature are not logged: they have no meaning in overdamped Brownian dynamics.
@@ -336,7 +336,8 @@ order of section 6.
 
 - the whole figure as `<figure>.pdf`, `.svg` (editable text) and `.png` (300 dpi);
 - for figures with several panels, also every panel alone (89 mm wide) as `<panel>.pdf/.svg/.png`, named after
-  the panel title (for example `mean_cluster_size.pdf`).
+  the panel title in lower case, every run of other characters than letters and digits as one `_` and ≥ as
+  `ge` (for example `mean_cluster_size.pdf`, `bound_ft_with_ge_2_bonds.pdf`).
 
 Common to all figures: Nature style (Arial, 7 pt text, 6 pt tick labels, legends and panel titles, titles
 regular); mean over replicas as a line with a ±1 SD band; dotted vertical lines at the start and end of the
@@ -413,7 +414,7 @@ below); made to compare the free and the anchored bond geometry. In `report.pdf`
 3. **Ft per Qt**: bonded Ft per Qt, mean over all Qt (= bonds / N_Qt).
 4. **Qt in contact per Qt**: other Qt within 2 r_Qt + 2 nm, mean over all Qt.
 5. **largest agglomerate** (particles).
-6. **bond energy per bond** (k_BT; relaxed bonds: ≈ 1/2 free, ≈ 5/2 anchored).
+6. **bond energy per bond** (k_BT; relaxed bonds at Δt = 500 ns: ≈ 0.8 free, ≈ 2.8 anchored).
 
 ### `agglomerates_above_size` (4 × 2, 120 mm wide)
 
@@ -478,7 +479,7 @@ Not saved by `make_report()`; draw them in the notebook (see the note in analysi
 - `fig_bond_rates(run, rates=…)`: the two rate panels alone (also for a list of runs), for example with coarser bins
   (`rates=bond_rates(run_dir, bin_s=…)`).
 - `quicklook(run_dir)` (simulation, section 5): a quick overview of a running or finished run, not saved; among the
-  panels the bond energy per bond in k_BT (relaxed bonds: ≈ 1/2 free, ≈ 5/2 anchored).
+  panels the bond energy per bond in k_BT (relaxed bonds at Δt = 500 ns: ≈ 0.8 free, ≈ 2.8 anchored).
 
 ### Comparison of runs: `compare_report(runs, out_dir)`
 

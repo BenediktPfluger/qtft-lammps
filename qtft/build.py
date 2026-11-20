@@ -82,7 +82,8 @@ def template_values(p: Params, replica: int, seeds: dict) -> dict:
         "k_qf": p.k_qf, "cut_qf": p.cut_qf,
         "bond_k": p.bond_k, "bond_r0": p.r0,
         "bond_geometry": p.bond_geometry,
-        "k_anchor_qt": p.k_anchor_qt, "k_anchor_ft": p.k_anchor_ft,
+        # anchored only (free runs skip these lines, and the anchor fields need not be valid there)
+        "k_anchor_qt": p.k_anchor_qt if p.anchored else 0, "k_anchor_ft": p.k_anchor_ft if p.anchored else 0,
         "diam_qt": 2 * p.radius_qt, "diam_ft": 2 * p.radius_ft,
         "gamma_rot_qt": p.gamma_rot_qt, "gamma_rot_ft": p.gamma_rot_ft,
         "neighbor_skin": p.neighbor_skin,
@@ -183,13 +184,13 @@ def build_run(p: Params, overwrite: bool = False) -> Path:
             raise FileExistsError(f"{run_dir} exists; set a different run_name or use overwrite=True")
         _check_replace(run_dir, p)
         shutil.rmtree(run_dir)
-    run_dir.mkdir(parents=True)
-
     seeds = replica_seeds(p.master_seed, p.n_replicas)
-    for i, s in enumerate(seeds, start=1):
+    inputs = [render(template_values(p, i, s)) for i, s in enumerate(seeds, start=1)]   # before any folder exists
+    run_dir.mkdir(parents=True)
+    for i, text in enumerate(inputs, start=1):
         rep = run_dir / f"rep_{i:02d}"
         rep.mkdir()
-        (rep / "in.lammps").write_text(render(template_values(p, i, s)))
+        (rep / "in.lammps").write_text(text)
         (rep / "status").write_text("built\n")
     if p.executor == "lrz":
         write_job(run_dir, p, sorted(run_dir.glob("rep_*")))

@@ -447,8 +447,8 @@ class Params:
             if not 0 < self.anchor_wobble_share_qt < 1:
                 return [("ERROR", "anchor_wobble_share_qt must lie between 0 and 1 (both ends wobble)")]
             if self.bond_break == "longest":
-                return [("ERROR", "bond_geometry 'anchored' needs bond_break 'random': fix bond/break does not "
-                                  "move the anchors with the bonds")]
+                return [("ERROR", "bond_geometry 'anchored' needs bond_break 'random': 'longest' is the legacy "
+                                  "rule of the free runs and not validated with anchored bonds")]
         if self.executor not in EXECUTORS:
             return [("ERROR", f"executor '{self.executor}' unknown: use 'local' or 'lrz'")]
         if self.executor == "lrz":
