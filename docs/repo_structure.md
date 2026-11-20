@@ -246,6 +246,7 @@ Everything here lives in `<run>/analysis/`. It is written by `ensemble_stats()` 
 | `agglomerates_above_size.csv` | number of agglomerates with ≥ n particles over time, for several n (cached) | `make_report()`, `compare_report()`, `sweep_report()` |
 | `agglomerates_above_size_qt.csv`, `_ft.csv` | the same with the size counted in Qt or in Ft only (cached) | `make_report()`, `compare_report()`, `sweep_report()` |
 | `cluster_sizes.csv` | per `traj.dump` frame, mean and SD over replicas and the value of every replica (`<replica>:<measure>`): mean size over the bound particles (clusters of ≥ 2), weight average with the free particles, weight average over the bound particles, each for all particles, Qt and Ft (cached; read in the same pass as the agglomerate counts) | `make_report()`, `compare_report()`, `sweep_report()` |
+| `anchor_wobble.csv` | anchored runs only, per `bonds.dump` frame, in the form of `cluster_sizes.csv`: rms displacement of the attachment points of the Qt end (r_Qt θ_qt) and the Ft end (r_Ft θ_ft) over all bonds and δ = √(u_qt² + u_ft²), nm (cached) | `make_report()`, `compare_report()`, `sweep_report()`, `anchor_wobble()` |
 | `multivalency.csv` | per `traj.dump` frame, in the form of `cluster_sizes.csv`: fraction of the bound Ft with ≥ 2 and ≥ 3 bonds, Ft per Qt, Qt in contact per Qt (centre distance < 2 r_Qt + 2 nm) (cached; read in the same pass) | `make_report()`, `compare_report()`, `sweep_report()`, `multivalency()` |
 | `agglomerates_influx_end.csv` | every agglomerate of ≥ 3 particles at the end of the influx, with size, composition and volume | `make_report()`; `compare_report()`, `sweep_report()` if missing |
 | `structure_timeseries.csv` | per analysed frame, mean and SD over replicas: Rg, Rg/Rg_ideal, nearest-neighbour distances between and within clusters, Qt fraction per cluster | `make_report()` (OVITO); `compare_report()`, `sweep_report()` if missing |
@@ -416,6 +417,20 @@ below); made to compare the free and the anchored bond geometry. In `report.pdf`
 5. **largest agglomerate** (particles).
 6. **bond energy per bond** (k_BT; relaxed bonds at Δt = 500 ns: ≈ 0.8 free, ≈ 2.8 anchored).
 
+### `anchor_wobble` (2 × 2, 120 mm wide; anchored runs only)
+
+Wobble of the anchored bonds (from `anchor_wobble.csv` and `bonds.dump`), one colour per run (legend below);
+free runs are left out, without anchored runs there is no figure. In `report.pdf`, and in analysis section 5
+(cell anchor wobble).
+
+1. **Qt end at end of influx** and 2. **Ft end at end of influx**: distribution of the displacement of the
+   attachment point (r θ, nm) of every bond, all replicas pooled (probability density; one run filled, several as
+   outlines), with the expected distribution of the target, p(u) = u / s² exp(−u² / 2s²), ⟨u²⟩ = target²
+   (dotted).
+3. **attachment points**: rms displacement of the Qt end (solid) and the Ft end (dashed) over time, targets
+   δ √share and δ √(1 − share) dotted.
+4. **both ends (δ)**: δ = √(u_qt² + u_ft²) over time, target `anchor_wobble_nm` dotted.
+
 ### `agglomerates_above_size` (4 × 2, 120 mm wide)
 
 Number of agglomerates above a size threshold over time, one line per threshold. Left column: in the box
@@ -487,7 +502,7 @@ Analysis section 5. Writes to the chosen `out_dir`:
 
 | File | Content |
 |---|---|
-| `figures/<figure>/` | the figures of one run (section 6) in the same order and with the same panels, one colour per run (legend below), every panel also alone: `calcium`, `overview` (the size-categories slot empty), `overlap`, `cluster_sizes` and `cluster_sizes_n` (4 × 3 each, see `cluster_sizes`), `multivalency`, `agglomerates_above_size`, `agglomerate_distributions` (per 1000 µm³), `fibsem_comparison`; no `binding_rate` |
+| `figures/<figure>/` | the figures of one run (section 6) in the same order and with the same panels, one colour per run (legend below), every panel also alone: `calcium`, `overview` (the size-categories slot empty), `overlap`, `cluster_sizes` and `cluster_sizes_n` (4 × 3 each, see `cluster_sizes`), `multivalency`, `anchor_wobble` (anchored runs only), `agglomerates_above_size`, `agglomerate_distributions` (per 1000 µm³), `fibsem_comparison`; no `binding_rate` |
 | `comparison_table.csv`, `.tex` | the final-state table of `summary_table` (same rows) for every run, side by side: CSV with the columns `<run> mean` and `<run> sd`, LaTeX as mean ± SD; a label used by several runs gets (1), (2), … |
 | `report.pdf` | cover pages (every run with number, label, folder, creation date and git commit; the comparison table; all simulation parameters, one column per run), then the figures above in the order of section 6 |
 

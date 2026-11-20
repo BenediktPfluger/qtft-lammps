@@ -28,7 +28,8 @@ from matplotlib.transforms import offset_copy
 
 from .ensemble import (QT_CONTACT_MARGIN_NM, SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, SIZE_THRESHOLDS_QT_FT, TO_PER_M_S,
                        cluster_sizes, _agglomerates_above_size_species, _thresholds, _unique, agglomerates_above_size,
-                       binding_rate, bond_rates, ensemble_stats, ensemble_stats_cached, final_table, multivalency)
+                       anchor_wobble, anchor_wobble_influx_end, anchor_wobble_targets, binding_rate, bond_rates,
+                       ensemble_stats, ensemble_stats_cached, final_table, multivalency)
 from .params import Params
 from .read import read_histo
 from .spatial import QT_MIN, density_estimate, peak, qt_spatial_run
@@ -74,6 +75,8 @@ class RunData:
     agglomerates: pd.DataFrame | None = None           # agglomerates_influx_end.csv (sizes and volumes)
     _sizes: pd.DataFrame | None = field(default=None, repr=False)
     _multi: pd.DataFrame | None = field(default=None, repr=False)
+    _wobble: pd.DataFrame | None = field(default=None, repr=False)
+    _wobble_end: dict | None = field(default=None, repr=False)
     _rates: dict | None = field(default=None, repr=False)
 
     @property
@@ -93,6 +96,20 @@ class RunData:
         if self._multi is None:
             self._multi = multivalency(self.run_dir)
         return self._multi
+
+    @property
+    def wobble(self) -> pd.DataFrame:
+        """anchor_wobble of the run (anchored only; computed from bonds.dump or read from its cache on first use)."""
+        if self._wobble is None:
+            self._wobble = anchor_wobble(self.run_dir)
+        return self._wobble
+
+    @property
+    def wobble_end(self) -> dict:
+        """anchor_wobble_influx_end of the run (displacements of every bond at the end of the influx, pooled)."""
+        if self._wobble_end is None:
+            self._wobble_end = anchor_wobble_influx_end(self.run_dir)
+        return self._wobble_end
 
     @property
     def rates(self) -> dict:
@@ -918,6 +935,79 @@ def fig_multivalency(runs, out_dir: Path | None = None, traces=False):
                          traces=traces, legend_below=True)
 
 
+WOBBLE_ENDS = [("u_qt", "Qt end", "-"), ("u_ft", "Ft end", "--")]
+
+
+def _wobble_hist(end: str):
+    """Panel of fig_anchor_wobble: distribution of the displacement of one bond end at the end of the influx (all
+    replicas pooled, probability density; one run filled, several as outlines) with the expected distribution
+    of the target, p(u) = u / s^2 exp(-u^2 / (2 s^2)), <u^2> = 2 s^2 = target^2 (two small tilt angles)."""
+    def panel(ax, runs, traces=False):
+        top = max([anchor_wobble_targets(r.p)[end] for r in runs] + [1.0]) * 3
+        for r in runs:
+            u = r.wobble_end[end]
+            top = max(top, float(np.percentile(u, 99.5)) if len(u) else 0.0)
+        bins = np.linspace(0, top, 41)
+        for r in runs:
+            u = r.wobble_end[end]
+            if len(u):
+                ax.hist(u, bins=bins, density=True, color=r.color, alpha=BAND_ALPHA * 2 if len(runs) == 1 else 1,
+                        histtype="stepfilled" if len(runs) == 1 else "step", lw=None if len(runs) > 1 else 0)
+            s2 = anchor_wobble_targets(r.p)[end] ** 2 / 2
+            x = np.linspace(0, top, 200)
+            ax.plot(x, x / s2 * np.exp(-x ** 2 / (2 * s2)), color="k" if len(runs) == 1 else r.color, ls=":")
+        ax.plot([], [], color="k", ls=":", label="expected")
+        ax.legend(loc="upper right")
+        ax.set_xlim(0, top)
+        ax.set_xlabel("displacement (nm)")
+        ax.set_ylabel("probability density (1/nm)")
+    return panel
+
+
+def p_wobble_ends(ax, runs, traces=False):
+    """rms displacement of the attachment points of the Qt end (solid) and the Ft end (dashed) over time, targets
+    as thin dotted lines."""
+    for r in runs:
+        d = r.wobble
+        for key, _, ls in WOBBLE_ENDS:
+            tr = d[[c for c in d.columns if c.endswith(f":{key}")]].to_numpy().T if traces else None
+            band(ax, d["time_s"].to_numpy() * 1e3, d[f"{key}_mean"].to_numpy(), d[f"{key}_sd"].to_numpy(),
+                 r.color, ls=ls, traces=tr)
+            ax.axhline(anchor_wobble_targets(r.p)[key], color=r.color, ls=":", lw=GUIDE_LW)
+    for key, name, ls in WOBBLE_ENDS:
+        ax.plot([], [], color="k", ls=ls, label=name)
+    ax.legend(loc="lower right")
+    ax.set_ylim(bottom=0)
+    ax.set_ylabel("rms displacement (nm)")
+
+
+def p_wobble_delta(ax, runs, traces=False):
+    """delta = sqrt(u_qt^2 + u_ft^2) over time, target (anchor_wobble_nm) as a thin dotted line."""
+    for r in runs:
+        d = r.wobble
+        tr = d[[c for c in d.columns if c.endswith(":delta")]].to_numpy().T if traces else None
+        band(ax, d["time_s"].to_numpy() * 1e3, d["delta_mean"].to_numpy(), d["delta_sd"].to_numpy(), r.color,
+             r.label, traces=tr)
+        ax.axhline(r.p.anchor_wobble_nm, color=r.color, ls=":", lw=GUIDE_LW)
+    ax.set_ylim(bottom=0)
+    ax.set_ylabel("δ (nm)")
+
+
+def fig_anchor_wobble(runs, out_dir: Path | None = None, traces=False):
+    """Wobble of the anchored bonds (anchor_wobble): distributions of the displacement of the attachment points of
+    the Qt and the Ft end at the end of the influx with the expected ones, their rms over time and delta over time,
+    each against its target (dotted); 2 x 2, a colour per run (legend below), 120 mm; panels also alone in
+    anchor_wobble/. Only the anchored runs of `runs`; None if there are none."""
+    runs = [r for r in _as_runs(runs) if r.p.anchored]
+    if not runs:
+        return None
+    frame = _frame_label(runs)
+    panels = [(f"Qt end at {frame}", _wobble_hist("u_qt"), False), (f"Ft end at {frame}", _wobble_hist("u_ft"), False),
+              ("attachment points", p_wobble_ends, True), ("both ends (δ)", p_wobble_delta, True)]
+    return _panel_figure("anchor_wobble", panels, runs, out_dir, 2, 2, ONE_HALF, 100 * MM, traces=traces,
+                         legend_below=True)
+
+
 # line styles of the thresholds with several runs (fig_agglomerates_above_size, _total)
 THRESHOLD_STYLES = ["-", "--", ":", "-.", (0, (5, 1, 1, 1, 1, 1)), (0, (8, 2))]
 SPECIES_UNIT = {"all": "", "qt": " Qt", "ft": " Ft"}     # what the thresholds count, in labels
@@ -1289,16 +1379,17 @@ def _analyse(run_dir: Path, every: int, structure_analysis: bool, overlap_analys
 
 def _report_figures(runs: list[RunData], figs: Path, traces: bool, thresholds: tuple) -> list:
     """The report figures of one run or several, in report order, into figs/<figure>/: calcium, overview, overlap,
-    cluster sizes, multivalency, agglomerates above size (thresholds = n_min, n_min_qt, n_min_ft, n_qt_ft), agglomerate
-    distributions, FIB-SEM comparison, and for one run with a calcium step the binding rate. Writes
-    bond_rates.csv (and binding_rate.csv) of every run. The agglomerate counts and cluster sizes of a run are read
-    from its dumps in one pass before the first figure that needs them."""
+    cluster sizes, multivalency, anchor wobble (anchored runs only), agglomerates above size (thresholds = n_min,
+    n_min_qt, n_min_ft, n_qt_ft), agglomerate distributions, FIB-SEM comparison, and for one run with a calcium
+    step the binding rate. Writes bond_rates.csv (and binding_rate.csv) of every run. The agglomerate counts and
+    cluster sizes of a run are read from its dumps in one pass before the first figure that needs them."""
     ns, n_qt, n_ft = _above_size_thresholds(*thresholds)
     for r in runs:
         r._rates = bond_rates(r.run_dir)                                                         # + csv
         _count_above_size(r.run_dir, ns, n_qt, n_ft)                             # + csv (cached)
     figures = [fig_calcium(runs, figs, traces), fig_overview(runs, figs, traces=traces), fig_overlap(runs, figs),
                *fig_cluster_sizes(runs, figs, traces=traces), fig_multivalency(runs, figs, traces=traces),
+               *filter(None, [fig_anchor_wobble(runs, figs, traces=traces)]),
                fig_agglomerates_above_size(runs, figs, traces, *thresholds),
                fig_agglomerate_distributions(runs, figs),
                fig_fibsem_comparison(runs, figs, spatial=[qt_spatial_run(r.run_dir) for r in runs])]

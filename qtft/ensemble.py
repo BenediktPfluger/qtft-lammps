@@ -18,7 +18,7 @@ import pandas as pd
 from scipy.spatial import cKDTree
 
 from .params import EXECUTION_SETTINGS, N_A, NM3_TO_L, Params, data_path
-from .read import load_thermo, read_bonds, read_dump
+from .read import load_thermo, read_bond_angles, read_bonds, read_dump
 from .remote import require_fetched
 from .structure import percolation
 
@@ -524,6 +524,80 @@ def multivalency_influx_end(run_dir: str | Path, replicas: list[str]) -> dict[st
     return {f"{key}_influx_end": (pd.Series([row[f"{rep}:{key}"] for rep in replicas]).mean(),
                                   pd.Series([row[f"{rep}:{key}"] for rep in replicas]).std(ddof=1))
             for key in MULTIVALENCY}
+
+
+# wobble of the anchored bonds per bonds.dump frame [nm]: rms displacement of the attachment point of the Qt end
+# (r_Qt theta_qt) and of the Ft end (r_Ft theta_ft) over all bonds, and both together, delta = sqrt(u_qt^2 + u_ft^2);
+# targets: Params.anchor_wobble_nm and its shares (anchor_wobble_targets)
+ANCHOR_WOBBLE = ["u_qt", "u_ft", "delta"]
+
+
+def anchor_wobble_targets(p: Params) -> dict[str, float]:
+    """The rms displacements the anchor stiffnesses are set for [nm]: u_qt = delta sqrt(share), u_ft = delta
+    sqrt(1 - share), delta (ideal, small angles; the finite time step widens them by about 1 %)."""
+    return {"u_qt": p.anchor_wobble_nm * math.sqrt(p.anchor_wobble_share_qt),
+            "u_ft": p.anchor_wobble_nm * math.sqrt(1 - p.anchor_wobble_share_qt), "delta": p.anchor_wobble_nm}
+
+
+def _wobble_displacements(theta: np.ndarray, p: Params) -> np.ndarray:
+    """Displacements of the attachment points [nm] (n_bonds, 2) from the bond angles theta_qt, theta_ft [rad]."""
+    return theta * np.array([p.radius_qt, p.radius_ft])
+
+
+def anchor_wobble(run_dir: str | Path, save: bool = True) -> pd.DataFrame | None:
+    """Wobble of the anchored bonds over time (ANCHOR_WOBBLE: rms displacement of the attachment points of the Qt
+    and the Ft end and delta), from the bond angles in bonds.dump of every finished replica (resolution
+    traj_every; frames without bonds NaN). The table has the form of multivalency; with `save` written to
+    <run>/analysis/anchor_wobble.csv and reused while it holds the same replicas and is newer than their dumps.
+    None for a run with free bonds."""
+    run_dir = Path(run_dir).expanduser()
+    require_fetched(run_dir)
+    p = Params.load(run_dir / "params.json")
+    if not p.anchored:
+        return None
+    reps = list(replica_series(run_dir, names_only=True))
+    if not reps:
+        raise ValueError(f"no finished replicas in {run_dir}")
+    dumps = [run_dir / rep / "bonds.dump" for rep in reps]
+    path = run_dir / "analysis" / "anchor_wobble.csv"
+    if save and (cached := _cached_sizes(path, reps, dumps)) is not None:
+        return cached
+    values = {}
+    for rep, dump in zip(reps, dumps):
+        values[rep] = {}
+        for step, _, theta in read_bond_angles(dump):
+            if len(theta) == 0:
+                values[rep][step] = [np.nan] * len(ANCHOR_WOBBLE)
+                continue
+            u_qt, u_ft = np.sqrt((_wobble_displacements(theta, p) ** 2).mean(axis=0))
+            values[rep][step] = [u_qt, u_ft, math.hypot(u_qt, u_ft)]
+    table = _sizes_table(values, reps, p, ANCHOR_WOBBLE)
+    if save:
+        path.parent.mkdir(exist_ok=True)
+        table.to_csv(path, index=False)
+    return table
+
+
+def anchor_wobble_influx_end(run_dir: str | Path) -> dict[str, np.ndarray] | None:
+    """Displacements of the attachment points of every bond [nm], all finished replicas pooled, in the last
+    bonds.dump frame at or before the end of the influx (Params.influx_end_step, the frame of the agglomerate
+    distributions): {"u_qt": array, "u_ft": array}. None for a run with free bonds."""
+    run_dir = Path(run_dir).expanduser()
+    require_fetched(run_dir)
+    p = Params.load(run_dir / "params.json")
+    if not p.anchored:
+        return None
+    pooled = []
+    for rep in replica_series(run_dir, names_only=True):
+        last = None
+        for step, _, theta in read_bond_angles(run_dir / rep / "bonds.dump"):
+            if step > p.influx_end_step:
+                break
+            last = theta
+        if last is not None:
+            pooled.append(_wobble_displacements(last, p))
+    u = np.concatenate(pooled) if pooled else np.empty((0, 2))
+    return {"u_qt": u[:, 0], "u_ft": u[:, 1]}
 
 
 def _cached_sizes(path: Path, reps: list[str], dumps: list[Path]) -> pd.DataFrame | None:
