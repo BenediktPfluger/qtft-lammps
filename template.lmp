@@ -230,8 +230,9 @@ thermo_style    custom step pe evdwl ebond c_pvir bonds &
                 v_ca v_f v_k_on_s v_k_off_s v_n_broken spcpu cpuremain
 # every segment start warns about bonds created across the periodic boundary ("Inconsistent image
 # flags", harmless: the analysis uses the minimum image) and about fix bond/create together with
-# fix bond/break (checked: consistent); the warnings are not limited, so that others stay visible
-thermo_modify   line yaml norm no flush yes
+# fix bond/break (checked: consistent); warn always lifts the LAMMPS limit of 100 warnings, so that a later
+# warning still reaches the log (after this thermo_style: a new thermo_style resets thermo_modify)
+thermo_modify   line yaml norm no flush yes warn always
 
 # the production runs in segments of {{segment_steps}} steps; every segment re-creates the binding fix
 # (bond_break = longest: also the unbinding fix) with the probability at its start and a new seed:
