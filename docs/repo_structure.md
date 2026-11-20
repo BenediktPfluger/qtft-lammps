@@ -32,7 +32,7 @@ qtft-lammps/
 ├── template.lmp              LAMMPS input template: model structure with {{placeholders}}, no numbers
 ├── job_template.slurm        Slurm job script template for runs on LRZ
 ├── lammps_plugins/
-│   └── qtft_styles/          LAMMPS plugin qtftstyles.so (fix bond/break/random, bond_style harmonic/anchor): C++ source, build.sh (the built .so is not committed)
+│   └── qtft_styles/          LAMMPS plugin qtftstyles.so with the project's own styles (source, build.sh; the .so is not committed)
 ├── tests/                    pytest tests (slow ones run short LAMMPS simulations)   gitignored
 ├── docs/
 │   ├── install.md            installation on this PC and on LRZ
@@ -128,7 +128,7 @@ Written by `build_run()` (simulation, section 2) before LAMMPS starts.
 | File | Content | Written by |
 |---|---|---|
 | `params.json` | **The record of the run**: all parameters (the particle amounts as densities `qt_per_um3`, `ft_per_um3`), derived values (particle numbers, k_BT, γ, α, p, …), check results, seeds of every replica, git commit, creation time | `build_run()` |
-| `rep_XX/in.lammps` | the LAMMPS input of this replica, all numbers filled in from `template.lmp`; can be run by hand with `lmp -in in.lammps` | `build_run()` |
+| `rep_XX/in.lammps` | the LAMMPS input of this replica, all numbers filled in from `template.lmp`; can be run by hand with `lmp -in in.lammps`. Anchored runs: oriented particles, `fix brownian/asphere`, `bond_style harmonic/anchor`; the plugin is loaded when the run uses one of its styles | `build_run()` |
 | `job.slurm` | only with `executor = "lrz"`: Slurm job script, one array task per replica (cluster, partition, QOS, `mpi_procs` tasks, `slurm_mem`, `slurm_time`, email from `lrz_local.json`) | `build_run()`, `build_sweep()`, from `job_template.slurm` |
 | `replicas.txt` | only with `executor = "lrz"`: the replica folders, one per line; array task i runs line i | `build_run()`, `build_sweep()` |
 
@@ -646,8 +646,9 @@ values are those after the pump-out). Like `compare_report`, it first runs the a
 ### Benchmark `runs/benchmark/`
 
 Only after `benchmark()` (simulation, section 6). One folder per measurement, named after the number of hardware
-threads filled (`16cores/`, `8cores/`), each with one short run folder per tested setting and `results.csv`
-(speed, timing breakdown, projected run times). Benchmark runs are not listed in `index.csv`.
+threads filled (`16cores/`, `8cores/`), each with one short run folder per tested setting, `<variant>_np<procs>`
+(for example `default_np4`, or `free_np4` and `anchored_np4` with `variants`), and `results.csv` (speed, timing
+breakdown, projected run times). Benchmark runs are not listed in `index.csv`.
 
 ### Force-constant sweep `runs/tuning/`
 

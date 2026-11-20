@@ -200,14 +200,14 @@ The simulation in this repository does not use the GPU.
    ```
 
    It compiles against the LAMMPS source in `~/src/lammps` (or the folder given as argument), which must be
-   the same version as `lmp` (the script checks this). Every run with `bond_break="random"` (the default)
-   loads the result, `lammps_plugins/qtft_styles/qtftstyles.so`; `start()` refuses to run
-   without it.
+   the same version as `lmp` (the script checks this). Every run that uses one of these styles
+   (`bond_break="random"`, the default, or `bond_geometry="anchored"`) loads the result,
+   `lammps_plugins/qtft_styles/qtftstyles.so`; `start()` refuses to run without it.
 
 4. Run the tests (only with a local `tests/` folder: the tests are not part of the repository):
 
    ```bash
-   pytest -q                    # all tests, including short LAMMPS runs (about 5 min)
+   pytest -q                    # all tests, including short LAMMPS runs (about 8 min)
    pytest -q -m "not slow"      # without the LAMMPS runs (about 20 s)
    ```
 
@@ -236,7 +236,8 @@ To view this guide formatted in VS Code, open it and press `Ctrl+Shift+V`.
 Runs with `Params(executor="lrz")` are built on this PC and run on LRZ as one Slurm job array
 (`job.slurm` from `job_template.slurm`, one task per replica, partition `serial_long`, at most 7 days). LAMMPS
 on LRZ is a minimal build of the same version, with the project's own styles (`fix bond/break/random`,
-`bond_style harmonic/anchor`) compiled in, so no plugin is needed there. All LRZ settings (host, folders, modules, Slurm partition) are in `LRZ` in `qtft/remote.py`.
+`bond_style harmonic/anchor`) compiled in, so no plugin is needed there. All LRZ settings (host, folders,
+modules, Slurm partition) are in `LRZ` in `qtft/remote.py`.
 
 ## 8. Prerequisites
 
@@ -340,12 +341,16 @@ srun -p cm4_inter -n 1 -t 00:05:00 ~/src/lammps/build/lmp -h | grep -c -e bond/b
 
 A small input built on this PC with `executor="lrz"` gave byte-identical dumps on LRZ (2 and 8 MPI
 processes, partitions `cm4_inter` and `serial_long`) and on this PC with the same LAMMPS version
-(2026-10-25). After adding `bond_style harmonic/anchor` (2026-11-19) the free model is still byte-identical between
-LRZ and this PC; anchored runs (`bond_geometry="anchored"`) agree to rounding (10⁻¹² nm after 3000 steps), not bit
-for bit: the two GCC versions (15.2 on LRZ, 12.4 in conda here) contract the floating-point operations of the
-rotation and anchor code differently into fused multiply-adds. Such last-bit differences grow in a long run as any
-perturbation does; the statistics are the same. In `serial_long` (Xeon Platinum 8380, shared node) a process is about 0.68 × as fast as on this
-PC: the 3 µm run takes about 35 h there instead of 24 h here.
+(2026-10-25). After adding `bond_style harmonic/anchor` (2026-11-19) the free model is still byte-identical
+between LRZ and this PC; anchored runs (`bond_geometry="anchored"`) agree to rounding (10⁻¹² nm after 3000
+steps), not bit for bit: the two GCC versions (15.2 on LRZ, 12.4 in conda here) contract the floating-point
+operations of the rotation and anchor code differently into fused multiply-adds. Such last-bit differences grow
+in a long run as any perturbation does; the statistics are the same.
+
+In `serial_long` (Xeon Platinum 8380, shared node) a process is about 0.68 × as fast as on this PC: the 3 µm
+run takes about 35 h there instead of 24 h here. Anchored runs take about 1.6–1.8 × as long as free ones (the
+190 s protocol with 4800 particles and 8 processes: about 3 days free, 5 days anchored); keep every run within
+the 7-day limit of `serial_long`.
 
 ## 13. Run on LRZ from the notebook
 
@@ -425,6 +430,7 @@ OMP_NUM_THREADS=2 mpirun -np 4 lmp -sf omp -in in.myscript      # MPI + OpenMP
 | LRZ: `Invalid qos specification` from `sbatch` | `--qos=cm4_serial_long` for `serial_long` (in `job_template.slurm`) |
 | LRZ: `PMI server not found` or `PMI2_Job_GetId returned 14` | LAMMPS was started outside Slurm, or `srun` without `--mpi=pmi2` |
 | LRZ: `LAMMPS not found on LRZ` from `start()` | build LAMMPS on LRZ (section 11) |
+| LRZ: `Unrecognized bond style 'harmonic/anchor'` or `Unrecognized fix style 'bond/break/random'` | copy the project's styles into the LAMMPS source on LRZ again (section 11, step 2), run the configure step again and rebuild |
 
 ## Updating LAMMPS
 
