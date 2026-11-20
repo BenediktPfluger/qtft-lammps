@@ -571,16 +571,17 @@ class Params:
 
     def auto_name(self) -> str:
         """Run name: Qt and Ft density [1/um^3], box edge [nm], k_on [1/s], k_off Ca-loaded / Ca-free [1/s],
-        calcium rest-peak and half-loading K [uM], rise time and pump-out time constant [s], phase durations
-        baseline-influx-pump-out [s], timestep, boundary; anchored bonds add the wobble delta [nm] and, if it is
-        not 0.5, the share of the Qt end (free runs keep the names they had before anchored bonds existed)."""
+        for anchored bonds the wobble delta [nm] and, if it is not 0.5, the share of the Qt end (free runs have no
+        such part), calcium rest-peak and half-loading K [uM], rise time and pump-out time constant [s], phase
+        durations baseline-influx-pump-out [s], timestep, boundary."""
         rho_qt, rho_ft = self.density_per_um3
         return (f"Qt{_g3(rho_qt)}_Ft{_g3(rho_ft)}_L{box_label(self.box_length)}"
                 f"_kon{self.k_on * 1e9:g}_koff{self.k_off_ca_per_s:g}-{self.k_off_free_per_s:g}"
+                f"{self._anchor_label()}"
                 f"_Ca{self.ca_rest_uM:g}-{self.ca_peak_uM:g}uM_K{self.ca_K_uM:g}"
                 f"_rise{self.ca_rise_s:g}tau{self.ca_tau_s:g}"
                 f"_t{self.t_baseline_s:g}-{self.t_influx_s:g}-{self.t_pumpout_s:g}s"
-                f"_dt{self.timestep:g}ns_{self.boundary}{self._anchor_label()}")
+                f"_dt{self.timestep:g}ns_{self.boundary}")
 
     def _anchor_label(self) -> str:
         if not self.anchored:

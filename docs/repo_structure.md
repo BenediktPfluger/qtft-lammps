@@ -91,7 +91,7 @@ from `n_replicas`; the `group` parameter overrides it.
 The run folder is named by `Params.auto_name()`, unless `run_name` is set:
 
 ```
-Qt20_Ft80_L4000_kon1860_koff0.008-0.2_Ca0.1-1uM_K0.5_rise5tau30_t10-30-150s_dt500ns_periodic
+Qt20_Ft80_L4000_kon1860_koff0.008-0.2_anch5nm_Ca0.1-1uM_K0.5_rise5tau30_t10-30-150s_dt500ns_periodic
 ```
 
 | Part | Meaning |
@@ -100,12 +100,12 @@ Qt20_Ft80_L4000_kon1860_koff0.008-0.2_Ca0.1-1uM_K0.5_rise5tau30_t10-30-150s_dt50
 | `L4000` | box edge in nm (`2000x3000x4000` for a rectangular box) |
 | `kon1860` | k_on in 1/s at full calmodulin loading |
 | `koff0.008-0.2` | k_off with Ca-loaded and with Ca-free calmodulin, in 1/s |
+| `anch5nm` | only with `bond_geometry="anchored"`: wobble δ of the attachment points in nm, `-q0.3` added if the share of the Qt end is not 0.5 (`anch5nm-q0.3`); free runs have no such part |
 | `Ca0.1-1uM_K0.5` | resting and peak calcium, and the half-loading K, in µM |
 | `rise5tau30` | rise time and pump-out time constant, in s |
 | `t10-30-150s` | durations of baseline, influx and pump-out |
 | `dt500ns` | time step |
 | `periodic` | boundary (`periodic`, `reflect` or `harmonic`) |
-| `_anch5nm` | only with `bond_geometry="anchored"`: wobble δ of the attachment points in nm, `-q0.3` added if the share of the Qt end is not 0.5 (`_anch5nm-q0.3`); free runs have no suffix |
 
 The force constants, the bond constant and the Hill coefficient are not part of the name. Runs that differ only
 in those, or only in execution settings and seeds, need their own `run_name`. `build_run(p, overwrite=True)`
