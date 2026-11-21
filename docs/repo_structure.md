@@ -340,7 +340,7 @@ order of section 6.
   runs in a legend below (the report version, in `report.pdf`);
 - every panel alone as a publication panel, `<panel>.pdf/.svg/.png`: 45 × 40 mm (four in a row of a double
   column, 183 mm), the axes box always at the same place (margins left 9.5 mm, bottom 8 mm, top and right 2 mm,
-  right 9.5 mm with a second y axis; plot area 33.5 × 30 mm), so panels line up when put side by side; no title
+  right 9.5 mm with a second y axis, top 8 mm with a second x axis; plot area 33.5 × 30 mm), so panels line up when put side by side; no title
   and no legend. Named after the panel title in lower case, mathtext markup left out, every run of other
   characters than letters and digits as one `_` and ≥ as `ge` (for example `mean_size_n.pdf`, `apparent_k_a.pdf`,
   `mean_r_g.pdf`); a figure of one panel (`overlap`, `binding_rate`, `sweep_<result>`,
@@ -431,7 +431,8 @@ without an anchored run only row 1 (1 × 2). In `report.pdf`, and in analysis se
 3. **Qt end at end of influx** and 4. **Ft end at end of influx**: distribution of the displacement of the
    attachment point (r θ, nm) of every bond, all replicas pooled (probability density; one run filled, several as
    outlines), with the expected distribution of the target, p(u) = u / s² exp(−u² / 2s²), ⟨u²⟩ = target²
-   (dotted).
+   (dotted). Top axis: the tilt angle of the bond against the anchor of that end, θ = u / r in degrees (r_Qt or
+   r_Ft; left out if the compared runs have different radii for that end).
 5. **attachment points**: rms displacement of the Qt end (solid) and the Ft end (dashed) over time, targets
    δ √share and δ √(1 − share) dotted.
 6. **both ends (δ)**: δ = √(u_qt² + u_ft²) over time, target `anchor_wobble_nm` dotted.

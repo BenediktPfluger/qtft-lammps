@@ -77,6 +77,7 @@ STYLE = BASE_STYLE | {
 PANEL_SIZE = (45 * MM, 40 * MM)
 PANEL_MARGINS = {"left": 9.5 * MM, "bottom": 8 * MM, "right": 2 * MM, "top": 2 * MM}
 PANEL_MARGIN_TWIN = 9.5 * MM                       # right margin of a panel with a second y axis
+PANEL_MARGIN_TOP_AXIS = 8 * MM                     # top margin of a panel with a second x axis (like the bottom)
 LEGEND_WIDTH = 180 * MM                            # legend files: at most the width of a row of panels
 INFLUX_SHADE = {"color": "#D3D3D3", "alpha": 0.5}  # calcium influx, behind everything
 THOUSANDS = " (×10$^{3}$)"                         # y label suffix of axes in thousands
@@ -748,10 +749,11 @@ def _panel_file(func, runs, stem: Path, is_time: bool, traces=False) -> None:
     func(ax, runs, traces=traces)
     if is_time:
         _time_panel(ax, runs, _t_end(runs))
-    if len(fig.axes) > 1:                                           # second y axis (twinx): its label on the right
+    right = PANEL_MARGIN_TWIN if len(fig.axes) > 1 else m["right"]   # second y axis (twinx): its label on the right
+    top = PANEL_MARGIN_TOP_AXIS if ax.child_axes else m["top"]         # second x axis on top (secondary_xaxis)
+    if (right, top) != (m["right"], m["top"]):
         for a in fig.axes:
-            a.set_position((m["left"] / w, m["bottom"] / h, 1 - (m["left"] + PANEL_MARGIN_TWIN) / w,
-                            1 - (m["bottom"] + m["top"]) / h))
+            a.set_position((m["left"] / w, m["bottom"] / h, 1 - (m["left"] + right) / w, 1 - (m["bottom"] + top) / h))
     for a in fig.axes:
         legend = a.get_legend()
         if legend is not None and not getattr(legend, "qtft_keep", False):
@@ -1052,6 +1054,21 @@ def p_energy_per_bond(ax, runs, traces=False):
 
 
 WOBBLE_ENDS = [("u_qt", "Qt end", "-"), ("u_ft", "Ft end", "--")]
+WOBBLE_RADIUS = {"u_qt": ("radius_qt", "Qt"), "u_ft": ("radius_ft", "Ft")}
+
+
+def _angle_axis(ax, runs, end: str) -> None:
+    """Top axis of a displacement panel: the tilt angle theta = u / r of that end in degrees (u = r theta exactly);
+    none if the runs have different radii for that end (one scale would be wrong)."""
+    field_name, species = WOBBLE_RADIUS[end]
+    radii = {getattr(r.p, field_name) for r in runs}
+    if len(radii) != 1:
+        return
+    r = radii.pop()
+    top = ax.secondary_xaxis("top", functions=(lambda u: np.degrees(u / r), lambda deg: np.radians(deg) * r))
+    top.xaxis.set_major_locator(MaxNLocator(nbins=4, steps=[1, 2, 5, 10]))
+    top.minorticks_on()
+    top.set_xlabel(f"$\\mathit{{\\theta}}_\\mathrm{{{species}}}$ (°)")
 
 
 def _wobble_hist(end: str):
@@ -1077,6 +1094,7 @@ def _wobble_hist(end: str):
         ax.set_xlim(0, top)
         ax.set_xlabel("displacement (nm)")
         ax.set_ylabel(DENSITY_NM)
+        _angle_axis(ax, runs, end)
     return panel
 
 
