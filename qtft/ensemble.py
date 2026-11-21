@@ -479,51 +479,42 @@ def cluster_sizes(run_dir: str | Path, save: bool = True) -> pd.DataFrame:
     return _agglomerates_above_size_species(run_dir, {}, save, sizes=True)["sizes"]
 
 
-# how the bonds are arranged, per traj.dump frame (multivalency; compares the free and the anchored bond geometry):
-#   ft_bonds2, ft_bonds3  fraction of the bound Ft with >= 2 / >= 3 bonds (NaN without bound Ft)
-#   ft_per_qt             Ft bonded to a Qt, mean over all Qt (= bonds / N_Qt: there is at most one bond per pair)
+# Qt in contact with a Qt per traj.dump frame (qt_contacts; compares the free and the anchored bond geometry):
 #   qt_neighbours         Qt in contact with a Qt, mean over all Qt: centre distance < 2 r_Qt + QT_CONTACT_MARGIN_NM
-MULTIVALENCY = ["ft_bonds2", "ft_bonds3", "ft_per_qt", "qt_neighbours"]
+QT_CONTACTS = ["qt_neighbours"]
 QT_CONTACT_MARGIN_NM = 2.0      # beyond the touching distance 2 r_Qt (thermal gap of particles kept together)
 
 
-def _frame_multivalency(atoms: pd.DataFrame, p: Params) -> list[float]:
-    """The MULTIVALENCY values of one traj.dump frame."""
-    types = atoms["type"].to_numpy(dtype=int)
-    nb = atoms["nbonds"].to_numpy(dtype=int)
-    ft = nb[types == SPECIES_TYPE["ft"]]
-    bound = ft[ft > 0]
-    qt = types == SPECIES_TYPE["qt"]
+def _frame_qt_contacts(atoms: pd.DataFrame, p: Params) -> list[float]:
+    """The QT_CONTACTS values of one traj.dump frame."""
+    qt = atoms["type"].to_numpy(dtype=int) == SPECIES_TYPE["qt"]
     box = np.array(p.box)
     pos = atoms.loc[qt, ["x", "y", "z"]].to_numpy(dtype=float)
     if p.periodic:
         pos = np.mod(pos, box)
     pairs = cKDTree(pos, boxsize=box if p.periodic else None).query_pairs(
         2 * p.radius_qt + QT_CONTACT_MARGIN_NM, output_type="ndarray")
-    n_qt = max(int(qt.sum()), 1)
-    return [np.mean(bound >= 2) if len(bound) else np.nan, np.mean(bound >= 3) if len(bound) else np.nan,
-            nb[qt].sum() / n_qt, 2 * len(pairs) / n_qt]
+    return [2 * len(pairs) / max(int(qt.sum()), 1)]
 
 
-def multivalency(run_dir: str | Path, save: bool = True) -> pd.DataFrame:
-    """How the bonds are arranged over time (MULTIVALENCY: fraction of the bound Ft with >= 2 and >= 3 bonds, Ft
-    per Qt, Qt in contact per Qt), from the traj.dump frames of every finished replica (resolution traj_every).
-    The table has the form of cluster_sizes (step, time_s, replicas, <measure>_mean, <measure>_sd,
-    <replica>:<measure>); with `save` written to <run>/analysis/multivalency.csv and reused while it holds the
-    same replicas and is newer than their dumps."""
-    return _agglomerates_above_size_species(run_dir, {}, save, multi=True)["multivalency"]
+def qt_contacts(run_dir: str | Path, save: bool = True) -> pd.DataFrame:
+    """Qt in contact with a Qt per Qt over time (QT_CONTACTS), from the traj.dump frames of every finished replica
+    (resolution traj_every). The table has the form of cluster_sizes (step, time_s, replicas, <measure>_mean,
+    <measure>_sd, <replica>:<measure>); with `save` written to <run>/analysis/qt_contacts.csv and reused while it
+    holds the same replicas and is newer than their dumps."""
+    return _agglomerates_above_size_species(run_dir, {}, save, contacts=True)["qt_contacts"]
 
 
-def multivalency_influx_end(run_dir: str | Path, replicas: list[str]) -> dict[str, tuple[float, float]]:
-    """Mean and SD over `replicas` of every MULTIVALENCY measure in the last frame at or before the end of the
+def qt_contacts_influx_end(run_dir: str | Path, replicas: list[str]) -> dict[str, tuple[float, float]]:
+    """Mean and SD over `replicas` of every QT_CONTACTS measure in the last frame at or before the end of the
     influx (Params.influx_end_step, the frame of the agglomerate distributions), keys "<measure>_influx_end"."""
     run_dir = Path(run_dir).expanduser()
     p = Params.load(run_dir / "params.json")
-    d = multivalency(run_dir)
+    d = qt_contacts(run_dir)
     row = d[d["step"] <= p.influx_end_step].iloc[-1]
     return {f"{key}_influx_end": (pd.Series([row[f"{rep}:{key}"] for rep in replicas]).mean(),
                                   pd.Series([row[f"{rep}:{key}"] for rep in replicas]).std(ddof=1))
-            for key in MULTIVALENCY}
+            for key in QT_CONTACTS}
 
 
 # wobble of the anchored bonds per bonds.dump frame [nm]: rms displacement of the attachment point of the Qt end
@@ -547,7 +538,7 @@ def _wobble_displacements(theta: np.ndarray, p: Params) -> np.ndarray:
 def anchor_wobble(run_dir: str | Path, save: bool = True) -> pd.DataFrame | None:
     """Wobble of the anchored bonds over time (ANCHOR_WOBBLE: rms displacement of the attachment points of the Qt
     and the Ft end and delta), from the bond angles in bonds.dump of every finished replica (resolution
-    traj_every; frames without bonds NaN). The table has the form of multivalency; with `save` written to
+    traj_every; frames without bonds NaN). The table has the form of qt_contacts; with `save` written to
     <run>/analysis/anchor_wobble.csv and reused while it holds the same replicas and is newer than their dumps.
     None for a run with free bonds."""
     run_dir = Path(run_dir).expanduser()
@@ -610,7 +601,7 @@ def _cached_sizes(path: Path, reps: list[str], dumps: list[Path]) -> pd.DataFram
 
 def _sizes_table(values: dict[str, dict[int, list[float]]], reps: list[str], p: Params,
                  keys: list[str] = CLUSTER_SIZES) -> pd.DataFrame:
-    """cluster_sizes (or multivalency) table from {replica: {step: values of keys}}, on the frames of all replicas."""
+    """cluster_sizes (or qt_contacts) table from {replica: {step: values of keys}}, on the frames of all replicas."""
     steps = sorted(set.intersection(*(set(v) for v in values.values())))
     table = {"step": steps, "time_s": np.array(steps) * p.timestep * 1e-9, "replicas": len(reps)}
     per_rep = {}
@@ -623,10 +614,10 @@ def _sizes_table(values: dict[str, dict[int, list[float]]], reps: list[str], p: 
 
 
 def _agglomerates_above_size_species(run_dir: str | Path, n_min: dict, save: bool = True,
-                                     sizes: bool = False, multi: bool = False) -> dict[str, pd.DataFrame]:
+                                     sizes: bool = False, contacts: bool = False) -> dict[str, pd.DataFrame]:
     """agglomerates_above_size for several species at once, n_min = {species: thresholds}, with `sizes` also
-    cluster_sizes (key "sizes") and with `multi` multivalency (key "multivalency"); the traj.dump frames are read
-    once for everything that is not cached. Returns {species: table} (and "sizes", "multivalency")."""
+    cluster_sizes (key "sizes") and with `contacts` qt_contacts (key "qt_contacts"); the traj.dump frames are read
+    once for everything that is not cached. Returns {species: table} (and "sizes", "qt_contacts")."""
     run_dir = Path(run_dir).expanduser()
     require_fetched(run_dir)
     p = Params.load(run_dir / "params.json")
@@ -659,21 +650,21 @@ def _agglomerates_above_size_species(run_dir: str | Path, n_min: dict, save: boo
         if cached is not None:
             result["sizes"] = cached
     sizes_todo = sizes and "sizes" not in result
-    multi_path = run_dir / "analysis" / "multivalency.csv"
-    if multi:
-        cached = _cached_sizes(multi_path, reps, dumps) if save else None
+    contacts_path = run_dir / "analysis" / "qt_contacts.csv"
+    if contacts:
+        cached = _cached_sizes(contacts_path, reps, dumps) if save else None
         if cached is not None:
-            result["multivalency"] = cached
-    multi_todo = multi and "multivalency" not in result
-    if not todo and not sizes_todo and not multi_todo:
+            result["qt_contacts"] = cached
+    contacts_todo = contacts and "qt_contacts" not in result
+    if not todo and not sizes_todo and not contacts_todo:
         return result
 
     per_rep = {sp: {} for sp in todo}                                   # species -> replica -> {step: counts per n}
     size_values = {}                                                    # replica -> {step: CLUSTER_SIZES}
-    multi_values = {}                                                   # replica -> {step: MULTIVALENCY}
+    contact_values = {}                                                 # replica -> {step: QT_CONTACTS}
     for rep, dump in zip(reps, dumps):
         counts = {sp: {} for sp in todo}
-        frames, multi_frames = {}, {}
+        frames, contact_frames = {}, {}
         for step, atoms in read_dump(dump):
             cluster = atoms["cluster"].to_numpy(dtype=int)
             types = atoms["type"].to_numpy(dtype=int)
@@ -683,14 +674,14 @@ def _agglomerates_above_size_species(run_dir: str | Path, n_min: dict, save: boo
                 counts[sp][step] = [(n >= k).sum() for k in ns]
             if sizes_todo:
                 frames[step] = _frame_sizes(cluster, types)
-            if multi_todo:
-                multi_frames[step] = _frame_multivalency(atoms, p)
+            if contacts_todo:
+                contact_frames[step] = _frame_qt_contacts(atoms, p)
         for sp in todo:
             per_rep[sp][rep] = counts[sp]
         size_values[rep] = frames
-        multi_values[rep] = multi_frames
+        contact_values[rep] = contact_frames
     for key, needed, values, keys, path in (("sizes", sizes_todo, size_values, CLUSTER_SIZES, sizes_path),
-                                            ("multivalency", multi_todo, multi_values, MULTIVALENCY, multi_path)):
+                                            ("qt_contacts", contacts_todo, contact_values, QT_CONTACTS, contacts_path)):
         if needed:
             result[key] = _sizes_table(values, reps, p, keys)
             if save:
@@ -716,7 +707,7 @@ def _agglomerates_above_size_species(run_dir: str | Path, n_min: dict, save: boo
             table.to_csv(paths[sp], index=False)
         result[sp] = table[table["n_min"].isin(wanted[sp])].reset_index(drop=True)
     return ({sp: result[sp] for sp in wanted} | ({"sizes": result["sizes"]} if sizes else {})
-            | ({"multivalency": result["multivalency"]} if multi else {}))
+            | ({"qt_contacts": result["qt_contacts"]} if contacts else {}))
 
 
 # ------------------------------------------------------------------ index of all runs
@@ -837,9 +828,6 @@ FINAL_ROWS = [
     ("deagglomeration half-time, bonds (ms)", "t_half_unbind_bonds_ms", 1),
     ("deagglomeration half-time, largest cluster (ms)", "t_half_unbind_largest_ms", 1),
     ("percolated replicas (fraction)", "percolated", 1), ("percolation time (ms)", "t_percolation_ms", 1),
-    ("bound Ft with ≥ 2 bonds, % (influx end)", "ft_bonds2_influx_end", 100),
-    ("bound Ft with ≥ 3 bonds, % (influx end)", "ft_bonds3_influx_end", 100),
-    ("Ft per Qt (influx end)", "ft_per_qt_influx_end", 1),
     ("Qt in contact per Qt (influx end)", "qt_neighbours_influx_end", 1),
     ("mean Rg (nm, final)", "structure:rg_mean", 1), ("Rg / Rg,ideal (final)", "structure:rg_ratio_mean", 1),
     ("Qt fraction per cluster (final)", "structure:qt_frac_mean", 1),
@@ -859,7 +847,7 @@ def final_table(run_dirs: list[str | Path], labels: list[str] | None = None) -> 
         stats = ensemble_stats_cached(r)
         values = {k: (row["mean"], row["sd"]) for k, row in stats["final"].iterrows()}
         values |= size_peaks(r, stats["replicas"])
-        values |= multivalency_influx_end(r, stats["replicas"])
+        values |= qt_contacts_influx_end(r, stats["replicas"])
         structure = r / "analysis" / "structure_timeseries.csv"
         if structure.exists():
             last = pd.read_csv(structure).iloc[-1]

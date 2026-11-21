@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from . import remote
-from .figures import time_unit
+from .figures import INFLUX_SHADE, time_unit
 from .overlap import FAMILIES, overlap_frame
 from .params import Params
 from .read import load_thermo, read_dump
@@ -21,7 +21,7 @@ PANELS = [
     ("largest", "largest cluster (particles)", 1),
     ("mean_size", "mean cluster size", 1),
     ("bond_max", "max bond length (nm)", 1),
-    ("ebond_per_bond", "bond energy per bond (k_BT)", "kT"),
+    ("ebond_per_bond", "bond energy per bond ($\\mathit{k}_\\mathrm{B}\\mathit{T}$)", "kT"),
     ("PotEng", "potential energy (zJ)", 1),
     ("pvir", "virial pressure (Pa)", 1e6),       # units nano: 1 pressure unit = 1 MPa
 ]
@@ -49,7 +49,7 @@ def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10
     ≈ 2.8 k_BT for anchored bonds, see p_energy_per_bond; more where bonds are strained), potential energy, pressure and (with `overlap`) the mean overlap depth
     of each pair family from every `overlap_every`-th trajectory frame, all replicas overlaid; legend on the right.
     With harmonic walls the mean wall depth of Qt and Ft is drawn dashed in the Qt–Qt and Ft–Ft panels.
-    Dotted vertical lines: start and end of the calcium influx.
+    The calcium influx is shaded light grey.
     Runs on LRZ: the logs are fetched from there first; the overlap panels need fetch(run_dir)."""
     run_dir = Path(run_dir).expanduser()
     p = Params.load(run_dir / "params.json")
@@ -93,8 +93,9 @@ def quicklook(run_dir: str | Path, overlap: bool = True, overlap_every: int = 10
         for ax in overlap_axes:
             ax.text(0.5, 0.5, "LRZ run: fetch(run_dir)\nfor the overlap", transform=ax.transAxes,
                     ha="center", va="center", color="0.4")
-    for t in {p.t_on_s * 1e3, p.t_off_s * 1e3} - {0.0, end_ms}:                    # phase boundaries
+    on, off = max(p.t_on_s * 1e3, 0.0), min(p.t_off_s * 1e3, end_ms)                # calcium influx
+    if off > on:
         for ax in [*thermo_axes, *overlap_axes]:
-            ax.axvline(t, color="0.6", lw=0.6, ls=":")
+            ax.axvspan(on, off, lw=0, zorder=0, **INFLUX_SHADE)
     fig.tight_layout(rect=(0, 0, 0.93, 1))       # room for the legend
     return fig

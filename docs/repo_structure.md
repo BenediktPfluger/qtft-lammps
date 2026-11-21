@@ -72,7 +72,7 @@ runs/
 │       └── analysis/                only after the analysis
 │           ├── *.csv, *.json, ensemble_series.npz, summary_table.tex, report.pdf
 │           └── figures/
-│               └── <figure>/        <figure>.pdf/.svg/.png and every panel alone, <panel>.pdf/.svg/.png
+│               └── <figure>/        <figure>.pdf/.svg/.png, every panel alone (45 × 40 mm), <panel>.pdf/.svg/.png, legends
 ├── sweeps/                          only after build_sweep()
 │   └── <sweep name>/
 │       ├── sweep.json, launcher.log, launcher.pid, sweep_results.csv
@@ -247,7 +247,7 @@ Everything here lives in `<run>/analysis/`. It is written by `ensemble_stats()` 
 | `agglomerates_above_size_qt.csv`, `_ft.csv` | the same with the size counted in Qt or in Ft only (cached) | `make_report()`, `compare_report()`, `sweep_report()` |
 | `cluster_sizes.csv` | per `traj.dump` frame, mean and SD over replicas and the value of every replica (`<replica>:<measure>`): mean size over the bound particles (clusters of ≥ 2), weight average with the free particles, weight average over the bound particles, each for all particles, Qt and Ft (cached; read in the same pass as the agglomerate counts) | `make_report()`, `compare_report()`, `sweep_report()` |
 | `anchor_wobble.csv` | anchored runs only, per `bonds.dump` frame, in the form of `cluster_sizes.csv`: rms displacement of the attachment points of the Qt end (r_Qt θ_qt) and the Ft end (r_Ft θ_ft) over all bonds and δ = √(u_qt² + u_ft²), nm (cached) | `make_report()`, `compare_report()`, `sweep_report()`, `anchor_wobble()` |
-| `multivalency.csv` | per `traj.dump` frame, in the form of `cluster_sizes.csv`: fraction of the bound Ft with ≥ 2 and ≥ 3 bonds, Ft per Qt, Qt in contact per Qt (centre distance < 2 r_Qt + 2 nm) (cached; read in the same pass) | `make_report()`, `compare_report()`, `sweep_report()`, `multivalency()` |
+| `qt_contacts.csv` | per `traj.dump` frame, in the form of `cluster_sizes.csv`: Qt in contact per Qt (other Qt with a centre distance < 2 r_Qt + 2 nm, mean over all Qt) (cached; read in the same pass) | `make_report()`, `compare_report()`, `sweep_report()`, `qt_contacts()` |
 | `agglomerates_influx_end.csv` | every agglomerate of ≥ 3 particles at the end of the influx, with size, composition and volume | `make_report()`; `compare_report()`, `sweep_report()` if missing |
 | `structure_timeseries.csv` | per analysed frame, mean and SD over replicas: Rg, Rg/Rg_ideal, nearest-neighbour distances between and within clusters, Qt fraction per cluster | `make_report()` (OVITO); `compare_report()`, `sweep_report()` if missing |
 | `structure_per_replica.csv` | the same per replica | `make_report()` (OVITO) |
@@ -317,7 +317,7 @@ files are cached.
 
 | File | Content | Written by |
 |---|---|---|
-| `summary_table.csv`, `.tex` | final-state table (`final_table`, the same rows in every report): bonds, fraction bound (all, Qt, Ft), clusters, mean and largest size, peak bonds, largest and cluster sizes, half-times of binding and of deagglomeration, percolation, bound Ft with ≥ 2 and ≥ 3 bonds, Ft per Qt and Qt in contact per Qt at the end of the influx, Rg, Rg / Rg,ideal and Qt fraction of the last analysed frame; columns `mean`, `sd` over replicas, NaN where a value is missing | `make_report()` |
+| `summary_table.csv`, `.tex` | final-state table (`final_table`, the same rows in every report): bonds, fraction bound (all, Qt, Ft), clusters, mean and largest size, peak bonds, largest and cluster sizes, half-times of binding and of deagglomeration, percolation, Qt in contact per Qt at the end of the influx, Rg, Rg / Rg,ideal and Qt fraction of the last analysed frame; columns `mean`, `sd` over replicas, NaN where a value is missing | `make_report()` |
 | `bonds_timeseries.csv` | bonds over time: step, time (µs, ms), mean, SD | `make_report()` |
 | `report.json` | settings of the report (`every`, replicas) | `make_report()` |
 | `report.pdf` | cover pages and every figure of section 6, one per page (see below) | `make_report()` |
@@ -335,15 +335,29 @@ order of section 6.
 `sweep_report()` write the same figures, in the same order and with the same panels, for several runs (see
 *Comparison of runs* below):
 
-- the whole figure as `<figure>.pdf`, `.svg` (editable text) and `.png` (300 dpi);
-- for figures with several panels, also every panel alone (89 mm wide) as `<panel>.pdf/.svg/.png`, named after
-  the panel title in lower case, every run of other characters than letters and digits as one `_` and ≥ as
-  `ge` (for example `mean_cluster_size.pdf`, `bound_ft_with_ge_2_bonds.pdf`).
+- the whole figure as `<figure>.pdf`, `.svg` (editable text) and `.png` (300 dpi), with panel titles and the
+  runs in a legend below (the report version, in `report.pdf`);
+- every panel alone as a publication panel, `<panel>.pdf/.svg/.png`: 45 × 40 mm (four in a row of a double
+  column, 183 mm), the axes box always at the same place (margins left 9.5 mm, bottom 8 mm, top and right 2 mm,
+  right 9.5 mm with a second y axis; plot area 33.5 × 30 mm), so panels line up when put side by side; no title
+  and no legend. Named after the panel title in lower case, mathtext markup left out, every run of other
+  characters than letters and digits as one `_` and ≥ as `ge` (for example `mean_size_n.pdf`, `apparent_k_a.pdf`,
+  `mean_r_g.pdf`); a figure of one panel (`overlap`, `binding_rate`, `sweep_<result>`,
+  `agglomerates_above_size_total`) as `panel.pdf/.svg/.png`;
+- the legends of the panels in their own files, cropped to their size: the runs of a comparison in
+  `legend.pdf/.svg/.png`, the line styles or curves of a panel in `<panel>_legend.pdf/.svg/.png`. The thresholds
+  of the agglomerate counts stay in their panels (a compact legend, or the one threshold as text top left).
+  A label too long for the fixed margins is reported as a warning (`<panel>: sticks out of the 45 x 40 mm panel
+  by … mm left`).
 
-Common to all figures: Nature style (Arial, 7 pt text, 6 pt tick labels, legends and panel titles, titles
-regular); mean over replicas as a line with a ±1 SD band; dotted vertical lines at the start and end of the
-calcium influx in every time panel; time axes in ms, in s for runs of 10 s or longer. "End of the influx" means
-the last `traj.dump` frame at or before it (the run end for a run without an influx).
+Common to all figures: Nature style: Arial (also for sub- and superscripts, matplotlib mathtext: variables
+italic: k, T, N, r, f, R, δ; units, numbers and descriptive subscripts such as the B of k_B T upright), all text 6 pt, 0.5 pt axes, inward
+major and minor ticks on all sides, no grid; scale factors in the axis label (×10³, ×10⁻²; numbers below 10⁻² or
+from 10⁴ on; in the panels at most 4 tick intervals, steps 1, 2, 5), log axes from decade to decade; mean over replicas as a line with a ±1 SD band; the calcium influx
+shaded light grey (`#D3D3D3`, alpha 0.5) in every time panel; time axes in ms, in s for runs of 10 s or longer.
+Arial and the mathtext font are set globally when `qtft.figures` is imported (also for the notebook display and
+`report.pdf`; Arial must be installed, `docs/install.md`). "End of the influx" means the last `traj.dump` frame at
+or before it (the run end for a run without an influx).
 
 The figures appear in this order in `report.pdf`.
 
@@ -405,31 +419,21 @@ notebook; in `report.pdf`.
 With several runs two figures, `cluster_sizes` and `cluster_sizes_n` (/ N), each 4 × 3 (183 mm): the four
 measures as rows, columns all particles, Qt and Ft, one colour per run.
 
-### `multivalency` (3 × 2, 120 mm wide)
+### `bond_geometry` (3 × 2, 120 mm wide)
 
-How the bonds are arranged, over time (from `multivalency.csv` and the thermo data), one colour per run (legend
-below); made to compare the free and the anchored bond geometry. In `report.pdf`, and in analysis section 5
-(cell free vs anchored).
+The free and the anchored bond geometry compared, one colour per run (legend below). Row 1 for all runs, rows 2
+and 3 (the wobble of the anchored bonds, from `anchor_wobble.csv` and `bonds.dump`) for the anchored runs only;
+without an anchored run only row 1 (1 × 2). In `report.pdf`, and in analysis section 5 (cell free vs anchored).
 
-1. **bound Ft with ≥ 2 bonds** and 2. **≥ 3 bonds** (% of the bound Ft).
-3. **Ft per Qt**: bonded Ft per Qt, mean over all Qt (= bonds / N_Qt).
-4. **Qt in contact per Qt**: other Qt within 2 r_Qt + 2 nm, mean over all Qt.
-5. **largest agglomerate** (particles).
-6. **bond energy per bond** (k_BT; relaxed bonds at Δt = 500 ns: ≈ 0.8 free, ≈ 2.8 anchored).
-
-### `anchor_wobble` (2 × 2, 120 mm wide; anchored runs only)
-
-Wobble of the anchored bonds (from `anchor_wobble.csv` and `bonds.dump`), one colour per run (legend below);
-free runs are left out, without anchored runs there is no figure. In `report.pdf`, and in analysis section 5
-(cell anchor wobble).
-
-1. **Qt end at end of influx** and 2. **Ft end at end of influx**: distribution of the displacement of the
+1. **Qt in contact per Qt**: other Qt within 2 r_Qt + 2 nm, mean over all Qt (from `qt_contacts.csv`).
+2. **bond energy per bond** (k_BT; relaxed bonds at Δt = 500 ns: ≈ 0.8 free, ≈ 2.8 anchored).
+3. **Qt end at end of influx** and 4. **Ft end at end of influx**: distribution of the displacement of the
    attachment point (r θ, nm) of every bond, all replicas pooled (probability density; one run filled, several as
    outlines), with the expected distribution of the target, p(u) = u / s² exp(−u² / 2s²), ⟨u²⟩ = target²
    (dotted).
-3. **attachment points**: rms displacement of the Qt end (solid) and the Ft end (dashed) over time, targets
+5. **attachment points**: rms displacement of the Qt end (solid) and the Ft end (dashed) over time, targets
    δ √share and δ √(1 − share) dotted.
-4. **both ends (δ)**: δ = √(u_qt² + u_ft²) over time, target `anchor_wobble_nm` dotted.
+6. **both ends (δ)**: δ = √(u_qt² + u_ft²) over time, target `anchor_wobble_nm` dotted.
 
 ### `agglomerates_above_size` (4 × 2, 120 mm wide)
 
@@ -469,14 +473,15 @@ Shown in analysis section 4.
    peak "r = … nm".
 2. **Qt pair correlation**: g(r) of all Qt at the end of the influx up to 500 nm, log scale, with
    its peak beyond the Qt contact distance 2 r_Qt (the highest value of g there).
-3. **Qt clustering (Clark–Evans)**: fraction of Qt with another Qt within d, in the first frame and at the end
-   of the influx, with the curve for random points and the Clark–Evans R and mean distance ⟨d⟩ in the legend.
+3. **Qt clustering (Clark–Evans)**: cumulative fraction of Qt against the nearest-neighbour distance (the
+   fraction of Qt with another Qt within that distance), in the first frame and at the end of the influx, with the
+   curve for random points and the Clark–Evans R and the mean distance in the legend.
 4. **Qt clustering scale (Ripley's L)**: L(r) − r of all Qt in the first frame and at the end of the influx, up
    to 500 nm, with the maximum and its position in the legend.
 
 With several runs (`fig_fibsem_comparison(runs)`) the same panels with one line per run (one colour each, legend
 below the figure), at the end of the influx only: panel 1 shows the density estimate without histogram, the
-peaks of panels 1 and 2 are dotted lines in the run colour, panel 3 lists R and ⟨d⟩ of every run in its colour
+peaks of panels 1 and 2 are dotted lines in the run colour, panel 3 lists R and the mean distance of every run in its colour
 (random-point curves dashed), panel 4 has no maximum in the legend.
 
 ### `binding_rate` (1 panel)
@@ -502,14 +507,14 @@ Analysis section 5. Writes to the chosen `out_dir`:
 
 | File | Content |
 |---|---|
-| `figures/<figure>/` | the figures of one run (section 6) in the same order and with the same panels, one colour per run (legend below), every panel also alone: `calcium`, `overview` (the size-categories slot empty), `overlap`, `cluster_sizes` and `cluster_sizes_n` (4 × 3 each, see `cluster_sizes`), `multivalency`, `anchor_wobble` (anchored runs only), `agglomerates_above_size`, `agglomerate_distributions` (per 1000 µm³), `fibsem_comparison`; no `binding_rate` |
+| `figures/<figure>/` | the figures of one run (section 6) in the same order and with the same panels, one colour per run (legend below), every panel also alone: `calcium`, `overview` (the size-categories slot empty), `overlap`, `cluster_sizes` and `cluster_sizes_n` (4 × 3 each, see `cluster_sizes`), `bond_geometry` (wobble panels for the anchored runs only), `agglomerates_above_size`, `agglomerate_distributions` (per 1000 µm³), `fibsem_comparison`; no `binding_rate` |
 | `comparison_table.csv`, `.tex` | the final-state table of `summary_table` (same rows) for every run, side by side: CSV with the columns `<run> mean` and `<run> sd`, LaTeX as mean ± SD; a label used by several runs gets (1), (2), … |
 | `report.pdf` | cover pages (every run with number, label, folder, creation date and git commit; the comparison table; all simulation parameters, one column per run), then the figures above in the order of section 6 |
 
 The legends name each run by the parameters that differ, in short form (`Qt 1280, Ft 5120, L 4000`; the short
 names are in `SHORT_NAMES` in `qtft/ensemble.py`), or by the given `labels`; a label used by several runs gets (1),
 (2), … as in the table. `comparison_table.*` uses the full form (`qt_per_um3=20.0, …`).
-The phase lines are drawn only if all runs have the same phase times. Every run first gets the analyses it is
+The influx is shaded only if all runs have the same phase times. Every run first gets the analyses it is
 missing, saved in its own `analysis/`: the structure analysis (`structure_run`) and the overlap analysis
 (`overlap_run`), each every `every`-th frame (default 10) and only without `structure_timeseries.csv` or
 `overlap_timeseries.csv` (`structure_analysis=False` or `overlap_analysis=False` skips it, the panels then stay

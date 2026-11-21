@@ -1,13 +1,16 @@
 """Figures and tables in Nature journal style (every figure and panel: docs/repo_structure.md, section 6).
 
-Every figure is drawn at its final size (89 mm single column, 183 mm double column, <= 170 mm high),
-Arial 7 pt labels / 6 pt ticks, 0.5 pt axes, inward ticks on all sides, 1 pt lines, frameless
-legends, no grid. Saved as PDF + SVG (editable text) + PNG (300 dpi). Ensemble data: mean line with
-a +-1 SD band, optionally the individual replicas. Time in ms (axes in s for long runs); dotted
-vertical lines mark the start and end of the calcium influx. Every figure is saved in its own folder,
-<name>/<name>.*; a figure of several panels also has every panel alone in <name>/<panel>.*.
-make_report, compare_report and sweep_report also collect all their figures in one report.pdf, after
-cover pages with the run names, the summary table and the simulation parameters.
+Every figure is drawn at its final size (89 mm single column, 183 mm double column, <= 170 mm high), all
+text Arial 6 pt (sub- and superscripts with matplotlib mathtext in Arial), 0.5 pt axes, inward major and minor
+ticks on all sides, 1 pt lines, frameless legends, no grid. Saved as PDF + SVG (editable text) + PNG (300 dpi).
+Ensemble data: mean line with a +-1 SD band, optionally the individual replicas. Time in ms (axes in s for long
+runs); the calcium influx is shaded light grey. Every figure is saved in its own folder, <name>/<name>.*; every
+panel is also saved alone as a publication panel of PANEL_SIZE (45 x 40 mm, four in a row of a double column),
+with the axes box at the same place in every panel (fixed margins), no title and no legend, in <name>/<panel>.*
+(a figure of one panel: <name>/panel.*). The legends go into their own files: the runs of a comparison in
+<name>/legend.*, the line styles of a panel in <name>/<panel>_legend.* (the thresholds of the agglomerate counts
+stay in their panels). make_report, compare_report and sweep_report also collect all their figures in one
+report.pdf, after cover pages with the run names, the summary table and the simulation parameters.
 """
 
 from __future__ import annotations
@@ -16,20 +19,23 @@ import datetime
 import json
 import math
 import re
+import textwrap
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import font_manager
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.ticker import MultipleLocator, NullFormatter
+from matplotlib.ticker import AutoLocator, MaxNLocator, MultipleLocator, NullFormatter
 from matplotlib.transforms import offset_copy
 
 from .ensemble import (QT_CONTACT_MARGIN_NM, SIZE_THRESHOLDS, SIZE_THRESHOLDS_QT, SIZE_THRESHOLDS_QT_FT, TO_PER_M_S,
                        cluster_sizes, _agglomerates_above_size_species, _thresholds, _unique, agglomerates_above_size,
                        anchor_wobble, anchor_wobble_influx_end, anchor_wobble_targets, binding_rate, bond_rates,
-                       ensemble_stats, ensemble_stats_cached, final_table, multivalency)
+                       ensemble_stats, ensemble_stats_cached, final_table, qt_contacts)
 from .params import Params
 from .read import read_histo
 from .spatial import QT_MIN, density_estimate, peak, qt_spatial_run
@@ -43,22 +49,58 @@ RUN_COLORS = ["#1f4e79", "#c0392b", "#2e8b57", "#8e44ad", "#d35400", "#16a085", 
 CATEGORY_COLORS = ["#bdbdbd", "#9ecae1", "#4292c6", "#08519c", "#08306b"]
 PRESSURE_TO_PA = 1e6                               # nano pressure unit ag/(nm ns^2) = 1 MPa
 
-STYLE = {
+# Arial, also for mathtext (sub- and superscripts, italic variables; Liberation Sans has the same metrics), no grid,
+# minor ticks: set globally on import (matplotlib picks the font when a figure is drawn, e.g. in the notebook)
+FONT = {
     "font.family": "sans-serif",
     "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
-    "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 6, "axes.titleweight": "normal",
-    "xtick.labelsize": 6, "ytick.labelsize": 6, "legend.fontsize": 6,
+    "mathtext.fontset": "custom", "mathtext.rm": "Arial", "mathtext.it": "Arial:italic",
+    "mathtext.bf": "Arial:bold", "mathtext.sf": "Arial", "mathtext.default": "regular",
+    "axes.grid": False, "xtick.minor.visible": True, "ytick.minor.visible": True,
+}
+TEXT_PT = 6
+STYLE = FONT | {
+    "font.size": TEXT_PT, "axes.labelsize": TEXT_PT, "axes.titlesize": TEXT_PT, "axes.titleweight": "normal",
+    "xtick.labelsize": TEXT_PT, "ytick.labelsize": TEXT_PT, "legend.fontsize": TEXT_PT,
+    "legend.title_fontsize": TEXT_PT, "figure.titlesize": TEXT_PT, "figure.labelsize": TEXT_PT,
     "axes.linewidth": 0.5, "lines.linewidth": 1.0,
     "xtick.major.width": 0.5, "ytick.major.width": 0.5,
     "xtick.minor.width": 0.4, "ytick.minor.width": 0.4,
     "xtick.major.size": 2.5, "ytick.major.size": 2.5, "xtick.minor.size": 1.5, "ytick.minor.size": 1.5,
     "xtick.direction": "in", "ytick.direction": "in", "xtick.top": True, "ytick.right": True,
-    "legend.frameon": False, "axes.grid": False,
+    "legend.frameon": False,
+    "axes.formatter.use_mathtext": True, "axes.formatter.useoffset": False,   # scale as ×10^n, no added offset,
+    "axes.formatter.limits": (-2, 4),                                         # below 10^-2, from 10^4 on (short)
     "pdf.fonttype": 42, "svg.fonttype": "none", "savefig.dpi": 300,
 }
-GUIDE_LW = 0.5                                     # thin guide lines: phases, references, peaks, random points
+# publication panel: 45 x 40 mm (four in a row of a double column, 183 mm), the axes box at fixed margins
+# (left: tick labels and y label, bottom: tick labels and x label), so panels line up when put side by side
+PANEL_SIZE = (45 * MM, 40 * MM)
+PANEL_MARGINS = {"left": 9.5 * MM, "bottom": 8 * MM, "right": 2 * MM, "top": 2 * MM}
+PANEL_MARGIN_TWIN = 9.5 * MM                       # right margin of a panel with a second y axis
+LEGEND_WIDTH = 180 * MM                            # legend files: at most the width of a row of panels
+INFLUX_SHADE = {"color": "#D3D3D3", "alpha": 0.5}  # calcium influx, behind everything
+THOUSANDS = " (×10$^{3}$)"                         # y label suffix of axes in thousands
+GUIDE_LW = 0.5                                     # thin guide lines: references, peaks, random points
 TRACE_LW, TRACE_ALPHA = 0.3, 0.4                   # individual replicas (traces=True)
 BAND_ALPHA = 0.25                                  # ±1 SD band
+
+
+
+
+def _check_font() -> None:
+    """Warn once if matplotlib has no Arial (figures then use the fallback font; install: docs/install.md)."""
+    try:
+        font_manager.findfont(font_manager.FontProperties(family="Arial"), fallback_to_default=False)
+    except ValueError:
+        with plt.rc_context(FONT):
+            used = Path(font_manager.findfont(font_manager.FontProperties(family=["sans-serif"]))).stem
+        warnings.warn(f"Arial not found by matplotlib: the figures use {used} (install Arial, docs/install.md)",
+                      stacklevel=2)
+
+
+plt.rcParams.update(FONT)
+_check_font()
 
 
 # ---------------------------------------------------------------------------- data
@@ -74,7 +116,7 @@ class RunData:
     overlap: pd.DataFrame | None = None
     agglomerates: pd.DataFrame | None = None           # agglomerates_influx_end.csv (sizes and volumes)
     _sizes: pd.DataFrame | None = field(default=None, repr=False)
-    _multi: pd.DataFrame | None = field(default=None, repr=False)
+    _contacts: pd.DataFrame | None = field(default=None, repr=False)
     _wobble: pd.DataFrame | None = field(default=None, repr=False)
     _wobble_end: dict | None = field(default=None, repr=False)
     _rates: dict | None = field(default=None, repr=False)
@@ -91,11 +133,11 @@ class RunData:
         return self._sizes
 
     @property
-    def multi(self) -> pd.DataFrame:
-        """multivalency of the run (computed from traj.dump or read from its cache on first use)."""
-        if self._multi is None:
-            self._multi = multivalency(self.run_dir)
-        return self._multi
+    def contacts(self) -> pd.DataFrame:
+        """qt_contacts of the run (computed from traj.dump or read from its cache on first use)."""
+        if self._contacts is None:
+            self._contacts = qt_contacts(self.run_dir)
+        return self._contacts
 
     @property
     def wobble(self) -> pd.DataFrame:
@@ -176,6 +218,7 @@ def _structure(run: RunData, key: str):
     return st["time_ms_mean"].to_numpy(), st[f"{key}_mean"].to_numpy(), st[f"{key}_sd"].to_numpy()
 
 
+DENSITY_NM = "probability density (nm$^{-1}$)"
 LONG_RUN_MS = 10_000.0          # time axes are labelled in s from this run length on, otherwise in ms
 
 
@@ -205,8 +248,19 @@ def _thousands(ax, values) -> bool:
     return False
 
 
+def _log_decades(ax) -> None:
+    """Log y axis from decade to decade around the data, labels at the decades only (short tick labels: at least
+    two labelled decades, no minor labels such as 4 x 10^7 that would not fit a panel)."""
+    lo, hi = ax.get_ylim()
+    if lo > 0 and hi > lo:
+        ax.set_ylim(10 ** math.floor(math.log10(lo)), 10 ** math.ceil(math.log10(hi)))
+    ax.yaxis.set_minor_formatter(NullFormatter())
+
+
 def _no_data(ax, text):
-    ax.text(0.5, 0.5, text, transform=ax.transAxes, ha="center", va="center", fontsize=plt.rcParams["legend.fontsize"], color="0.4")
+    """A hint in place of the data (grey, centred, wrapped to fit a panel)."""
+    ax.text(0.5, 0.5, textwrap.fill(text, 24), transform=ax.transAxes, ha="center", va="center",
+            fontsize=plt.rcParams["legend.fontsize"], color="0.4")
 
 
 # ---------------------------------------------------------------------------- panels
@@ -235,7 +289,7 @@ def _simple(key, ylabel, scale_by_n=False):
             band(ax, t, m, s, r.color, r.label, traces=tr if traces else None)
             values.append(m)
         k = _thousands(ax, np.concatenate(values))
-        ax.set_ylabel(ylabel + (" (×10³)" if k else ""))
+        ax.set_ylabel(ylabel + (THOUSANDS if k else ""))
     return panel
 
 
@@ -252,7 +306,7 @@ def _species_panel(key, ylabel):
             band(ax, t, m, s, color, label, traces=tr if traces else None)
             values.append(m)
         k = _thousands(ax, np.concatenate(values))
-        ax.set_ylabel(ylabel + (" (×10³)" if k else ""))
+        ax.set_ylabel(ylabel + (THOUSANDS if k else ""))
         if single:
             ax.legend()
     return panel
@@ -260,7 +314,7 @@ def _species_panel(key, ylabel):
 
 p_clusters = _simple("n_clusters", "agglomerates + free particles")
 p_largest = _species_panel("largest", "largest agglomerate")
-p_largest_n = _simple("largest", "largest / N", scale_by_n=True)
+p_largest_n = _simple("largest", "largest / $\\mathit{N}$", scale_by_n=True)
 
 
 COUNT_STYLES = {"Qt bound": "-", "Ft bound": "--", "Qt free": ":", "Ft free": "-."}   # several runs
@@ -284,7 +338,7 @@ def p_counts(ax, runs, traces=False):
                 band(ax, t, m, s, r.color, r.label if name == "Qt bound" else None, ls=COUNT_STYLES[name])
             values.append(m)
     k = _thousands(ax, np.concatenate(values))
-    ax.set_ylabel("particles" + (" (×10³)" if k else ""))
+    ax.set_ylabel("particles" + (THOUSANDS if k else ""))
     if len(runs) == 1:
         ax.legend(ncol=2, loc="best")
     else:                                          # 26 pt below the axes: under the tick labels and time label
@@ -343,8 +397,9 @@ def _structure_panel(key, ylabel, ref=None):
     return panel
 
 
-p_rg = _structure_panel("rg_mean", "mean Rg (nm)")
-p_rg_ratio = _structure_panel("rg_ratio_mean", "Rg / Rg,ideal")
+p_rg = _structure_panel("rg_mean", "mean $\\mathit{R}_\\mathrm{g}$ (nm)")
+p_rg_ratio = _structure_panel("rg_ratio_mean",
+                              "$\\mathit{R}_\\mathrm{g}$ / $\\mathit{R}_\\mathrm{g,ideal}$")
 p_qt_fraction = _structure_panel("qt_frac_mean", "Qt fraction per agglomerate", ref=0.5)
 
 
@@ -422,24 +477,28 @@ def _agglomerate_hist(column, xlabel):
             return
         lo, hi = values.min(), values.max()
         bins = np.geomspace(lo, hi, 21) if hi > lo else np.array([lo / 1.1, hi * 1.1])
+        heights = []
         for r, v in data:
             n_rep = len(r.stats["replicas"])          # also the replicas without any agglomerate
             if len(runs) == 1:
-                ax.hist(v, bins=bins, weights=np.full(len(v), 1 / n_rep), color=r.color, lw=0)
+                n, *_ = ax.hist(v, bins=bins, weights=np.full(len(v), 1 / n_rep), color=r.color, lw=0)
             else:
                 per = 1000 / (n_rep * math.prod(r.p.box) * 1e-9)                 # per 1000 um^3 of box
-                ax.hist(v, bins=bins, weights=np.full(len(v), per), histtype="step", color=r.color,
-                        label=r.label)
+                n, *_ = ax.hist(v, bins=bins, weights=np.full(len(v), per), histtype="step", color=r.color,
+                                label=r.label)
+            heights.append(n)
+        k = _thousands(ax, np.concatenate(heights))
         ax.set_xscale("log")
         ax.xaxis.set_minor_formatter(NullFormatter())                   # labels at the decades only
         ax.set_xlabel(xlabel)
-        ax.set_ylabel("agglomerates per replica" if len(runs) == 1 else "agglomerates / 1000 µm³")
+        ax.set_ylabel(("agglomerates per replica" if len(runs) == 1 else "agglomerates / 1000 µm$^{3}$")
+                      + (THOUSANDS if k else ""))
     return panel
 
 
 p_agglomerate_size = _agglomerate_hist("size", "particles per agglomerate")
-p_volume_solid = _agglomerate_hist("v_solid_um3", "solid volume (µm³)")
-p_volume_envelope = _agglomerate_hist("v_envelope_um3", "envelope volume (µm³)")
+p_volume_solid = _agglomerate_hist("v_solid_um3", "solid volume (µm$^{3}$)")
+p_volume_envelope = _agglomerate_hist("v_envelope_um3", "envelope volume (µm$^{3}$)")
 
 
 # line styles of the pair families in p_overlap (wall rows only with walls)
@@ -468,6 +527,7 @@ def p_overlap(ax, runs, traces=False):
         _no_data(ax, "run overlap analysis")
         return
     ax.set_yscale("log")
+    _log_decades(ax)
     ax.set_ylabel("overlapping pairs")
     if len(runs) == 1:
         ax.legend()
@@ -483,15 +543,19 @@ def p_calcium(ax, runs, traces=False):
     a2 = ax.twinx()
     for r in runs:
         t, mean = r.stats["time_ms"], r.stats["mean"]
-        ax.plot(t, mean["ca"], color="k" if one else r.color, label="Ca²⁺" if one else r.label)
-        a2.plot(t, mean["f"], color=LINE["Qt"] if one else r.color, ls="--", label="loading f" if one else None)
+        ax.plot(t, mean["ca"], color="k" if one else r.color, label="Ca$^{2{+}}$" if one else r.label)
+        a2.plot(t, mean["f"], color=LINE["Qt"] if one else r.color, ls="--",
+                label="loading $\\mathit{f}$" if one else None)
     ax.set_ylabel("calcium (µM)")
     a2.set_ylim(0, 1.02)
-    a2.set_ylabel("calmodulin loading f")
+    a2.set_ylabel("calmodulin loading $\\mathit{f}$")
     if one:
         ax.legend(handles=ax.get_lines() + a2.get_lines(), loc="upper right")
     else:
-        _style_legend(ax, {"Ca²⁺": "-", "loading f": "--"}, loc="upper right")
+        _style_legend(ax, {"Ca$^{2{+}}$": "-", "loading $\\mathit{f}$": "--"}, loc="upper right")
+
+
+K_ON, K_OFF = "$\\mathit{k}_\\mathrm{on}$ (per contact pair)", "$\\mathit{k}_\\mathrm{off}$ (per bond)"
 
 
 def p_rate_constants(ax, runs, traces=False):
@@ -499,15 +563,16 @@ def p_rate_constants(ax, runs, traces=False):
     for r in runs:
         t, mean = r.stats["time_ms"], r.stats["mean"]
         ax.plot(t, mean["k_on_s"], color=LINE["Qt"] if one else r.color,
-                label="k_on (per contact pair)" if one else r.label)
+                label=K_ON if one else r.label)
         ax.plot(t, mean["k_off_s"], color=LINE["Ft"] if one else r.color, ls="-" if one else "--",
-                label="k_off (per bond)" if one else None)
+                label=K_OFF if one else None)
     ax.set_yscale("log")
-    ax.set_ylabel("rate constant (1/s)")
+    _log_decades(ax)
+    ax.set_ylabel("rate constant (s$^{-1}$)")
     if one:
         ax.legend(loc="best")
     else:
-        _style_legend(ax, {"k_on (per contact pair)": "-", "k_off (per bond)": "--"}, loc="best")
+        _style_legend(ax, {K_ON: "-", K_OFF: "--"}, loc="best")
 
 
 def p_formed_broken(ax, runs, traces=False):
@@ -521,7 +586,7 @@ def p_formed_broken(ax, runs, traces=False):
              "unbinding (broken)" if one else None, ls="--", traces=tr["broken_per_s"] if traces else None)
         values += [mean["formed_per_s"], mean["broken_per_s"]]
     k = _thousands(ax, np.concatenate(values))
-    ax.set_ylabel("rate (bonds/s)" + (" (×10³)" if k else ""))
+    ax.set_ylabel("rate (bonds/s" + (", ×10$^{3}$)" if k else ")"))
     if one:
         ax.legend(loc="upper right")
     else:
@@ -535,7 +600,8 @@ def p_k_a(ax, runs, traces=False):
         band(ax, t, mean["k_a_per_M_s"], sd["k_a_per_M_s"], r.color, None if len(runs) == 1 else r.label,
              traces=tr["k_a_per_M_s"] if traces else None)
     ax.set_yscale("log")
-    ax.set_ylabel("apparent k_a (M⁻¹ s⁻¹)")
+    _log_decades(ax)
+    ax.set_ylabel("apparent $\\mathit{k}_\\mathrm{a}$ (M$^{-1}$ s$^{-1}$)")
 
 
 def p_bonds_broken(ax, runs, traces=False):
@@ -553,7 +619,8 @@ def p_bonds_broken(ax, runs, traces=False):
         _style_legend(ax, {"bonds": "-", "broken (cumulative)": "--"}, loc="upper left")
 
 
-RATE_PANELS = [("binding and unbinding rates", p_formed_broken, True), ("apparent k_a", p_k_a, True)]
+RATE_PANELS = [("binding and unbinding rates", p_formed_broken, True),
+               ("apparent $\\mathit{k}_\\mathrm{a}$", p_k_a, True)]
 
 
 # ---------------------------------------------------------------------------- figures
@@ -576,16 +643,21 @@ def _t_end(runs) -> float:
     return max(r.stats["time_ms"][-1] for r in runs)
 
 
-def phase_lines(ax, runs) -> None:
-    """Dotted vertical lines at the start and end of the calcium influx (time axis in ms), where they lie
-    inside the run; none if the runs have different phase times."""
+def shade_influx(ax, runs) -> None:
+    """The calcium influx (time axis in ms) shaded light grey behind everything, clipped to the runs; none if the
+    runs have different phase times."""
     bounds = {(r.p.t_on_s, r.p.t_off_s) for r in runs}
     if len(bounds) != 1:
         return
-    end = _t_end(runs)
-    for t in sorted({b * 1e3 for b in bounds.pop()}):
-        if 0 < t < end:
-            ax.axvline(t, color="0.6", lw=GUIDE_LW, ls=":", zorder=0)
+    on, off = (b * 1e3 for b in bounds.pop())
+    lo, hi = max(on, 0.0), min(off, _t_end(runs))
+    if hi > lo:
+        ax.axvspan(lo, hi, lw=0, zorder=0, **INFLUX_SHADE)
+
+
+def _time_panel(ax, runs, t_end, label=True) -> None:
+    shade_influx(ax, runs)
+    _time_axis(ax, t_end, label=label)
 
 
 def _grid(panels, runs, nrows, ncols, width, height, titles=True, traces=False, legend_below=False,
@@ -600,8 +672,7 @@ def _grid(panels, runs, nrows, ncols, width, height, titles=True, traces=False, 
         title, func, is_time = panel
         func(ax, runs, traces=traces)
         if is_time:
-            phase_lines(ax, runs)
-            _time_axis(ax, t_end, label=not sharex or ax.get_subplotspec().is_last_row())
+            _time_panel(ax, runs, t_end, label=not sharex or ax.get_subplotspec().is_last_row())
         if titles:
             ax.set_title(title, loc="left")
     for ax in axes.flat[len(panels):]:
@@ -620,42 +691,105 @@ def _run_handles(runs):
 def _run_legend(fig, runs) -> None:
     """The runs in a legend below the axes of the figure."""
     handles, labels = _run_handles(runs)
-    fig.legend(handles, labels, loc="outside lower center", ncol=_legend_columns(fig, labels))
+    fig.legend(handles, labels, loc="outside lower center", ncol=_legend_columns(fig.get_figwidth(), labels))
 
 
-def _legend_columns(fig, labels) -> int:
-    """Columns of a run legend below the axes: as many (at most 4) as fit the figure width at 6 pt."""
-    per_column = 1.3 * max(map(len, labels)) + 12                    # mm: about 1.3 mm per character + line
-    return max(1, min(len(labels), 4, int(fig.get_figwidth() * 25.4 // per_column)))
+def _legend_columns(width: float, labels) -> int:
+    """Columns of a run legend (width in inches): as many (at most 4) as fit at 6 pt."""
+    per_column = 1.1 * max(map(len, labels)) + 10                    # mm: about 1.1 mm per character + line
+    return max(1, min(len(labels), 4, int(width * 25.4 // per_column)))
 
 
-def _single_panels(panels, runs, folder: Path, traces=False):
-    """Every panel of a figure alone (89 mm), into folder/<panel>.*; several runs get a legend."""
-    t_end = _t_end(runs)
+def keep_in_panel(legend):
+    """Mark a legend to stay in its publication panel (the thresholds of the agglomerate counts)."""
+    if legend is not None:
+        legend.qtft_keep = True
+    return legend
+
+
+def _legend_file(handles, labels, stem: Path, ncol: int = 1) -> None:
+    """A legend alone, cropped to its size (at most LEGEND_WIDTH wide), as stem.*."""
+    fig = plt.figure(figsize=(LEGEND_WIDTH, 20 * MM))
+    fig.legend(handles, labels, loc="center", ncol=ncol)
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    for ext in ("pdf", "svg", "png"):
+        fig.savefig(stem.with_suffix(f".{ext}"), dpi=300, bbox_inches="tight", pad_inches=0.5 * MM)
+    plt.close(fig)
+
+
+def _scale_into_label(fig) -> None:
+    """The scale factor of an axis (×10^n, drawn above or beside the axes) into its label, so it stays inside the
+    fixed margins of a panel."""
+    fig.canvas.draw()
+    for ax in fig.axes:
+        for axis, label in ((ax.xaxis, ax.get_xlabel), (ax.yaxis, ax.get_ylabel)):
+            offset = axis.get_offset_text().get_text()
+            if offset:
+                axis.set_label_text(f"{label()} ({offset})")
+                axis.get_offset_text().set_visible(False)
+
+
+def _check_inside(fig, stem: Path) -> None:
+    """Warn if anything drawn sticks out of the panel (labels too long for the fixed margins)."""
+    fig.canvas.draw()
+    box, w, h = fig.get_tightbbox(), *fig.get_size_inches()
+    tol = 0.2 * MM
+    out = {side: d / MM for side, d in (("left", -box.x0), ("bottom", -box.y0), ("right", box.x1 - w),
+                                        ("top", box.y1 - h)) if d > tol}
+    if out:
+        warnings.warn(f"{stem.name}: sticks out of the {PANEL_SIZE[0] / MM:.0f} x {PANEL_SIZE[1] / MM:.0f} mm "
+                      "panel by " + ", ".join(f"{d:.1f} mm {side}" for side, d in out.items()), stacklevel=3)
+
+
+def _panel_file(func, runs, stem: Path, is_time: bool, traces=False) -> None:
+    """A publication panel (PANEL_SIZE, axes box at PANEL_MARGINS, no title) as stem.*; its legend, if any and
+    not kept (keep_in_panel), as stem_legend.*."""
+    w, h = PANEL_SIZE
+    m = PANEL_MARGINS
+    fig = plt.figure(figsize=PANEL_SIZE)
+    ax = fig.add_axes((m["left"] / w, m["bottom"] / h, 1 - (m["left"] + m["right"]) / w,
+                       1 - (m["bottom"] + m["top"]) / h))
+    func(ax, runs, traces=traces)
+    if is_time:
+        _time_panel(ax, runs, _t_end(runs))
+    if len(fig.axes) > 1:                                           # second y axis (twinx): its label on the right
+        for a in fig.axes:
+            a.set_position((m["left"] / w, m["bottom"] / h, 1 - (m["left"] + PANEL_MARGIN_TWIN) / w,
+                            1 - (m["bottom"] + m["top"]) / h))
+    for a in fig.axes:
+        legend = a.get_legend()
+        if legend is not None and not getattr(legend, "qtft_keep", False):
+            _legend_file(legend.legend_handles, [x.get_text() for x in legend.get_texts()],
+                         stem.with_name(stem.name + "_legend"), ncol=legend._ncols)
+            legend.remove()
+    for a in fig.axes:                                  # at most 4 intervals, steps 1, 2, 5: short tick labels
+        for axis in (a.xaxis, a.yaxis):
+            if type(axis.get_major_locator()) is AutoLocator:
+                axis.set_major_locator(MaxNLocator(nbins=4, steps=[1, 2, 5, 10]))
+    _scale_into_label(fig)
+    _check_inside(fig, stem)
+    save(fig, stem)
+    plt.close(fig)
+
+
+def _panel_files(panels, runs, folder: Path, traces=False, name=None) -> None:
+    """Every panel of a figure as a publication panel in folder/<panel>.* (`name`: the file name of a figure of
+    one panel), and for several runs their legend in folder/legend.*."""
     for title, func, is_time in filter(None, panels):
-        fig = _figure(SINGLE, 65 * MM)
-        ax = fig.add_subplot()
-        func(ax, runs, traces=traces)
-        if is_time:
-            phase_lines(ax, runs)
-            _time_axis(ax, t_end)
-        drawn = {r.label for r in runs} & set(ax.get_legend_handles_labels()[1])     # a line of some run
-        if len(runs) > 1 and drawn:                # the runs: in the axes, or below them if the axes have a legend
-            if ax.get_legend() is None:
-                ax.legend(*_run_handles(runs))
-            else:
-                _run_legend(fig, runs)
-        save(fig, folder / _slug(title))
-        plt.close(fig)
+        _panel_file(func, runs, folder / (name or _slug(title)), is_time, traces=traces)
+    if len(runs) > 1:
+        handles, labels = _run_handles(runs)
+        _legend_file(handles, labels, folder / "legend", ncol=_legend_columns(LEGEND_WIDTH, labels))
 
 
 def _panel_figure(name, panels, runs, out_dir, nrows, ncols, width, height, traces=False, **grid):
-    """A figure of several panels: saved as out_dir/<name>/<name>.* and every panel alone in out_dir/<name>/."""
+    """A figure of several panels: saved as out_dir/<name>/<name>.* and every panel as a publication panel in
+    out_dir/<name>/."""
     with plt.rc_context(STYLE):
         fig = _grid(panels, runs, nrows, ncols, width, height, traces=traces, **grid)
         if out_dir:
             save_figure(fig, out_dir, name)
-            _single_panels(panels, runs, out_dir / name, traces=traces)
+            _panel_files(panels, runs, out_dir / name, traces=traces)
     return fig
 
 
@@ -667,7 +801,9 @@ OVERVIEW = [
     ("largest / N", p_largest_n, True),
     ("size categories", p_categories, True), ("coordination", p_coordination, True),
     ("coordination", p_coordination_hist, False),      # title completed by influx_end_label in fig_overview
-    ("mean Rg", p_rg, True), ("Rg / Rg,ideal", p_rg_ratio, True), ("Qt fraction", p_qt_fraction, True),
+    ("mean $\\mathit{R}_\\mathrm{g}$", p_rg, True),
+    ("$\\mathit{R}_\\mathrm{g}$ / $\\mathit{R}_\\mathrm{g,ideal}$", p_rg_ratio, True),
+    ("Qt fraction", p_qt_fraction, True),
 ]
 ONE_RUN_ONLY = {p_categories}
 
@@ -713,7 +849,7 @@ def fig_agglomerate_distributions(runs, out_dir: Path | None = None):
 
 
 def _peak_label(ax, r, frame, left=False) -> None:
-    ax.text(0.03 if left else 0.97, 0.95, frame + (f"\nr = {r:.0f} nm" if np.isfinite(r) else ""),
+    ax.text(0.03 if left else 0.97, 0.95, frame + (f"\n$\\mathit{{r}}$ = {r:.0f} nm" if np.isfinite(r) else ""),
             transform=ax.transAxes, ha="left" if left else "right", va="top")
 
 
@@ -767,8 +903,8 @@ def fig_fibsem_comparison(runs, out_dir: Path | None = None, spatial: dict | lis
         if not drawn:
             _no_data(ax, f"no agglomerates with ≥ {QT_MIN} Qt")
             return
-        ax.set_xlabel("distance to nearest Qt in the agglomerate (nm)")
-        ax.set_ylabel("probability density (1/nm)")
+        ax.set_xlabel("neighbour distance (nm)")
+        ax.set_ylabel(DENSITY_NM)
 
     def p_rdf(ax, runs, traces=False):
         drawn = False
@@ -789,9 +925,10 @@ def fig_fibsem_comparison(runs, out_dir: Path | None = None, spatial: dict | lis
             return
         ax.axhline(1, color="0.6", lw=GUIDE_LW, ls=":")
         ax.set_yscale("log")
+        _log_decades(ax)
         ax.set_xlim(0, r_plot_nm)
-        ax.set_xlabel("r (nm)")
-        ax.set_ylabel("g(r), Qt–Qt")
+        ax.set_xlabel("$\\mathit{r}$ (nm)")
+        ax.set_ylabel("$\\mathit{g}(\\mathit{r})$, Qt–Qt")
 
     def p_clark_evans(ax, runs, traces=False):
         frames = (("first", "0.6", "first frame"), ("influx_end", color, end)) if one else (("influx_end", None, end),)
@@ -801,7 +938,7 @@ def fig_fibsem_comparison(runs, out_dir: Path | None = None, spatial: dict | lis
             for frame, c, name in frames:
                 d = np.sort(d_all.loc[d_all["frame"] == frame, "distance_nm"].to_numpy())
                 rows = ce[ce["frame"] == frame]
-                text = f"R = {rows['R'].mean():.2f}, $\\langle d \\rangle$ = {d.mean():.0f} nm"
+                text = f"$\\mathit{{R}}$ = {rows['R'].mean():.2f}, mean {d.mean():.0f} nm"
                 ax.step(d, np.arange(1, len(d) + 1) / len(d), where="post", color=c or r.color,
                         label=f"{name}: {text}" if one else r.label)
                 if not one:                                       # R of every run in its colour, top left
@@ -811,8 +948,8 @@ def fig_fibsem_comparison(runs, out_dir: Path | None = None, spatial: dict | lis
             ax.plot(x, 1 - np.exp(-4 / 3 * math.pi * rho * x**3), color="k" if one else r.color, lw=GUIDE_LW,
                     ls="--", label="random points" if one else None)
         ax.set_ylim(0, 1.02)
-        ax.set_xlabel("distance to nearest Qt, d (nm)")
-        ax.set_ylabel("fraction of Qt with a Qt within d")
+        ax.set_xlabel("neighbour distance (nm)")
+        ax.set_ylabel("cumulative fraction of Qt")
         if one:
             ax.legend(loc="lower right")
         else:
@@ -828,11 +965,11 @@ def fig_fibsem_comparison(runs, out_dir: Path | None = None, spatial: dict | lis
                 mean = mean[mean.index <= r_plot_nm]
                 label = name
                 if mean.notna().any():
-                    label += f": max {mean.max():.0f} nm at r = {mean.idxmax():.0f} nm"
+                    label += f": max {mean.max():.0f} nm at $\\mathit{{r}}$ = {mean.idxmax():.0f} nm"
                 ax.plot(mean.index, mean.to_numpy(), color=c or r.color, label=label if one else r.label)
         ax.set_xlim(0, r_plot_nm)
-        ax.set_xlabel("r (nm)")
-        ax.set_ylabel("L(r) − r (nm)")
+        ax.set_xlabel("$\\mathit{r}$ (nm)")
+        ax.set_ylabel("$\\mathit{L}(\\mathit{r}) - \\mathit{r}$ (nm)")
         if one:
             ax.legend(loc="center left", bbox_to_anchor=(0.2, 0.3))              # below the curve of the influx end
         else:
@@ -844,9 +981,10 @@ def fig_fibsem_comparison(runs, out_dir: Path | None = None, spatial: dict | lis
     return _panel_figure("fibsem_comparison", panels, runs, out_dir, 2, 2, DOUBLE, 120 * MM, legend_below=True)
 
 
-# rows of fig_cluster_sizes: measure (cluster_sizes column, mean_size = thermo column) and title
-SIZE_ROWS = [("mean_size", "mean size"), ("mean_bound", "mean size (bound particles)"),
-             ("weight", "weight-average size"), ("weight_bound", "weight-average size (bound particles)")]
+# rows of fig_cluster_sizes: measure (cluster_sizes column, mean_size = thermo column), title and y label
+SIZE_ROWS = [("mean_size", "mean size", "mean size"), ("mean_bound", "mean size (bound particles)", "mean size, bound"),
+             ("weight", "weight-average size", "weight-avg. size"),
+             ("weight_bound", "weight-average size (bound particles)", "weight-avg. size, bound")]
 SIZE_SPECIES = {"all": "", "Qt": "_qt", "Ft": "_ft"}      # column -> suffix of the measure
 
 
@@ -862,7 +1000,7 @@ def _size_curve(r: RunData, measure: str, species: str, per_n: bool, traces: boo
     return d["time_s"].to_numpy() * 1e3, d[f"{key}_mean"].to_numpy() * scale, d[f"{key}_sd"].to_numpy() * scale, tr
 
 
-def _size_panel(measure: str, title: str, species: str | None, per_n: bool):
+def _size_panel(measure: str, title: str, ylabel: str, species: str | None, per_n: bool):
     """Panel of fig_cluster_sizes: one species for several runs (a colour per run), or (species None, one run)
     all, Qt and Ft as three lines."""
     def draw(ax, runs, traces=False):
@@ -871,10 +1009,10 @@ def _size_panel(measure: str, title: str, species: str | None, per_n: bool):
         for r, sp, color, label in curves:
             t, m, s, tr = _size_curve(r, measure, sp, per_n, traces)
             band(ax, t, m, s, color, label, traces=tr if traces else None)
-        ax.set_ylabel(title + (" / N" if per_n else ""))
+        ax.set_ylabel(ylabel + (" / $\\mathit{N}$" if per_n else ""))
         if species is None:
             ax.legend()
-    name = title + (" / N" if per_n else "") + (f", {species}" if species else "")
+    name = title + (" / $\\mathit{N}$" if per_n else "") + (f", {species}" if species else "")
     return name, draw, True
 
 
@@ -887,23 +1025,22 @@ def fig_cluster_sizes(runs, out_dir: Path | None = None, traces=False) -> list:
     <figure>/."""
     runs = _as_runs(runs)
     if len(runs) == 1:
-        panels = [_size_panel(m, title, None, per_n) for m, title in SIZE_ROWS for per_n in (False, True)]
+        panels = [_size_panel(*row, None, per_n) for row in SIZE_ROWS for per_n in (False, True)]
         return [_panel_figure("cluster_sizes", panels, runs, out_dir, 4, 2, ONE_HALF, 150 * MM, traces=traces)]
-    return [_panel_figure(name, [_size_panel(m, title, sp, per_n) for m, title in SIZE_ROWS for sp in SIZE_SPECIES],
+    return [_panel_figure(name, [_size_panel(*row, sp, per_n) for row in SIZE_ROWS for sp in SIZE_SPECIES],
                           runs, out_dir, 4, 3, DOUBLE, 150 * MM, traces=traces, legend_below=True)
             for name, per_n in (("cluster_sizes", False), ("cluster_sizes_n", True))]
 
 
-def _multi_panel(key: str, ylabel: str, scale: float = 1.0):
-    """Panel of fig_multivalency: one multivalency measure, a colour per run."""
-    def panel(ax, runs, traces=False):
-        for r in runs:
-            d = r.multi
-            tr = d[[c for c in d.columns if c.endswith(f":{key}")]].to_numpy().T * scale if traces else None
-            band(ax, d["time_s"].to_numpy() * 1e3, d[f"{key}_mean"].to_numpy() * scale,
-                 d[f"{key}_sd"].to_numpy() * scale, r.color, r.label, traces=tr)
-        ax.set_ylabel(ylabel)
-    return panel
+def p_qt_contacts(ax, runs, traces=False):
+    """Qt in contact with a Qt per Qt (qt_contacts: centre distance < 2 r_Qt + QT_CONTACT_MARGIN_NM), a colour per
+    run."""
+    for r in runs:
+        d = r.contacts
+        tr = d[[c for c in d.columns if c.endswith(":qt_neighbours")]].to_numpy().T if traces else None
+        band(ax, d["time_s"].to_numpy() * 1e3, d["qt_neighbours_mean"].to_numpy(), d["qt_neighbours_sd"].to_numpy(),
+             r.color, r.label, traces=tr)
+    ax.set_ylabel("Qt contacts per Qt")
 
 
 def p_energy_per_bond(ax, runs, traces=False):
@@ -913,33 +1050,14 @@ def p_energy_per_bond(ax, runs, traces=False):
     for r in runs:
         t, m, s, tr = _series(r, "ebond_per_bond", 1 / r.p.kT, traces=traces)
         band(ax, t, m, s, r.color, r.label, traces=tr if traces else None)
-    ax.set_ylabel("bond energy per bond (k_BT)")
-
-
-MULTIVALENCY_PANELS = [
-    ("bound Ft with ≥ 2 bonds", _multi_panel("ft_bonds2", "bound Ft with ≥ 2 bonds (%)", 100), True),
-    ("bound Ft with ≥ 3 bonds", _multi_panel("ft_bonds3", "bound Ft with ≥ 3 bonds (%)", 100), True),
-    ("Ft per Qt", _multi_panel("ft_per_qt", "Ft per Qt"), True),
-    ("Qt in contact per Qt", _multi_panel("qt_neighbours", f"Qt within 2 r_Qt + {QT_CONTACT_MARGIN_NM:g} nm"), True),
-    ("largest agglomerate", _simple("largest", "largest agglomerate"), True),
-    ("bond energy per bond", p_energy_per_bond, True),
-]
-
-
-def fig_multivalency(runs, out_dir: Path | None = None, traces=False):
-    """How the bonds are arranged over time (ensemble.multivalency): bound Ft with >= 2 and >= 3 bonds, Ft per Qt,
-    Qt in contact per Qt, largest agglomerate and bond energy per bond; 3 x 2, a colour per run (legend below),
-    120 mm; the comparison of the free and the anchored bond geometry. Panels also alone in multivalency/."""
-    runs = _as_runs(runs)
-    return _panel_figure("multivalency", MULTIVALENCY_PANELS, runs, out_dir, 3, 2, ONE_HALF, 130 * MM,
-                         traces=traces, legend_below=True)
+    ax.set_ylabel("bond energy per bond ($\\mathit{k}_\\mathrm{B}\\mathit{T}$)")
 
 
 WOBBLE_ENDS = [("u_qt", "Qt end", "-"), ("u_ft", "Ft end", "--")]
 
 
 def _wobble_hist(end: str):
-    """Panel of fig_anchor_wobble: distribution of the displacement of one bond end at the end of the influx (all
+    """Panel of fig_bond_geometry: distribution of the displacement of one bond end at the end of the influx (all
     replicas pooled, probability density; one run filled, several as outlines) with the expected distribution
     of the target, p(u) = u / s^2 exp(-u^2 / (2 s^2)), <u^2> = 2 s^2 = target^2 (two small tilt angles)."""
     def panel(ax, runs, traces=False):
@@ -960,7 +1078,7 @@ def _wobble_hist(end: str):
         ax.legend(loc="upper right")
         ax.set_xlim(0, top)
         ax.set_xlabel("displacement (nm)")
-        ax.set_ylabel("probability density (1/nm)")
+        ax.set_ylabel(DENSITY_NM)
     return panel
 
 
@@ -990,22 +1108,33 @@ def p_wobble_delta(ax, runs, traces=False):
              r.label, traces=tr)
         ax.axhline(r.p.anchor_wobble_nm, color=r.color, ls=":", lw=GUIDE_LW)
     ax.set_ylim(bottom=0)
-    ax.set_ylabel("δ (nm)")
+    ax.set_ylabel("$\\mathit{\\delta}$ (nm)")
 
 
-def fig_anchor_wobble(runs, out_dir: Path | None = None, traces=False):
-    """Wobble of the anchored bonds (anchor_wobble): distributions of the displacement of the attachment points of
-    the Qt and the Ft end at the end of the influx with the expected ones, their rms over time and delta over time,
-    each against its target (dotted); 2 x 2, a colour per run (legend below), 120 mm; panels also alone in
-    anchor_wobble/. Only the anchored runs of `runs`; None if there are none."""
-    runs = [r for r in _as_runs(runs) if r.p.anchored]
-    if not runs:
-        return None
-    frame = _frame_label(runs)
-    panels = [(f"Qt end at {frame}", _wobble_hist("u_qt"), False), (f"Ft end at {frame}", _wobble_hist("u_ft"), False),
-              ("attachment points", p_wobble_ends, True), ("both ends (δ)", p_wobble_delta, True)]
-    return _panel_figure("anchor_wobble", panels, runs, out_dir, 2, 2, ONE_HALF, 100 * MM, traces=traces,
-                         legend_below=True)
+def fig_bond_geometry(runs, out_dir: Path | None = None, traces=False):
+    """Comparison of the free and the anchored bond geometry, 3 x 2 (120 mm), a colour per run (legend below):
+    Qt in contact per Qt (qt_contacts) and bond energy per bond of all runs; the wobble of the anchored bonds
+    (anchor_wobble, anchored runs only): distributions of the displacement of the attachment points of the Qt and
+    the Ft end at the end of the influx with the expected ones, their rms over time and delta over time, each
+    against its target (dotted). Without an anchored run only the first row (1 x 2). Panels also alone in
+    bond_geometry/."""
+    runs = _as_runs(runs)
+    anchored = [r for r in runs if r.p.anchored]
+    panels = [("Qt in contact per Qt", p_qt_contacts, True), ("bond energy per bond", p_energy_per_bond, True)]
+    if anchored:
+        frame = _frame_label(anchored)
+
+        def only_anchored(func):
+            def draw(ax, runs, traces=False):
+                func(ax, [r for r in runs if r.p.anchored], traces=traces)
+            return draw
+
+        panels += [(f"Qt end at {frame}", only_anchored(_wobble_hist("u_qt")), False),
+                   (f"Ft end at {frame}", only_anchored(_wobble_hist("u_ft")), False),
+                   ("attachment points", only_anchored(p_wobble_ends), True),
+                   ("both ends (δ)", only_anchored(p_wobble_delta), True)]
+    return _panel_figure("bond_geometry", panels, runs, out_dir, len(panels) // 2, 2, ONE_HALF,
+                         (130 if anchored else 50) * MM, traces=traces, legend_below=True)
 
 
 # line styles of the thresholds with several runs (fig_agglomerates_above_size, _total)
@@ -1036,9 +1165,23 @@ def _draw_above_size(ax, runs, ns, density, traces, species="all"):
                  d[f"{column}_sd"].to_numpy(), color, label, ls=ls, traces=tr if traces else None)
             values.append(d[f"{column}_mean"].to_numpy())
     k = _thousands(ax, np.concatenate(values))
-    size = f" ≥ {ns[0]}{unit}" if len(ns) == 1 else ""
-    ax.set_ylabel(f"agglomerates{size} " + ("/ 1000 µm³" if density else "in the box")
-                  + (" (×10³)" if k else ""))
+    ax.set_ylabel(_above_size_label(density, k))
+    if len(ns) == 1:
+        _threshold_text(ax, f"≥ {ns[0]}{unit}")
+
+
+def _above_size_label(density: bool, thousands: bool) -> str:
+    return "agglomerates " + ("/ 1000 µm$^{3}$" if density else "in box") + (THOUSANDS if thousands else "")
+
+
+# legend of the thresholds, kept in the panel: compact, line styles (several runs) with longer handles
+THRESHOLD_LEGEND = {"ncol": 3, "handlelength": 1.0, "handletextpad": 0.4, "columnspacing": 0.8}
+THRESHOLD_STYLE_LEGEND = THRESHOLD_LEGEND | {"ncol": 2, "handlelength": 2.0}     # fits the 33.5 mm axes
+
+
+def _threshold_text(ax, text: str) -> None:
+    """The one threshold of a panel of agglomerate counts, top left in the plot."""
+    ax.text(0.04, 0.95, text, transform=ax.transAxes, ha="left", va="top")
 
 
 def _above_size_curve(r: RunData, species: str, n: int, density: bool):
@@ -1060,10 +1203,10 @@ def _above_size_thresholds(n_min, n_min_qt, n_min_ft, n_qt_ft) -> tuple[dict, in
 
 
 def _count_above_size(run_dir: Path, ns: dict, n_qt: int, n_ft: int) -> None:
-    """Agglomerate counts of every threshold (and the pair), cluster_sizes and multivalency of a run in one pass
+    """Agglomerate counts of every threshold (and the pair), cluster_sizes and qt_contacts of a run in one pass
     over its traj.dump frames, into the caches in <run>/analysis/ (nothing read when they are up to date)."""
     _agglomerates_above_size_species(run_dir, {"all": ns["all"], "qt": ns["qt"] + [n_qt], "ft": ns["ft"] + [n_ft]},
-                                     sizes=True, multi=True)
+                                     sizes=True, contacts=True)
 
 
 def fig_agglomerates_above_size(runs, out_dir: Path | None = None, traces=False,
@@ -1088,10 +1231,11 @@ def fig_agglomerates_above_size(runs, out_dir: Path | None = None, traces=False,
         def draw(ax, runs, traces=False):
             _draw_above_size(ax, runs, ns[species], density, traces, species)
             if len(ns[species]) > 1 and len(runs) == 1:
-                ax.legend(ncol=2)
+                keep_in_panel(ax.legend(**THRESHOLD_LEGEND))
             elif len(ns[species]) > 1:
                 _style_legend(ax, {f"≥ {n}{SPECIES_UNIT[species]}": THRESHOLD_STYLES[i]
-                                   for i, n in enumerate(ns[species])}, ncol=2, handlelength=3)
+                                   for i, n in enumerate(ns[species])}, **THRESHOLD_STYLE_LEGEND)
+                keep_in_panel(ax.get_legend())
         return f"{names[species]}, {'density' if density else 'number'}", draw, True
 
     def pair(density):
@@ -1108,11 +1252,12 @@ def fig_agglomerates_above_size(runs, out_dir: Path | None = None, traces=False,
                              traces=tr if traces else None)
                     values.append(m)
             k = _thousands(ax, np.concatenate(values))
-            ax.set_ylabel("agglomerates " + ("/ 1000 µm³" if density else "in the box") + (" (×10³)" if k else ""))
+            ax.set_ylabel(_above_size_label(density, k))
             if len(runs) == 1:
-                ax.legend()
+                ax.legend(**THRESHOLD_LEGEND)
             else:
-                _style_legend(ax, {f"≥ {n_qt} Qt": "-", f"≥ {n_ft} Ft": "--"})
+                _style_legend(ax, {f"≥ {n_qt} Qt": "-", f"≥ {n_ft} Ft": "--"}, **THRESHOLD_STYLE_LEGEND)
+            keep_in_panel(ax.get_legend())
         return f"≥ {n_qt} Qt and ≥ {n_ft} Ft, {'density' if density else 'number'}", draw, True
 
     panels = [panel(sp, density) for sp in ns for density in (False, True)] + [pair(False), pair(True)]
@@ -1134,22 +1279,34 @@ def fig_agglomerates_above_size_total(runs, out_dir: Path | None = None, traces=
     if len(runs) > 1 and len(ns) > len(THRESHOLD_STYLES):
         raise ValueError(f"several runs show at most {len(THRESHOLD_STYLES)} thresholds (one line style each), "
                          f"not {len(ns)}")
-    with plt.rc_context(STYLE):
-        fig = _figure(SINGLE, 60 * MM)
-        ax = fig.add_subplot()
+    def draw(ax, runs, traces=False):
         _draw_above_size(ax, runs, ns, density, traces)
-        phase_lines(ax, runs)
-        _time_axis(ax, _t_end(runs))
         handles, labels = ax.get_legend_handles_labels()
-        if len(runs) > 1:                                    # runs below the axes, thresholds in the corner
+        if len(runs) > 1 and len(ns) > 1:                    # runs below the axes, thresholds in the corner
+            ax.legend([plt.Line2D([], [], color="0.3", ls=THRESHOLD_STYLES[i]) for i in range(len(ns))],
+                      [f"≥ {n}" for n in ns], **THRESHOLD_STYLE_LEGEND)
+        elif len(runs) == 1 and handles:
+            ax.legend(handles, labels, **THRESHOLD_LEGEND)
+        keep_in_panel(ax.get_legend())
+
+    return _single_figure("agglomerates_above_size_total" + ("_density" if density else ""), draw, runs, out_dir,
+                          60 * MM, is_time=True, traces=traces)
+
+
+def _single_figure(name, draw, runs, out_dir, height, is_time=False, traces=False):
+    """A figure of one panel, 89 mm wide (runs in a legend below), saved as out_dir/<name>/<name>.* and as a
+    publication panel out_dir/<name>/panel.* (with legend.* for several runs)."""
+    with plt.rc_context(STYLE):
+        fig = _figure(SINGLE, height)
+        ax = fig.add_subplot()
+        draw(ax, runs, traces=traces)
+        if is_time:
+            _time_panel(ax, runs, _t_end(runs))
+        if len(runs) > 1:
             _run_legend(fig, runs)
-            if len(ns) > 1:
-                ax.legend([plt.Line2D([], [], color="0.3", ls=THRESHOLD_STYLES[i]) for i in range(len(ns))],
-                          [f"≥ {n}" for n in ns], ncol=2, handlelength=3)
-        elif handles:
-            ax.legend(handles, labels)
         if out_dir:
-            save_figure(fig, out_dir, "agglomerates_above_size_total" + ("_density" if density else ""))
+            save_figure(fig, out_dir, name)
+            _panel_files([(name, draw, is_time)], runs, out_dir / name, traces=traces, name="panel")
     return fig
 
 
@@ -1157,18 +1314,13 @@ def fig_overlap(runs, out_dir: Path | None = None):
     """Number of overlapping pairs per family over time, log scale (89 mm), of one run or several (one colour per
     run, legend below; a line style per family). Saved as overlap/overlap.*."""
     runs = _as_runs(runs)
-    with plt.rc_context(STYLE):
-        fig = _grid([("overlapping pairs", p_overlap, True)], runs, 1, 1, SINGLE, (60 if len(runs) == 1 else 70) * MM,
-                    titles=False, legend_below=True)
-        if out_dir:
-            save_figure(fig, out_dir, "overlap")
-    return fig
+    return _single_figure("overlap", p_overlap, runs, out_dir, (60 if len(runs) == 1 else 70) * MM, is_time=True)
 
 
 def _sci(x: float, sd: float = float("nan")) -> str:
-    """1.91e7 -> '1.91·10⁷'; with an SD: '(1.91 ± 0.05)·10⁷'."""
+    """1.91e7 -> '1.91 × 10^7'; with an SD: '(1.91 ± 0.05) × 10^7' (mathtext superscript)."""
     exponent = math.floor(math.log10(abs(x))) if x else 0
-    power = "·10" + str(exponent).translate(str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"))
+    power = f" × 10$^{{{exponent}}}$"
     if sd == sd:                                                        # not NaN
         return f"({x / 10**exponent:.2f} ± {sd / 10**exponent:.2f}){power}"
     return f"{x / 10**exponent:.3g}{power}"
@@ -1187,27 +1339,25 @@ def fig_binding_rate(run: RunData, out_dir: Path | None = None, max_frac_bound: 
     t_all = run.stats["time_ms"]
     show = (t_all >= on_ms) & (t_all <= min(on_ms + 2 * window, off_ms))
     bonds = run.stats["mean"]["Bonds"]
-    with plt.rc_context(STYLE):
-        fig = _figure(SINGLE, 60 * MM)
-        ax = fig.add_subplot()
+
+    def label(name, key):
+        return f"{name}: {_sci(s[key] * TO_PER_M_S, s[f'{key} SD'] * TO_PER_M_S)} M$^{{-1}}$ s$^{{-1}}$"
+
+    def draw(ax, runs, traces=False):
         t = t_all[show] - on_ms
         band(ax, t, bonds[show] - bonds[show][0], run.stats["sd"]["Bonds"][show], run.color, "simulation")
-        def label(name, key):
-            return f"{name}: {_sci(s[key] * TO_PER_M_S, s[f'{key} SD'] * TO_PER_M_S)} M⁻¹ s⁻¹"
-
         ax.plot(t, s["k_a measured"] * pairs_per_volume * t * 1e6, color="k", lw=0.8,
-                label=label("fit k_a", "k_a measured"))
+                label=label("fit $\\mathit{k}_\\mathrm{a}$", "k_a measured"))
         ax.plot(t, s["k_a predicted"] * pairs_per_volume * t * 1e6, color="0.4", lw=0.8, ls="--",
                 label=label("Collins–Kimball", "k_a predicted"))
         ax.axvline(window, color="0.6", lw=GUIDE_LW, ls=":")
         ax.set_xlim(0, t[-1])
         ax.set_ylim(bottom=0)
-        ax.set_xlabel("time since influx start (ms)")
+        ax.set_xlabel("time after influx start (ms)")
         ax.set_ylabel("bonds formed")
         ax.legend(loc="upper left")
-        if out_dir:
-            save_figure(fig, out_dir, "binding_rate")
-    return fig
+
+    return _single_figure("binding_rate", draw, [run], out_dir, 60 * MM)
 
 
 CALCIUM = [("calcium and loading", p_calcium, True), ("rate constants", p_rate_constants, True), *RATE_PANELS,
@@ -1239,17 +1389,18 @@ def fig_bond_rates(runs, out_dir: Path | None = None, traces=False, rates: dict 
                          traces=traces, titles=False, sharex=True, legend_below=True)
 
 
+T_HALF = "$\\mathit{t}_{1/2}$"
 SWEEP_LABELS = {
     "final_frac_bound": "fraction bound (final)", "final_Bonds": "bonds (final)",
-    "final_largest_frac": "largest cluster (fraction of particles, final)",
-    "final_mean_size": "mean cluster size (final)", "t_half_bonds_ms": "half-time of bonds (ms)",
-    "t_half_qt_ms": "half-time Qt bound (ms)", "t_half_ft_ms": "half-time Ft bound (ms)",
+    "final_largest_frac": "largest / $\\mathit{N}$ (final)",
+    "final_mean_size": "mean cluster size (final)", "t_half_bonds_ms": f"{T_HALF} bonds (ms)",
+    "t_half_qt_ms": f"{T_HALF} Qt bound (ms)", "t_half_ft_ms": f"{T_HALF} Ft bound (ms)",
     "t_percolation_ms": "percolation time (ms)", "bonds_peak": "bonds (peak)",
-    "largest_peak": "largest cluster (peak)", "t_half_unbind_bonds_ms": "deagglomeration half-time, bonds (ms)",
-    "t_half_unbind_largest_ms": "deagglomeration half-time, largest cluster (ms)",
-    "mean_bound_peak": "mean size (bound particles) (peak)", "weight_peak": "weight-average size (peak)",
-    "weight_bound_peak": "weight-average size (bound particles) (peak)",
-    "weight_frac_peak": "weight-average size / N (peak)",
+    "largest_peak": "largest cluster (peak)", "t_half_unbind_bonds_ms": f"{T_HALF} unbinding, bonds (ms)",
+    "t_half_unbind_largest_ms": f"{T_HALF} unbinding, largest (ms)",
+    "mean_bound_peak": "mean size, bound (peak)", "weight_peak": "weight-avg. size (peak)",
+    "weight_bound_peak": "weight-avg. size, bound (peak)",
+    "weight_frac_peak": "weight-avg. size / $\\mathit{N}$ (peak)",
 }
 
 
@@ -1260,24 +1411,27 @@ def fig_sweep(results: pd.DataFrame, y: str = "final_frac_bound", x: str | None 
     swept = results.attrs.get("swept") or []
     x = x or swept[0]
     others = [k for k in swept if k != x]
-    with plt.rc_context(STYLE):
-        fig = _figure(SINGLE, 60 * MM)
-        ax = fig.add_subplot()
+
+    def draw(ax, runs, traces=False):
         groups = results.groupby(others, sort=False) if others else [((), results)]
         for i, (key, df) in enumerate(groups):
             key = key if isinstance(key, tuple) else (key,)
             df = df.sort_values(x)
-            label = ", ".join(f"{k} = {v:g}" if isinstance(v, (int, float)) else f"{k} = {v}"
+            label = ", ".join(f"{_plain(k)} = {v:g}" if isinstance(v, (int, float)) else f"{_plain(k)} = {v}"
                               for k, v in zip(others, key)) or None
             ax.errorbar(df[x], df[y], yerr=df.get(f"{y} sd"), marker="o", ms=3, capsize=2,
                         color=RUN_COLORS[i % len(RUN_COLORS)], label=label)
-        ax.set_xlabel(x)
-        ax.set_ylabel(SWEEP_LABELS.get(y, y))
+        ax.set_xlabel(_plain(x))
+        ax.set_ylabel(SWEEP_LABELS.get(y, _plain(y)))
         if others:
             ax.legend()
-        if out_dir:
-            save_figure(fig, out_dir, f"sweep_{y}")
-    return fig
+
+    return _single_figure(f"sweep_{y}", draw, [], out_dir, 60 * MM)
+
+
+def _plain(name: str) -> str:
+    """A parameter or column name as text (underscores as spaces, no mathtext subscripts)."""
+    return name.replace("_", " ")
 
 
 # ---------------------------------------------------------------------------- tables
@@ -1304,8 +1458,9 @@ def _tex(text: str) -> str:
 
 
 def _slug(text: str) -> str:
-    """File name of a panel: '≥' as 'ge', every run of other characters as one '_' (`bound_ft_with_ge_2_bonds`)."""
-    text = str(text).replace("≥", " ge ").replace("≤", " le ")
+    """File name of a panel: mathtext markup dropped ('$k_\\mathrm{a}$' -> 'k_a'), '≥' as 'ge', every run of
+    other characters as one '_' (`agglomerate_size_at_end_of_influx`, `apparent_k_a`)."""
+    text = re.sub(r"\\[a-zA-Z]+|[${}^]", "", str(text)).replace("≥", " ge ").replace("≤", " le ")
     return re.sub(r"_+", "_", "".join(c if c.isascii() and c.isalnum() else "_" for c in text)).strip("_").lower()
 
 
@@ -1344,7 +1499,7 @@ def _run_record(run_dir: Path) -> str:
 
 def _write_report(path: Path, cover: list, figs: list) -> None:
     """Cover pages and figures, one per page, into one PDF; closes the cover pages."""
-    with PdfPages(path) as pdf:
+    with plt.rc_context(STYLE), PdfPages(path) as pdf:
         for fig in (*cover, *figs):
             pdf.savefig(fig)
     for fig in cover:
@@ -1379,7 +1534,7 @@ def _analyse(run_dir: Path, every: int, structure_analysis: bool, overlap_analys
 
 def _report_figures(runs: list[RunData], figs: Path, traces: bool, thresholds: tuple) -> list:
     """The report figures of one run or several, in report order, into figs/<figure>/: calcium, overview, overlap,
-    cluster sizes, multivalency, anchor wobble (anchored runs only), agglomerates above size (thresholds = n_min,
+    cluster sizes, bond geometry (wobble panels for anchored runs only), agglomerates above size (thresholds = n_min,
     n_min_qt, n_min_ft, n_qt_ft), agglomerate distributions, FIB-SEM comparison, and for one run with a calcium
     step the binding rate. Writes bond_rates.csv (and binding_rate.csv) of every run. The agglomerate counts and
     cluster sizes of a run are read from its dumps in one pass before the first figure that needs them."""
@@ -1388,8 +1543,7 @@ def _report_figures(runs: list[RunData], figs: Path, traces: bool, thresholds: t
         r._rates = bond_rates(r.run_dir)                                                         # + csv
         _count_above_size(r.run_dir, ns, n_qt, n_ft)                             # + csv (cached)
     figures = [fig_calcium(runs, figs, traces), fig_overview(runs, figs, traces=traces), fig_overlap(runs, figs),
-               *fig_cluster_sizes(runs, figs, traces=traces), fig_multivalency(runs, figs, traces=traces),
-               *filter(None, [fig_anchor_wobble(runs, figs, traces=traces)]),
+               *fig_cluster_sizes(runs, figs, traces=traces), fig_bond_geometry(runs, figs, traces=traces),
                fig_agglomerates_above_size(runs, figs, traces, *thresholds),
                fig_agglomerate_distributions(runs, figs),
                fig_fibsem_comparison(runs, figs, spatial=[qt_spatial_run(r.run_dir) for r in runs])]

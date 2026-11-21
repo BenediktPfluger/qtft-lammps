@@ -204,7 +204,20 @@ The simulation in this repository does not use the GPU.
    (`bond_break="random"`, the default, or `bond_geometry="anchored"`) loads the result,
    `lammps_plugins/qtft_styles/qtftstyles.so`; `start()` refuses to run without it.
 
-4. Run the tests (only with a local `tests/` folder: the tests are not part of the repository):
+4. Install Arial for the figures (Nature style; Arial is not part of Ubuntu and may not be put in the repository).
+   In WSL, take it from Windows, then clear matplotlib's font cache:
+
+   ```bash
+   mkdir -p ~/.local/share/fonts
+   cp /mnt/c/Windows/Fonts/{arial,arialbd,ariali,arialbi}.ttf ~/.local/share/fonts/
+   rm -f ~/.cache/matplotlib/fontlist-*.json
+   python -c "from matplotlib import font_manager as f; print(f.findfont('Arial'))"   # .../arial.ttf
+   ```
+
+   Without Windows, `sudo apt install fonts-liberation` gives Liberation Sans, which has the same letter widths.
+   Without either, `qtft.figures` warns once on import and draws in DejaVu Sans.
+
+5. Run the tests (only with a local `tests/` folder: the tests are not part of the repository):
 
    ```bash
    pytest -q                    # all tests, including short LAMMPS runs (about 8 min)
@@ -425,6 +438,7 @@ OMP_NUM_THREADS=2 mpirun -np 4 lmp -sf omp -in in.myscript      # MPI + OpenMP
 | CMake error about conflicting files in `src/` | `cd ~/src/lammps/src && make no-all purge`, then configure again |
 | `LAMMPS plugin not found` from `start()`, or `plugin load` fails | build the plugin (again after a LAMMPS update): `lammps_plugins/qtft_styles/build.sh` |
 | notebook outputs appear in a commit | `nbstripout --install` in the repository (section 4) |
+| `Arial not found by matplotlib` when importing `qtft` | install Arial (section 6, step 4) and clear the font cache |
 | `no connection to LRZ` from the notebook | the shared connection has expired (after 8 h) or was never opened: `ssh lrz` in a terminal |
 | LRZ: `cannot convert '<brace-enclosed initializer list>' to 'unsigned int'` when building | `module load gcc/15.2.0` (section 11), delete `build/` and configure again |
 | LRZ: `Invalid qos specification` from `sbatch` | `--qos=cm4_serial_long` for `serial_long` (in `job_template.slurm`) |
