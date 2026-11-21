@@ -51,18 +51,17 @@ PRESSURE_TO_PA = 1e6                               # nano pressure unit ag/(nm n
 
 # Arial, also for mathtext (sub- and superscripts, italic variables; Liberation Sans has the same metrics), no grid,
 # minor ticks: set globally on import (matplotlib picks the font when a figure is drawn, e.g. in the notebook)
-FONT = {
+BASE_STYLE = {
     "font.family": "sans-serif",
     "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
     "mathtext.fontset": "custom", "mathtext.rm": "Arial", "mathtext.it": "Arial:italic",
-    "mathtext.bf": "Arial:bold", "mathtext.sf": "Arial", "mathtext.default": "regular",
+    "mathtext.bf": "Arial:bold", "mathtext.default": "regular",
     "axes.grid": False, "xtick.minor.visible": True, "ytick.minor.visible": True,
 }
 TEXT_PT = 6
-STYLE = FONT | {
+STYLE = BASE_STYLE | {
     "font.size": TEXT_PT, "axes.labelsize": TEXT_PT, "axes.titlesize": TEXT_PT, "axes.titleweight": "normal",
     "xtick.labelsize": TEXT_PT, "ytick.labelsize": TEXT_PT, "legend.fontsize": TEXT_PT,
-    "legend.title_fontsize": TEXT_PT, "figure.titlesize": TEXT_PT, "figure.labelsize": TEXT_PT,
     "axes.linewidth": 0.5, "lines.linewidth": 1.0,
     "xtick.major.width": 0.5, "ytick.major.width": 0.5,
     "xtick.minor.width": 0.4, "ytick.minor.width": 0.4,
@@ -92,14 +91,13 @@ def _check_font() -> None:
     """Warn once if matplotlib has no Arial (figures then use the fallback font; install: docs/install.md)."""
     try:
         font_manager.findfont(font_manager.FontProperties(family="Arial"), fallback_to_default=False)
-    except ValueError:
-        with plt.rc_context(FONT):
-            used = Path(font_manager.findfont(font_manager.FontProperties(family=["sans-serif"]))).stem
+    except ValueError:                                  # BASE_STYLE is global by now: the font actually used
+        used = Path(font_manager.findfont(font_manager.FontProperties(family=["sans-serif"]))).stem
         warnings.warn(f"Arial not found by matplotlib: the figures use {used} (install Arial, docs/install.md)",
                       stacklevel=2)
 
 
-plt.rcParams.update(FONT)
+plt.rcParams.update(BASE_STYLE)
 _check_font()
 
 
@@ -719,8 +717,7 @@ def _legend_file(handles, labels, stem: Path, ncol: int = 1) -> None:
 
 def _scale_into_label(fig) -> None:
     """The scale factor of an axis (×10^n, drawn above or beside the axes) into its label, so it stays inside the
-    fixed margins of a panel."""
-    fig.canvas.draw()
+    fixed margins of a panel (the figure must have been drawn: the scale is set while drawing)."""
     for ax in fig.axes:
         for axis, label in ((ax.xaxis, ax.get_xlabel), (ax.yaxis, ax.get_ylabel)):
             offset = axis.get_offset_text().get_text()
@@ -731,7 +728,6 @@ def _scale_into_label(fig) -> None:
 
 def _check_inside(fig, stem: Path) -> None:
     """Warn if anything drawn sticks out of the panel (labels too long for the fixed margins)."""
-    fig.canvas.draw()
     box, w, h = fig.get_tightbbox(), *fig.get_size_inches()
     tol = 0.2 * MM
     out = {side: d / MM for side, d in (("left", -box.x0), ("bottom", -box.y0), ("right", box.x1 - w),
@@ -759,13 +755,15 @@ def _panel_file(func, runs, stem: Path, is_time: bool, traces=False) -> None:
     for a in fig.axes:
         legend = a.get_legend()
         if legend is not None and not getattr(legend, "qtft_keep", False):
-            _legend_file(legend.legend_handles, [x.get_text() for x in legend.get_texts()],
-                         stem.with_name(stem.name + "_legend"), ncol=legend._ncols)
+            labels = [x.get_text() for x in legend.get_texts()]
+            _legend_file(legend.legend_handles, labels, stem.with_name(stem.name + "_legend"),
+                         ncol=_legend_columns(LEGEND_WIDTH, labels))
             legend.remove()
     for a in fig.axes:                                  # at most 4 intervals, steps 1, 2, 5: short tick labels
         for axis in (a.xaxis, a.yaxis):
             if type(axis.get_major_locator()) is AutoLocator:
                 axis.set_major_locator(MaxNLocator(nbins=4, steps=[1, 2, 5, 10]))
+    fig.canvas.draw()                                   # sets the scale factors; the labels are measured from it
     _scale_into_label(fig)
     _check_inside(fig, stem)
     save(fig, stem)
