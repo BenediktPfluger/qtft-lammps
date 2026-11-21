@@ -201,7 +201,7 @@ The simulation in this repository does not use the GPU.
 
    It compiles against the LAMMPS source in `~/src/lammps` (or the folder given as argument), which must be
    the same version as `lmp` (the script checks this). Every run that uses one of these styles
-   (`bond_break="random"`, the default, or `bond_geometry="anchored"`) loads the result,
+   (`bond_break="random"` or `bond_geometry="anchored"`, both the default) loads the result,
    `lammps_plugins/qtft_styles/qtftstyles.so`; `start()` refuses to run without it.
 
 4. Install Arial for the figures (Nature style; Arial is not part of Ubuntu and may not be put in the repository).
@@ -361,7 +361,7 @@ operations of the rotation and anchor code differently into fused multiply-adds.
 in a long run as any perturbation does; the statistics are the same.
 
 In `serial_long` (Xeon Platinum 8380, shared node) a process is about 0.68 × as fast as on this PC: the 3 µm
-run takes about 35 h there instead of 24 h here. Anchored runs take about 1.6–1.8 × as long as free ones (the
+run takes about 35 h there instead of 24 h here. Anchored runs (the default) take about 1.6–1.8 × as long as free ones (the
 190 s protocol with 4800 particles and 8 processes: about 3 days free, 5 days anchored); keep every run within
 the 7-day limit of `serial_long`.
 

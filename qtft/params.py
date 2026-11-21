@@ -77,9 +77,9 @@ class Params:
     # --- bonds, bond_style harmonic: E = K (r - r0)^2 ------------------------
     bond_k: float = 4.3              # K [zJ/nm^2]
     bond_r0: float | None = None     # r0 [nm]; None -> r_Qt + r_Ft
-    bond_geometry: str = "free"      # "free": point particles, a bound Ft slides over the Qt surface;
-                                     # "anchored": oriented particles, each bond end is anchored in its particle
-                                     # (bond_style harmonic/anchor, lammps_plugins/), a bound Ft only wobbles
+    bond_geometry: str = "anchored"  # "anchored": oriented particles, each bond end is anchored in its particle
+                                     # (bond_style harmonic/anchor, lammps_plugins/), a bound Ft only wobbles;
+                                     # "free": point particles, a bound Ft slides over the Qt surface
     anchor_wobble_nm: float = 5.0    # anchored: RMS thermal offset delta of the attachment points [nm],
                                      # delta^2 = 2 kT (r_Qt^2 / K_anchor_Qt + r_Ft^2 / K_anchor_Ft)
     anchor_wobble_share_qt: float = 0.5   # anchored: share of delta^2 from the Qt end (the rest from the Ft end)
@@ -607,7 +607,8 @@ class Params:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Params":
-        """Params of a stored run (params.json); runs from before bond_break existed used fix bond/break.
+        """Params of a stored run (params.json); runs from before bond_break existed used fix bond/break, runs
+        from before bond_geometry existed free bonds.
         Runs built with particle numbers (n_qt, n_ft) instead of densities are refused: their densities
         would silently fall back to the defaults."""
         missing = [k for k in ("qt_per_um3", "ft_per_um3") if k not in data]
@@ -615,7 +616,7 @@ class Params:
             raise ValueError(f"params.json has no {' and '.join(missing)}: the run was built with particle numbers "
                              "(n_qt, n_ft), before the densities were introduced; build it again")
         known = {f.name for f in fields(cls)}
-        data = {"bond_break": "longest", **data}
+        data = {"bond_break": "longest", "bond_geometry": "free", **data}
         return cls(**{k: v for k, v in data.items() if k in known})
 
     @classmethod

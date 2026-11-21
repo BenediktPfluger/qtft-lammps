@@ -4,6 +4,8 @@ Coarse-grained Brownian dynamics simulation of the agglomeration of **Qt encapsu
 (large protein cage, r = 27.5 nm) and **ferritin** (Ft, r = 13 nm) in LAMMPS.
 Qt and Ft diffuse in implicit solvent, repel each other softly, and form harmonic
 Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt networks.
+The full model with its equations and the parameters of the current runs:
+[docs/physical_model_and_parameters.md](docs/physical_model_and_parameters.md).
 
 ## Model in short
 
@@ -14,7 +16,7 @@ Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt ne
 | Box | cubic (`box_length=2000.0`) or rectangular (`box_length=[2000.0, 3000.0, 4000.0]`); periodic (`boundary="periodic"`, default) or with walls on all faces: reflecting (`"reflect"`, `fix wall/reflect`) or soft (`"harmonic"`, `fix wall/harmonic`) |
 | Dynamics | overdamped Brownian dynamics, `fix brownian`, γ = k_BT/D per species; with anchored bonds `fix brownian/asphere`, which also rotates every particle (γ_rot = k_BT/D_rot, D_rot = 3D/(4r²)) |
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j |
-| Bonds | `bond_geometry="free"` (default): `bond_style harmonic`, E = K (r − r₀)², r₀ = r_Qt + r_Ft, a bound Ft slides over the Qt surface; `"anchored"`: oriented particles and `bond_style harmonic/anchor` (own plugin), E = K (r − r₀)² + K_qt (1 − cos θ_qt) + K_ft (1 − cos θ_ft), each bond end anchored where the bond formed, so a bound Ft only wobbles; K_qt, K_ft follow from the wobble of the attachment points (`anchor_wobble_nm=5.0`, share of the Qt end `anchor_wobble_share_qt=0.5`); run names get `_anch5nm` after k_off |
+| Bonds | `bond_geometry="anchored"` (default): oriented particles and `bond_style harmonic/anchor` (own plugin), E = K (r − r₀)² + K_qt (1 − cos θ_qt) + K_ft (1 − cos θ_ft), r₀ = r_Qt + r_Ft, each bond end anchored where the bond formed, so a bound Ft only wobbles; K_qt, K_ft follow from the wobble of the attachment points (`anchor_wobble_nm=5.0`, share of the Qt end `anchor_wobble_share_qt=0.5`); run names get `_anch5nm` after k_off. `"free"`: point particles and `bond_style harmonic`, E = K (r − r₀)², a bound Ft slides over the Qt surface; about 1.6 × faster, no `_anch` part in the run name |
 | Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on f Δt · `bind_every`) per attempt (every `bind_every` steps, default 1): a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ |
 | Unbinding | `fix bond/break/random` (own plugin in `lammps_plugins/`): every bond breaks independently with probability 1 − exp(−k_off Δt · `break_every`) per attempt (every `break_every` steps, default 10), k_off following the calcium at every attempt (`bond_break="random"`, default); `bond_break="longest"`: the built-in `fix bond/break` (only the longest bond of both atoms can break) |
 | Calcium control | every production follows a calcium protocol (baseline → influx with an exponential rise to the plateau → exponential pump-out, each phase optional); calmodulin loading f = Caⁿ/(K_Caⁿ + Caⁿ) sets k_on f and k_off = f k_off,Ca + (1 − f) k_off,free; computed inside LAMMPS (k_on per segment, k_off at every unbinding attempt) |
@@ -50,6 +52,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `04_analysis.ipynb` | index of all runs, ensemble statistics, full report (figures, tables, `report.pdf`), comparison with 3D FIB-SEM, comparison of runs, parameter sweeps, FIB-SEM and SEM export |
 | `docs/install.md` | installation: WSL, Ubuntu, conda, LAMMPS, VS Code on this PC; SSH and LAMMPS on LRZ |
 | `docs/repo_structure.md` | folder structure, every input and output file of a run, and every figure with its panels |
+| `docs/physical_model_and_parameters.md` | the physical model (dynamics, interactions, anchored bonds, binding, unbinding, calcium control) with its equations, and the parameters of the current runs |
 | `environment.yml` | the conda environment `lammps` (compilers, MPI, Python packages, OVITO, ffmpeg, pytest, nbstripout) |
 | `template.lmp` | the LAMMPS input template (model structure, `{{placeholders}}`, no numbers) |
 | `lammps_plugins/qtft_styles/` | LAMMPS plugin `qtftstyles.so` with the project's own styles: `fix bond/break/random`, `bond_style harmonic/anchor` (C++ source, `build.sh`; the built `.so` is not committed) |

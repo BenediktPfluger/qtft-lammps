@@ -73,7 +73,7 @@ def benchmark(p: Params, procs=None, cores: int | None = None, steps: int = 2000
     cores:    hardware threads to fill (default: all of this machine)
     steps:    production steps per measurement (equilibration is kept short)
     variants: optional {label: {param: value}} to compare settings, e.g. {"skin 20": {"neighbor_skin": 20}};
-              both bond geometries: {"free": {}, "anchored": {"bond_geometry": "anchored"}}
+              both bond geometries: {"anchored": {}, "free": {"bond_geometry": "free"}}
     name:     folder under <data_dir>/benchmark/ (default: "<cores>cores")
 
     A setting whose replicas fail is reported and skipped.

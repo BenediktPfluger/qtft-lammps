@@ -36,6 +36,7 @@ qtft-lammps/
 ├── tests/                    pytest tests (slow ones run short LAMMPS simulations)   gitignored
 ├── docs/
 │   ├── install.md            installation on this PC and on LRZ
+│   ├── physical_model_and_parameters.md   the physical model and the parameters of the current runs
 │   └── repo_structure.md     this page
 ├── environment.yml           conda environment "lammps"
 ├── pytest.ini                pytest settings   gitignored
@@ -100,7 +101,7 @@ Qt20_Ft80_L4000_kon1860_koff0.008-0.2_anch5nm_Ca0.1-1uM_K0.5_rise5tau30_t10-30-1
 | `L4000` | box edge in nm (`2000x3000x4000` for a rectangular box) |
 | `kon1860` | k_on in 1/s at full calmodulin loading |
 | `koff0.008-0.2` | k_off with Ca-loaded and with Ca-free calmodulin, in 1/s |
-| `anch5nm` | only with `bond_geometry="anchored"`: wobble δ of the attachment points in nm, `-q0.3` added if the share of the Qt end is not 0.5 (`anch5nm-q0.3`); free runs have no such part |
+| `anch5nm` | only with `bond_geometry="anchored"` (the default): wobble δ of the attachment points in nm, `-q0.3` added if the share of the Qt end is not 0.5 (`anch5nm-q0.3`); free runs have no such part |
 | `Ca0.1-1uM_K0.5` | resting and peak calcium, and the half-loading K, in µM |
 | `rise5tau30` | rise time and pump-out time constant, in s |
 | `t10-30-150s` | durations of baseline, influx and pump-out |

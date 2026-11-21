@@ -42,3 +42,4 @@ lammps_plugins/*/*.so
 docs/*
 !docs/install.md
 !docs/repo_structure.md
+!docs/physical_model_and_parameters.md
