@@ -1,9 +1,10 @@
 # qtft-lammps
 
 Coarse-grained Brownian dynamics simulation of the agglomeration of **Qt encapsulin**
-(large protein cage, r = 27.5 nm) and **ferritin** (Ft, r = 13 nm) in LAMMPS.
-Qt and Ft diffuse in implicit solvent, repel each other softly, and form harmonic
-Qt–Ft bonds stochastically when they touch. Clusters grow into Qt–Ft–Qt networks.
+(a large protein cage) and **ferritin** (Ft) in LAMMPS, triggered by calcium.
+Qt and Ft diffuse in implicit solvent, repel each other softly, and form Qt–Ft bonds stochastically
+when they touch, at a rate that follows the calcium; by default each bond end stays anchored where it formed.
+Clusters grow into Qt–Ft–Qt networks.
 The full model with its equations and the parameters of the current runs:
 [docs/physical_model_and_parameters.md](docs/physical_model_and_parameters.md).
 
@@ -12,15 +13,18 @@ The full model with its equations and the parameters of the current runs:
 | Component | LAMMPS implementation |
 |---|---|
 | Units | `units nano` (nm, ns, energy in zJ, force in pN) |
-| Particles | set as number densities per µm³ of the box (`qt_per_um3=20.0`, `ft_per_um3=80.0`); the particle numbers follow as round(density × box volume), at least one Qt and one Ft, so a larger box keeps the density and holds more particles |
-| Box | cubic (`box_length=2000.0`) or rectangular (`box_length=[2000.0, 3000.0, 4000.0]`); periodic (`boundary="periodic"`, default) or with walls on all faces: reflecting (`"reflect"`, `fix wall/reflect`) or soft (`"harmonic"`, `fix wall/harmonic`) |
+| Particles | spheres with effective radii (`radius_qt`, `radius_ft`), set as number densities per µm³ of the box (`qt_per_um3`, `ft_per_um3`); the particle numbers follow as round(density × box volume), at least one Qt and one Ft, so a larger box keeps the density and holds more particles |
+| Box | cubic (`box_length`: one edge in nm) or rectangular (`box_length=[Lx, Ly, Lz]`); periodic (`boundary="periodic"`, default) or with walls on all faces: reflecting (`"reflect"`, `fix wall/reflect`) or soft (`"harmonic"`, `fix wall/harmonic`) |
 | Dynamics | overdamped Brownian dynamics, `fix brownian`, γ = k_BT/D per species; with anchored bonds `fix brownian/asphere`, which also rotates every particle (γ_rot = k_BT/D_rot, D_rot = 3D/(4r²)) |
 | Repulsion | `pair_style harmonic/cut`, E = k (r_c − r)², r_c = r_i + r_j |
-| Bonds | `bond_geometry="anchored"` (default): oriented particles and `bond_style harmonic/anchor` (own plugin), E = K (r − r₀)² + K_qt (1 − cos θ_qt) + K_ft (1 − cos θ_ft), r₀ = r_Qt + r_Ft, each bond end anchored where the bond formed, so a bound Ft only wobbles; K_qt, K_ft follow from the wobble of the attachment points (`anchor_wobble_nm=5.0`, share of the Qt end `anchor_wobble_share_qt=0.5`); run names get `_anch5nm` after k_off. `"free"`: point particles and `bond_style harmonic`, E = K (r − r₀)², a bound Ft slides over the Qt surface; about 1.6 × faster, no `_anch` part in the run name |
-| Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on f Δt · `bind_every`) per attempt (every `bind_every` steps, default 1): a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ |
-| Unbinding | `fix bond/break/random` (own plugin in `lammps_plugins/`): every bond breaks independently with probability 1 − exp(−k_off Δt · `break_every`) per attempt (every `break_every` steps, default 10), k_off following the calcium at every attempt (`bond_break="random"`, default); `bond_break="longest"`: the built-in `fix bond/break` (only the longest bond of both atoms can break) |
+| Bonds | `bond_geometry="anchored"` (default): oriented particles and `bond_style harmonic/anchor` (own plugin), E = K (r − r₀)² + K_qt (1 − cos θ_qt) + K_ft (1 − cos θ_ft), r₀ = r_Qt + r_Ft, each bond end anchored where the bond formed, so a bound Ft only wobbles; K_qt, K_ft follow from the wobble δ of the attachment points (`anchor_wobble_nm`) and the share of the Qt end in it (`anchor_wobble_share_qt`); run names get the wobble after k_off (e.g. `_anch5nm`). `"free"`: point particles and `bond_style harmonic`, E = K (r − r₀)², a bound Ft slides over the Qt surface; no `_anch` part in the run name |
+| Binding | `fix bond/create`, Qt–Ft only, at contact (R_bind = r_Qt + r_Ft), probability 1 − exp(−k_on f Δt · `bind_every`) per attempt (every `bind_every` steps): a Collins–Kimball contact reaction; report the association rate k_a in M⁻¹ s⁻¹ |
+| Unbinding | `fix bond/break/random` (own plugin in `lammps_plugins/`): every bond breaks independently with probability 1 − exp(−k_off Δt · `break_every`) per attempt (every `break_every` steps), k_off following the calcium at every attempt (`bond_break="random"`, default); `bond_break="longest"`: the built-in `fix bond/break` (only the longest bond of both atoms can break) |
 | Calcium control | every production follows a calcium protocol (baseline → influx with an exponential rise to the plateau → exponential pump-out, each phase optional); calmodulin loading f = Caⁿ/(K_Caⁿ + Caⁿ) sets k_on f and k_off = f k_off,Ca + (1 − f) k_off,free; computed inside LAMMPS (k_on per segment, k_off at every unbinding attempt) |
 | Start | overlap-free random insertion, short equilibration without binding |
+
+Values and derivations: [docs/physical_model_and_parameters.md](docs/physical_model_and_parameters.md); defaults
+and checks: `Params` in `qtft/params.py`.
 
 ## Usage
 
@@ -28,19 +32,21 @@ The full model with its equations and the parameters of the current runs:
    (`lammps_plugins/qtft_styles/build.sh`; again after every LAMMPS update).
 2. `conda activate lammps`, open the repo in VS Code.
 3. Open `01_simulate_hek.ipynb` (HEK293T cells; `02_simulate_neurons.ipynb` for neurons): set the parameters
-   (Qt and Ft as densities per µm³; `bond_geometry` "free" or "anchored", see "Model in short"), check the
+   (Qt and Ft as densities per µm³; `bond_geometry` "anchored" (default) or "free", see "Model in short"), check the
    derived values (they start with the resulting particle numbers), build and run. For a parameter study, list
    values per parameter in section 4 (`build_sweep`): one run per combination. Runs go to this PC
    (`executor="local"`) or to the LRZ Linux cluster (`executor="lrz"`; download the results with `fetch`).
 4. Analyse finished runs in `04_analysis.ipynb`: `make_report` writes all tables and figures to
    `<run>/analysis/`, including `report.pdf` with every figure for a review at a glance; `sweep_report` does
-   the same for a parameter sweep (results against the swept parameter and the comparison of its runs).
-   Render a video of a run in `03_animation.ipynb` (needs ffmpeg).
+   the same for a parameter sweep (results against the swept parameter and the comparison of its runs),
+   `compare_report` compares any runs (the notebook writes them to `runs/comparisons/<name>/`). The notebook also compares runs
+   with 3D FIB-SEM data and exports the end of the influx for FIB-SEM and virtual SEM sections. Render a video of a run in `03_animation.ipynb` (needs ffmpeg).
 
 Simulation output is written to `runs/` inside the repository (gitignored, never committed):
 `runs/single/` for runs with one replica, `runs/ensemble/` for runs with several,
-`runs/sweeps/` for parameter sweeps, `runs/benchmark/` for performance measurements, `runs/tuning/` for
-force-constant sweeps, and `runs/index.csv` listing all single, ensemble and sweep runs.
+`runs/sweeps/` for parameter sweeps, `runs/comparisons/` for comparisons of runs, `runs/benchmark/` for
+performance measurements, `runs/tuning/` for force-constant sweeps, and `runs/index.csv` listing all single,
+ensemble and sweep runs. `data_dir` sets another output folder, `group` another subfolder than single / ensemble.
 
 ## Repository layout
 
@@ -65,7 +71,7 @@ force-constant sweeps, and `runs/index.csv` listing all single, ensemble and swe
 | `qtft/ensemble.py` | mean ± SD over replicas on a common time grid, half-times, percolation, final-state table (`final_table`, the same rows for one run, a comparison and a sweep), association rate k_a (`binding_rate`, measured and Collins–Kimball; needs a calcium step), bond formation and breaking rates and apparent k_a over time (`bond_rates`, any protocol), number of agglomerates ≥ n over time for several n, in the box or per 1000 µm³, with the size counted in all particles, Qt or Ft (`agglomerates_above_size`, from `traj.dump`), cluster sizes over time (mean size over the bound particles, weight averages with and without the free particles; `cluster_sizes`, from `traj.dump`), Qt in contact per Qt over time (`qt_contacts`, from `traj.dump`; compares the free and the anchored bond geometry), wobble of the anchored bonds (rms displacement of the attachment points of both ends and δ over time against the target; `anchor_wobble`, from the bond angles in `bonds.dump`), `index.csv` of all runs, comparison of runs |
 | `qtft/structure.py` | cluster geometry with OVITO (clusters from bonds, unwrapped across the periodic box; not needed with walls): Rg, compactness, centres, nearest-neighbour distances, composition; unwrapping and percolation (a cluster spanning the box; `unwrap_clusters`, numpy/scipy, also used by the FIB-SEM export); solid and envelope volume of every agglomerate at the end of the influx (for confocal volumes; numpy/scipy) |
 | `qtft/overlap.py` | interpenetration diagnostics per pair family (with walls also particle–wall) |
-| `qtft/figures.py` | Nature-style figures (calcium, bond rates, binding rate, overview, agglomerate size and volume distributions, agglomerates above size thresholds (count or per 1000 µm³, size counted in all particles, Qt or Ft, 4 × 2 figure, last row one Qt and one Ft threshold together), cluster sizes (mean and weight average, with and without the free particles, absolute and / N), bond geometry (Qt contacts, bond energy per bond, wobble of the anchored bonds), overlap, FIB-SEM comparison; calcium, overview, cluster sizes, agglomerates above size, agglomerate distributions and FIB-SEM comparison for one or several runs with the same panels, the same figures in the same order in all three reports; every figure in its own folder, every panel also as a 45 × 40 mm publication panel with fixed margins and its legend in its own file; Arial with mathtext sub- and superscripts, 6 pt, minor ticks, no grid, the calcium influx shaded), final-state table (CSV + LaTeX), `report.pdf` with cover pages (run, parameters, final state) and all figures, `make_report`, `compare_report`, `sweep_report` (sweep results against the swept parameter and the comparison of the runs) |
+| `qtft/figures.py` | Nature-style figures (calcium, bond rates, binding rate, overview, agglomerate size and volume distributions, agglomerates above size thresholds (count or per 1000 µm³, size counted in all particles, Qt or Ft, 4 × 2 figure, last row one Qt and one Ft threshold together), cluster sizes (mean and weight average, with and without the free particles, absolute and / N), bond geometry (Qt contacts, bond energy per bond, wobble of the anchored bonds with the tilt angle in degrees as a second axis), overlap, FIB-SEM comparison; calcium, overview, cluster sizes, agglomerates above size, agglomerate distributions and FIB-SEM comparison for one or several runs with the same panels, the same figures in the same order in all three reports; every figure in its own folder, every panel also as a 45 × 40 mm publication panel with fixed margins and its legend in its own file; Arial with mathtext sub- and superscripts, 6 pt, minor ticks, no grid, the calcium influx shaded), final-state table (CSV + LaTeX), `report.pdf` with cover pages (run, parameters, final state) and all figures, `make_report`, `compare_report`, `sweep_report` (sweep results against the swept parameter and the comparison of the runs) |
 | `qtft/export.py` | shared part of the FIB-SEM and SEM exports (no matplotlib): the frame at the end of the influx, the checks of every replica before anything is written (finished, counts, fragments, bond lengths, unwrap, same frame), clusters from bonds numbered by size, counts, pooling of the replicas |
 | `qtft/fibsem.py` | export of the frame at the end of the influx in the FIB-SEM segmentation schema, per replica and all replicas pooled (encapsulins, clusters from bonds, percolating clusters flagged; periodic box unwrapped, walls in the box frame; built on `export.py`) |
 | `qtft/sem.py` | export of the same frame for virtual 2D SEM sections, per replica and all replicas pooled (encapsulins at their position in the box: wrapped into the periodic box or in the wall frame, not unwrapped or shifted; true 3D cluster IDs; built on `export.py`, independent of `fibsem.py`) |
